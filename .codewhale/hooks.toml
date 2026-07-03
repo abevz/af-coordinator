@@ -1,0 +1,19 @@
+# Enforce the AGENTS.md worktree policy at the sub-agent tool boundary.
+
+[[hooks]]
+name = "require-agent-worktree"
+event = "tool_call_before"
+command = "sh ./.codewhale/require-agent-worktree.sh"
+timeout_secs = 2
+continue_on_error = false
+condition = { type = "tool_name", name = "agent" }
+
+# CodeWhale documentation uses agent_open for the same spawn operation. Keep
+# this second rule so the guard survives the tool-name migration.
+[[hooks]]
+name = "require-agent-open-worktree"
+event = "tool_call_before"
+command = "sh ./.codewhale/require-agent-worktree.sh"
+timeout_secs = 2
+continue_on_error = false
+condition = { type = "tool_name", name = "agent_open" }
