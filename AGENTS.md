@@ -118,6 +118,9 @@ CodeWhale upstream supports first-class sub-agent worktree isolation on
 - `.codewhale/hooks.toml` enforces these spawn requirements for both the current
   `agent` tool name and the documented `agent_open` name; a rejected spawn must
   be retried with the required arguments, not bypassed by editing `main/`
+- the same hook policy blocks direct file-write and shell tools when the active
+  CodeWhale workspace is `main/`; use read-only tools there and perform all
+  mutations and verification commands in the sibling worktree
 
 Preferred shape:
 

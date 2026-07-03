@@ -6,7 +6,7 @@
 # AGENTS.md is loaded automatically.
 #
 # Worktree behavior is not a config-level setting. AGENTS.md defines the policy,
-# and hooks.toml rejects sub-agent spawns that do not satisfy it.
+# and hooks.toml rejects invalid sub-agent spawns and direct writes from main/.
 
 reasoning_effort = "high"
 max_subagents = 8
