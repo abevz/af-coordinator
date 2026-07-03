@@ -204,6 +204,26 @@ Before finishing implementation work:
 - build the repo
 - run tests relevant to the touched code
 
+## Testing policy
+
+Running tests is not the same as having tests. Rules:
+
+- New behavior in `internal/` ships with tests in the same change: store
+  functions and API handlers at minimum. "`go test ./...` passes" is not
+  verification when the new code has no tests.
+- Every bug fix includes a regression test that fails before the fix and
+  passes after.
+- Test fixtures must honor production data contracts. Timestamps are
+  RFC 3339 UTC text (`2026-07-03T19:35:00Z`); never seed fixtures with
+  `datetime('now')`. A fixture that mirrors a bug hides that bug — this is
+  exactly how the lease-expiry comparison bug (AFC-SDD-0013) survived a
+  99-test suite.
+- Store tests run against in-memory SQLite created from the real embedded
+  migrations, never hand-written DDL.
+- Prefer table-driven tests with `t.Run` subtests.
+- `cmd/` entrypoints stay thin and untested; anything worth testing lives
+  below them in `internal/`.
+
 ## Scope control
 
 - Do not replace spec artifacts with long issue descriptions or ad hoc notes.
