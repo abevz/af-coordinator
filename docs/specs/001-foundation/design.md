@@ -52,21 +52,35 @@ Artifacts are linked to issues through `issue_artifacts`.
 
 ## Mutation model
 
-Write flow:
+Write flow for claimed work:
 
 1. client reads issue
-2. client claims issue and receives lease token
+2. client claims issue and receives lease token (issue moves to
+   `in_progress`)
 3. client sends update with `expected_version` + `lease_token`
 4. daemon validates lease and version
-5. daemon writes state change and appends event
+5. daemon writes state change, increments version, and appends event in one
+   transaction
+
+Requirement levels differ by operation:
+
+- status transitions and close: `lease_token` + `expected_version`
+- metadata edits of an unclaimed issue: `expected_version` only
+- notes and artifact links: append-only, no version needed
+
+There is no stored `claimed` status; claim state is derived from an
+unexpired lease. Expired leases are treated as absent (lazy expiry).
 
 ## Ready logic
 
 An issue is ready when:
 
 - it is not done or cancelled
-- it has no active blocking dependency
-- it is not leased by another holder
+- no unfinished issue blocks it through a `blocks` dependency
+- it has no unexpired lease
+
+The daemon rejects `blocks` dependencies that would form a cycle; a cycle
+would silently remove its members from the ready view forever.
 
 ## Initial command surface
 

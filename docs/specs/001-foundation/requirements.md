@@ -43,11 +43,23 @@ The system must coordinate work across:
 - THE system SHALL support registering spec artifacts such as
   `requirements.md`, `design.md`, `tasks.md`, `review.md`, and ADR files.
 - THE system SHALL support linking issues to one or more registered artifacts.
+- WHEN an issue is created, THE system SHALL allocate a unique short id of the
+  form `<project_key>-<N>` from a per-project counter.
 - WHEN an issue is claimed, THE system SHALL create a lease token with expiry.
-- WHEN an issue is updated, THE system SHALL require both a valid lease token
-  and the expected row version.
-- WHEN a lease expires, THE system SHALL allow the issue to be claimed again.
-- THE system SHALL append an event record for important state changes.
+- THE system SHALL treat "claimed" as derived from an unexpired lease, not as
+  a stored issue status.
+- WHEN an issue with an unexpired lease is mutated, THE system SHALL require
+  both a valid lease token and the expected row version.
+- WHEN an unclaimed issue's metadata is edited, THE system SHALL require the
+  expected row version.
+- WHEN a lease expires, THE system SHALL allow the issue to be claimed again
+  without operator intervention.
+- WHEN a `blocks` dependency would create a cycle, THE system SHALL reject it.
+- THE system SHALL append an event record for important state changes, and
+  SHALL NOT append events for lease heartbeats.
+- THE system SHALL NOT hard-delete issues or projects in v1; terminal issue
+  states are `done` and `cancelled`.
+- THE system SHALL store all timestamps as RFC 3339 UTC text.
 
 ## Non-functional requirements
 

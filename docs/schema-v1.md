@@ -4,12 +4,23 @@
 
 - SQLite dialect
 - `version` is incremented on each update
-- timestamps stored as UTC text or unix epoch, but be consistent
+- all timestamps are RFC 3339 UTC text: `YYYY-MM-DDTHH:MM:SSZ`
+  - this format sorts lexicographically, so text comparison on `expires_at`
+    and `created_at` is correct
+  - never mix in unix epoch integers or local-time strings
+- nullable timestamp columns (`claimed_at`, `closed_at`) use SQL `NULL` when
+  unset, never the empty string
 - foreign keys must be enabled
+- issues and projects are never hard-deleted in v1; terminal states are
+  `cancelled` for issues and archival outside the DB for projects, so the
+  event log stays intact
 
 ## Tables
 
 ### projects
+
+`next_issue_seq` backs short id allocation. The daemon increments it inside
+the same write transaction that inserts the issue.
 
 ```sql
 create table projects (
@@ -17,6 +28,7 @@ create table projects (
   key text not null unique,
   name text not null,
   description text not null default '',
+  next_issue_seq integer not null default 1,
   created_at text not null,
   updated_at text not null
 );
@@ -40,6 +52,9 @@ create table repositories (
 ```
 
 ### repo_remotes
+
+At most one primary remote per repository, enforced by a partial unique
+index (see Indexes).
 
 ```sql
 create table repo_remotes (
@@ -76,6 +91,8 @@ create table worktrees (
 
 ### artifact_roots
 
+At most one primary root per repository, enforced by a partial unique index.
+
 ```sql
 create table artifact_roots (
   id text primary key,
@@ -110,21 +127,35 @@ create table artifacts (
 
 ### issues
 
+`short_id` is the human-facing stable id, format `<project_key>-<N>`
+(for example `afc-42`). `id` stays an opaque unique key.
+
+There is no `claimed` status. Whether an issue is claimed is derived from
+the presence of an unexpired row in `leases`.
+
+Invariant enforced by the daemon: `scope_kind` must match the populated
+scope columns (`repository` requires `repository_id`, `worktree` requires
+`worktree_id`). If an FK is nulled by `on delete set null`, the daemon
+downgrades `scope_kind` accordingly in the same transaction.
+
 ```sql
 create table issues (
   id text primary key,
+  short_id text not null unique,
   project_id text not null references projects(id) on delete cascade,
   repository_id text references repositories(id) on delete set null,
   worktree_id text references worktrees(id) on delete set null,
-  scope_kind text not null,
+  scope_kind text not null
+    check (scope_kind in ('project', 'repository', 'worktree')),
   title text not null,
   description text not null default '',
-  status text not null,
+  status text not null
+    check (status in ('open', 'in_progress', 'blocked', 'done', 'cancelled')),
   priority integer not null default 3,
   assignee text not null default '',
   version integer not null default 1,
-  claimed_at text not null default '',
-  closed_at text not null default '',
+  claimed_at text,
+  closed_at text,
   created_at text not null,
   updated_at text not null
 );
@@ -144,17 +175,32 @@ create table issue_artifacts (
 
 ### dependencies
 
+Kinds:
+
+- `blocks`: the only kind that affects ready computation
+- `parent`: hierarchy, no ready effect
+- `related`: informational link
+- `discovered-from`: provenance of follow-up work
+
+The daemon must reject inserts that would create a cycle in the `blocks`
+graph (recursive CTE reachability check inside the insert transaction).
+
 ```sql
 create table dependencies (
   issue_id text not null references issues(id) on delete cascade,
   depends_on_issue_id text not null references issues(id) on delete cascade,
-  kind text not null default 'blocks',
+  kind text not null default 'blocks'
+    check (kind in ('blocks', 'parent', 'related', 'discovered-from')),
   created_at text not null,
   primary key (issue_id, depends_on_issue_id, kind)
 );
 ```
 
 ### leases
+
+An expired lease (`expires_at` in the past) is treated as absent everywhere.
+Heartbeats update `expires_at` and `updated_at` only; they do not create
+events.
 
 ```sql
 create table leases (
@@ -181,10 +227,14 @@ create table notes (
 
 ### events
 
+The event log is append-only and must survive its subject. The FK uses
+`on delete set null` so history is never cascaded away; `payload_json`
+should carry enough context (issue short id, title) to stay meaningful.
+
 ```sql
 create table events (
   id text primary key,
-  issue_id text references issues(id) on delete cascade,
+  issue_id text references issues(id) on delete set null,
   actor text not null,
   event_type text not null,
   payload_json text not null default '{}',
@@ -203,6 +253,12 @@ create index idx_issues_repo_status
 
 create index idx_issues_worktree_status
   on issues(worktree_id, status, updated_at);
+
+create unique index idx_repo_remotes_primary
+  on repo_remotes(repository_id) where is_primary = 1;
+
+create unique index idx_artifact_roots_primary
+  on artifact_roots(repository_id) where is_primary = 1;
 
 create index idx_artifact_roots_repo_kind
   on artifact_roots(repository_id, kind, root_path);
@@ -241,19 +297,37 @@ Conceptually, a ready issue is:
 
 - not `done`
 - not `cancelled`
-- not blocked by another unfinished issue
-- not actively leased by someone else
+- not blocked by an unfinished issue through a `blocks` dependency
+- not covered by an unexpired lease
 
 This should be implemented in SQL inside the daemon, not in clients.
 
 ## Mutation contract
 
-For mutable issue operations:
+Operations require different levels of proof, not one blanket rule:
 
-- request includes `expected_version`
-- request includes valid `lease_token`
-- transaction updates issue and increments `version`
-- transaction appends an event row
+| Operation                                   | Requires                          |
+|---------------------------------------------|-----------------------------------|
+| status transition, close, work-in-progress edits | valid `lease_token` + `expected_version` |
+| metadata edit of an unclaimed issue (title, priority, description) | `expected_version` only |
+| append note, link artifact                   | neither (append-only)             |
+
+Common rules:
+
+- if an issue has an unexpired lease, only its holder may mutate the issue
+- every successful mutation increments `version` and appends an event row
+  in the same transaction
+- on version mismatch the daemon returns a conflict and the client rereads
+
+## Short id allocation
+
+Inside the issue-create transaction:
+
+1. `update projects set next_issue_seq = next_issue_seq + 1 where id = ?`
+2. read the pre-increment value
+3. build `short_id = lower(project_key) || '-' || seq`
+
+Single-writer daemon plus one transaction makes this race-free.
 
 ## SDD artifact contract
 

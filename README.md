@@ -143,6 +143,15 @@ Rules for v1:
 - `notes`: human/agent notes attached to issues
 - `events`: append-only audit trail
 
+Key semantics:
+
+- issues carry human-facing short ids (`<project_key>-<N>`, e.g. `afc-42`)
+  allocated by the daemon from a per-project counter
+- "claimed" is not a stored status; it is derived from an unexpired lease
+- issue statuses: `open`, `in_progress`, `blocked`, `done`, `cancelled`
+- only `blocks` dependencies affect readiness, and the daemon rejects
+  dependency cycles
+
 In practice, this means the product should eventually expose:
 
 - a `ready` view
@@ -186,6 +195,7 @@ migrations/            schema migrations
 
 - [Architecture v1](docs/architecture-v1.md)
 - [Schema v1](docs/schema-v1.md)
+- [API v1](docs/api-v1.md)
 - [SDD workflow v1](docs/sdd-workflow-v1.md)
 - [Foundation spec packet](docs/specs/001-foundation/README.md)
 

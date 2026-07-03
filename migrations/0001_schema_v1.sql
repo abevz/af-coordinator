@@ -3,6 +3,7 @@ create table projects (
   key text not null unique,
   name text not null,
   description text not null default '',
+  next_issue_seq integer not null default 1,
   created_at text not null,
   updated_at text not null
 );
@@ -75,18 +76,21 @@ create table artifacts (
 
 create table issues (
   id text primary key,
+  short_id text not null unique,
   project_id text not null references projects(id) on delete cascade,
   repository_id text references repositories(id) on delete set null,
   worktree_id text references worktrees(id) on delete set null,
-  scope_kind text not null,
+  scope_kind text not null
+    check (scope_kind in ('project', 'repository', 'worktree')),
   title text not null,
   description text not null default '',
-  status text not null,
+  status text not null
+    check (status in ('open', 'in_progress', 'blocked', 'done', 'cancelled')),
   priority integer not null default 3,
   assignee text not null default '',
   version integer not null default 1,
-  claimed_at text not null default '',
-  closed_at text not null default '',
+  claimed_at text,
+  closed_at text,
   created_at text not null,
   updated_at text not null
 );
@@ -102,7 +106,8 @@ create table issue_artifacts (
 create table dependencies (
   issue_id text not null references issues(id) on delete cascade,
   depends_on_issue_id text not null references issues(id) on delete cascade,
-  kind text not null default 'blocks',
+  kind text not null default 'blocks'
+    check (kind in ('blocks', 'parent', 'related', 'discovered-from')),
   created_at text not null,
   primary key (issue_id, depends_on_issue_id, kind)
 );
@@ -126,7 +131,7 @@ create table notes (
 
 create table events (
   id text primary key,
-  issue_id text references issues(id) on delete cascade,
+  issue_id text references issues(id) on delete set null,
   actor text not null,
   event_type text not null,
   payload_json text not null default '{}',
@@ -141,6 +146,12 @@ create index idx_issues_repo_status
 
 create index idx_issues_worktree_status
   on issues(worktree_id, status, updated_at);
+
+create unique index idx_repo_remotes_primary
+  on repo_remotes(repository_id) where is_primary = 1;
+
+create unique index idx_artifact_roots_primary
+  on artifact_roots(repository_id) where is_primary = 1;
 
 create index idx_artifact_roots_repo_kind
   on artifact_roots(repository_id, kind, root_path);

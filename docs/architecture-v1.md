@@ -44,8 +44,29 @@ Primary storage:
 Settings expected for v1:
 
 - `journal_mode=WAL`
+- `synchronous=NORMAL`
 - `busy_timeout`
 - foreign keys on
+
+Connection model:
+
+- one dedicated write connection; all mutations serialize through it
+- a small pool of read-only connections for queries
+- this matches SQLite's single-writer reality instead of fighting it
+
+Driver decision:
+
+- `modernc.org/sqlite` (pure Go, no cgo)
+- fits the stdlib-first rule in `AGENTS.md`, keeps cross-compilation and
+  static builds trivial
+- `mattn/go-sqlite3` is the fallback if a profiled hot path ever demands cgo
+  performance, which is not expected at this scale
+
+Migrations:
+
+- plain SQL files in `migrations/`, applied in filename order
+- embedded migration runner in the daemon (stdlib only), tracking applied
+  migrations in a `schema_migrations` table
 
 Reasoning:
 
@@ -241,6 +262,18 @@ Default expectation:
 - most work is repository-scoped
 - some operational tasks are worktree-scoped
 
+### Issue identity
+
+Every issue has two ids:
+
+- `id`: opaque internal primary key
+- `short_id`: human-facing stable id, format `<project_key>-<N>`,
+  for example `afc-42`
+
+The daemon allocates `short_id` from a per-project counter inside the
+issue-create transaction, so ids are short, dense, and race-free. All CLI
+and API surfaces accept the short id.
+
 ### Issue to artifact linkage
 
 An issue may reference one or more artifacts, for example:
@@ -262,34 +295,63 @@ Claiming an issue must create a lease:
 - `holder`
 - `expires_at`
 
-Only the holder with the current lease token may mutate the issue.
+There is no stored `claimed` status. "Claimed" is a derived property: an
+issue is claimed if and only if it has an unexpired lease. This keeps one
+source of truth and removes the possibility of a status stuck at claimed
+after its lease died.
+
+While an unexpired lease exists, only its holder may mutate the issue.
+
+### Lease expiry
+
+Expiry is lazy: any lease with `expires_at` in the past is treated as
+absent by every check (claim, mutation, ready). No background process is
+required for correctness.
+
+An optional background sweeper may delete expired lease rows and append a
+single `lease_expired` event per lease for the activity timeline.
 
 ### Heartbeats
 
 Long-running work should periodically extend the lease.
+
+Heartbeats update only `leases.expires_at` and `leases.updated_at`. They
+never append events; otherwise a lease renewed every few seconds would
+flood the audit log.
 
 If heartbeat stops:
 
 - lease expires
 - issue becomes claimable again
 
+### Mutation matrix
+
+Not every operation needs the full proof. Requiring a lease for everything
+would make an unclaimed issue uneditable.
+
+| Operation | Requires |
+|---|---|
+| status transition, close, edits under an active claim | `lease_token` + `expected_version` |
+| metadata edit of an unclaimed issue (title, priority, description) | `expected_version` only |
+| append note, link artifact | nothing (append-only) |
+
+In all cases: if someone else holds an unexpired lease, mutation is
+rejected. Every successful mutation increments `version` and appends an
+event in the same transaction.
+
 ### Optimistic concurrency
 
 Every mutable row has `version`.
 
-Every update request must include:
-
-- `expected_version`
-- valid `lease_token`
-
-If the version mismatches, return conflict and require reread.
+Mutating requests include `expected_version` (plus `lease_token` where the
+matrix requires it). If the version mismatches, return conflict and require
+reread.
 
 ## Issue state machine
 
 Recommended states for v1:
 
 - `open`
-- `claimed`
 - `in_progress`
 - `blocked`
 - `done`
@@ -298,22 +360,39 @@ Recommended states for v1:
 Basic transitions:
 
 ```text
-open -> claimed
-claimed -> in_progress
-claimed -> open
+open -> in_progress      (claim)
+in_progress -> open      (release / lease expiry sweep)
 in_progress -> blocked
+blocked -> in_progress
 blocked -> open
 in_progress -> done
 any -> cancelled
+done -> open             (reopen)
+cancelled -> open        (reopen)
 ```
+
+Claim creates the lease and moves `open -> in_progress` in one transaction.
+Release deletes the lease and moves `in_progress -> open` unless the issue
+was explicitly left `blocked`.
+
+## Dependency kinds
+
+- `blocks`: the only kind that affects ready computation
+- `parent`: hierarchy
+- `related`: informational
+- `discovered-from`: provenance of follow-up work
+
+The daemon must reject any `blocks` edge that would create a cycle
+(reachability check inside the insert transaction). Without this, two
+issues blocking each other silently disappear from the ready view forever.
 
 ## Ready logic
 
 An issue is ready when:
 
 - state is not `done` or `cancelled`
-- there is no active blocking dependency
-- there is no active lease owned by someone else
+- no unfinished issue blocks it through a `blocks` dependency
+- it has no unexpired lease
 
 ## Event log
 
@@ -321,13 +400,15 @@ Every important change should append an event:
 
 - issue created
 - issue claimed
-- lease heartbeat
 - issue updated
 - note added
 - issue closed
 - dependency added or removed
+- lease expired (from the sweeper, at most one per lease)
 
-The event log is the audit trail and recovery aid.
+The event log is the audit trail and recovery aid. It is append-only and
+must survive its subjects: nothing cascades events away, and issues and
+projects are never hard-deleted in v1.
 
 Over time, this should support a user-facing activity timeline comparable to
 the good parts of Beads comments/history, but backed by daemon-owned writes.
@@ -368,6 +449,16 @@ Possible later integrations:
 
 But none of these should own the write path.
 
+## Actor identity
+
+In v1, `actor` and `holder` are client-asserted strings (agent name,
+username, tool id). The trust boundary is the unix socket itself: mode
+`0660`, owned by the operating user. Anything that can connect is trusted
+to tell the truth about who it is.
+
+Future hardening option: read peer credentials via `SO_PEERCRED` and record
+them alongside the asserted actor. Not required for v1.
+
 ## Operational model
 
 Expected runtime assets:
@@ -380,6 +471,18 @@ Suggested service model:
 
 - `systemd --user` service for daemon
 - optional timer for exports / snapshots
+
+### Backup
+
+Never copy a live WAL database with `cp`. Supported approaches:
+
+- `VACUUM INTO '<backup path>'` from the daemon (preferred: single
+  consistent file, no external tooling)
+- `sqlite3 <db> ".backup <path>"` when the daemon is stopped
+
+A `systemd --user` timer should produce periodic backups into
+`~/.local/share/af-coordinator/backups/`, plus optional JSONL exports for
+greppable history.
 
 ## v1 implementation constraints
 
