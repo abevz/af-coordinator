@@ -467,6 +467,13 @@ Expected runtime assets:
 - socket: `~/.local/state/af-coordinator/af-coordinator.sock`
 - logs/state: `~/.local/state/af-coordinator/`
 
+Environment overrides (mainly for tests and CI; unix socket paths are
+limited to ~108 bytes, so tests need short paths):
+
+- `AF_COORDINATOR_SOCKET`
+- `AF_COORDINATOR_DB`
+- `AF_COORDINATOR_LOG_LEVEL`
+
 Suggested service model:
 
 - `systemd --user` service for daemon

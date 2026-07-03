@@ -20,8 +20,8 @@ type Config struct {
 
 func Default() Config {
 	return Config{
-		SocketPath: expandHome(defaultSocketPath),
-		DBPath:     expandHome(defaultDBPath),
+		SocketPath: expandHome(envOrDefault("AF_COORDINATOR_SOCKET", defaultSocketPath)),
+		DBPath:     expandHome(envOrDefault("AF_COORDINATOR_DB", defaultDBPath)),
 		LogLevel:   envOrDefault("AF_COORDINATOR_LOG_LEVEL", "info"),
 	}
 }

@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/abevz/af-coordinator/internal/client"
 	"github.com/abevz/af-coordinator/internal/config"
@@ -28,7 +29,7 @@ func main() {
 		fmt.Printf("Status:     %s\n", health.Status)
 		fmt.Printf("DBPath:     %s\n", health.DBPath)
 		fmt.Printf("SocketPath: %s\n", health.SocketPath)
-		fmt.Printf("Time:       %s\n", health.Time)
+		fmt.Printf("Time:       %s\n", health.Time.UTC().Format(time.RFC3339))
 	default:
 		printUsage()
 		os.Exit(1)
