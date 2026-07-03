@@ -5,5 +5,5 @@
 /.cache/
 *.log
 *.out
-af-coordinatord
-afctl
+/af-coordinatord
+/afctl
