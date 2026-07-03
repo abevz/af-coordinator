@@ -485,6 +485,33 @@ This consumer is a good API litmus test: if daily-check needs to bypass
 the API, the API is too weak (a risk already named in the foundation
 design).
 
+### Agent integration model
+
+Multiple different coding agents (Claude Code, Codex, CodeWhale, and
+whatever comes next) must be able to work with the daemon. Three layers,
+in priority order:
+
+1. `afctl` as the universal adapter. Every agent can shell out; almost
+   none of them share a richer protocol. Requirements this puts on the
+   CLI: every command supports `--json` output, and exit codes distinguish
+   "retryable coordination outcome" (conflict, lease held) from hard
+   failure, so agent wrappers can react without parsing prose.
+2. A canonical agent protocol contract: one short document in this repo
+   describing the working loop — check `ready`, claim before touching
+   code, heartbeat during long work, leave a handoff note, release or
+   close at session end. Per-repo `AGENTS.md` / `CLAUDE.md` files only
+   reference it, never restate it; that is what kept the Beads setup
+   maintainable across agents.
+3. Optional richer adapters later: an MCP server exposing the same API as
+   tools, editor integrations, or a Claude Code skill wrapping `afctl`.
+   These are conveniences for specific clients and are always plain API
+   clients — they never bypass the daemon.
+
+The protocol contract deserves its own spec packet once the issue/lease
+APIs exist. The hard problem it must solve is adoption discipline, not
+transport: an agent that silently skips claiming is worse than having no
+coordinator at all.
+
 ## Actor identity
 
 In v1, `actor` and `holder` are client-asserted strings (agent name,
