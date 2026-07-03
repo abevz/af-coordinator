@@ -34,6 +34,8 @@ func main() {
 		runArtifactRoot(c, os.Args[2:])
 	case "artifact":
 		runArtifact(c, os.Args[2:])
+	case "issue":
+		runIssue(c, os.Args[2:])
 	default:
 		printUsage()
 		os.Exit(1)
@@ -60,6 +62,11 @@ Commands:
   artifact              Manage artifacts
     register            Register an artifact file
     list                List artifacts
+  issue                 Manage issues
+    create              Create a new issue
+    get                 Get an issue by ID or short_id
+    list                List issues with optional filters
+    ready               List ready (actionable, unleased) issues
 `)
 }
 
@@ -578,6 +585,208 @@ func printArtifact(a core.Artifact) {
 	}
 	fmt.Printf("Created:        %s\n", a.CreatedAt)
 	fmt.Printf("Updated:        %s\n\n", a.UpdatedAt)
+}
+
+// ─── Issue ───────────────────────────────────────────────────────────────────
+
+func runIssue(c *client.Client, args []string) {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "Usage: afctl issue <create|get|list|ready>")
+		os.Exit(1)
+	}
+
+	switch args[0] {
+	case "create":
+		runIssueCreate(c, args[1:])
+	case "get":
+		runIssueGet(c, args[1:])
+	case "list":
+		runIssueList(c, args[1:])
+	case "ready":
+		runIssueReady(c, args[1:])
+	default:
+		fmt.Fprintf(os.Stderr, "unknown issue subcommand: %s\n", args[0])
+		os.Exit(1)
+	}
+}
+
+func runIssueCreate(c *client.Client, args []string) {
+	if len(args) < 4 {
+		fmt.Fprintln(os.Stderr, "Usage: afctl issue create --project <key> --scope-kind <project|repository|worktree> --title <title> [--repo <repo>] [--worktree <worktree>] [--description <desc>] [--priority <n>]")
+		os.Exit(1)
+	}
+
+	var req core.CreateIssueRequest
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--project":
+			if i+1 < len(args) {
+				req.Project = args[i+1]
+				i++
+			}
+		case "--scope-kind":
+			if i+1 < len(args) {
+				req.ScopeKind = args[i+1]
+				i++
+			}
+		case "--title":
+			if i+1 < len(args) {
+				req.Title = args[i+1]
+				i++
+			}
+		case "--description":
+			if i+1 < len(args) {
+				req.Description = args[i+1]
+				i++
+			}
+		case "--priority":
+			if i+1 < len(args) {
+				fmt.Sscanf(args[i+1], "%d", &req.Priority)
+				i++
+			}
+		case "--repo":
+			if i+1 < len(args) {
+				req.Repo = args[i+1]
+				i++
+			}
+		case "--worktree":
+			if i+1 < len(args) {
+				req.Worktree = args[i+1]
+				i++
+			}
+		}
+	}
+
+	issue, err := c.CreateIssue(req)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+	printIssue(issue)
+}
+
+func runIssueGet(c *client.Client, args []string) {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "Usage: afctl issue get <issue-id-or-short-id>")
+		os.Exit(1)
+	}
+
+	issueID := args[0]
+	issue, lease, err := c.GetIssue(issueID)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+	printIssue(issue)
+	if lease != nil {
+		fmt.Printf("Lease Holder:   %s\n", lease.Holder)
+		fmt.Printf("Lease Token:    %s\n", lease.LeaseToken)
+		fmt.Printf("Lease Expires:  %s\n\n", lease.ExpiresAt)
+	}
+}
+
+func runIssueList(c *client.Client, args []string) {
+	project := ""
+	repo := ""
+	worktree := ""
+	status := ""
+	assignee := ""
+
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--project":
+			if i+1 < len(args) {
+				project = args[i+1]
+				i++
+			}
+		case "--repo":
+			if i+1 < len(args) {
+				repo = args[i+1]
+				i++
+			}
+		case "--worktree":
+			if i+1 < len(args) {
+				worktree = args[i+1]
+				i++
+			}
+		case "--status":
+			if i+1 < len(args) {
+				status = args[i+1]
+				i++
+			}
+		case "--assignee":
+			if i+1 < len(args) {
+				assignee = args[i+1]
+				i++
+			}
+		}
+	}
+
+	issues, err := c.ListIssues(project, repo, worktree, status, assignee)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+	if len(issues) == 0 {
+		fmt.Println("No issues found.")
+		return
+	}
+	for _, issue := range issues {
+		printIssue(issue)
+	}
+}
+
+func runIssueReady(c *client.Client, args []string) {
+	project := ""
+	for i := 0; i < len(args); i++ {
+		if args[i] == "--project" && i+1 < len(args) {
+			project = args[i+1]
+		}
+	}
+
+	issues, err := c.ListReadyIssues(project)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+	if len(issues) == 0 {
+		fmt.Println("No ready issues found.")
+		return
+	}
+	for _, issue := range issues {
+		printIssue(issue)
+	}
+}
+
+func printIssue(i core.Issue) {
+	fmt.Printf("ID:           %s\n", i.ID)
+	fmt.Printf("Short ID:     %s\n", i.ShortID)
+	fmt.Printf("Project ID:   %s\n", i.ProjectID)
+	if i.RepositoryID != "" {
+		fmt.Printf("Repository ID:%s\n", i.RepositoryID)
+	}
+	if i.WorktreeID != "" {
+		fmt.Printf("Worktree ID:  %s\n", i.WorktreeID)
+	}
+	fmt.Printf("Scope:        %s\n", i.ScopeKind)
+	fmt.Printf("Title:        %s\n", i.Title)
+	if i.Description != "" {
+		fmt.Printf("Description:  %s\n", i.Description)
+	}
+	fmt.Printf("Status:       %s\n", i.Status)
+	fmt.Printf("Priority:     %d\n", i.Priority)
+	if i.Assignee != "" {
+		fmt.Printf("Assignee:     %s\n", i.Assignee)
+	}
+	fmt.Printf("Version:      %d\n", i.Version)
+	if i.ClaimedAt != "" {
+		fmt.Printf("Claimed At:   %s\n", i.ClaimedAt)
+	}
+	if i.ClosedAt != "" {
+		fmt.Printf("Closed At:    %s\n", i.ClosedAt)
+	}
+	fmt.Printf("Created:      %s\n", i.CreatedAt)
+	fmt.Printf("Updated:      %s\n\n", i.UpdatedAt)
 }
 
 func printWorktree(wt core.Worktree) {

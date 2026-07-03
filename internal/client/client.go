@@ -182,6 +182,70 @@ func (c *Client) ListArtifacts(repo string) ([]core.Artifact, error) {
 	return result.Artifacts, nil
 }
 
+// CreateIssue sends a POST /v1/issues request.
+func (c *Client) CreateIssue(req core.CreateIssueRequest) (core.Issue, error) {
+	var result struct {
+		Issue core.Issue `json:"issue"`
+	}
+	if err := c.doJSON(http.MethodPost, "/v1/issues", req, &result); err != nil {
+		return core.Issue{}, err
+	}
+	return result.Issue, nil
+}
+
+// GetIssue sends a GET /v1/issues/{issueID} request.
+func (c *Client) GetIssue(issueID string) (core.Issue, *core.IssueLease, error) {
+	var result struct {
+		Issue core.Issue       `json:"issue"`
+		Lease *core.IssueLease `json:"lease,omitempty"`
+	}
+	if err := c.doJSON(http.MethodGet, "/v1/issues/"+issueID, nil, &result); err != nil {
+		return core.Issue{}, nil, err
+	}
+	return result.Issue, result.Lease, nil
+}
+
+// ListIssues sends a GET /v1/issues request with optional query params.
+func (c *Client) ListIssues(project, repo, worktree, status, assignee string) ([]core.Issue, error) {
+	path := "/v1/issues"
+	sep := "?"
+	appendParam := func(key, val string) {
+		if val != "" {
+			path += sep + key + "=" + val
+			sep = "&"
+		}
+	}
+	appendParam("project", project)
+	appendParam("repo", repo)
+	appendParam("worktree", worktree)
+	appendParam("status", status)
+	appendParam("assignee", assignee)
+
+	var result struct {
+		Issues []core.Issue `json:"issues"`
+	}
+	if err := c.doJSON(http.MethodGet, path, nil, &result); err != nil {
+		return nil, err
+	}
+	return result.Issues, nil
+}
+
+// ListReadyIssues sends a GET /v1/issues/ready request with an optional project filter.
+func (c *Client) ListReadyIssues(project string) ([]core.Issue, error) {
+	path := "/v1/issues/ready"
+	if project != "" {
+		path += "?project=" + project
+	}
+
+	var result struct {
+		Issues []core.Issue `json:"issues"`
+	}
+	if err := c.doJSON(http.MethodGet, path, nil, &result); err != nil {
+		return nil, err
+	}
+	return result.Issues, nil
+}
+
 // doJSON performs an HTTP request and decodes the JSON response.
 func (c *Client) doJSON(method, path string, body any, target any) error {
 	var reqBody []byte

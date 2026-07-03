@@ -1,0 +1,129 @@
+package api
+
+import (
+	"database/sql"
+	"encoding/json"
+	"log/slog"
+	"net/http"
+
+	"github.com/abevz/af-coordinator/internal/core"
+	"github.com/abevz/af-coordinator/internal/store/sqlite"
+)
+
+func handleCreateIssue(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req core.CreateIssueRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, core.ErrValidationFailed, "invalid JSON body")
+			return
+		}
+
+		if err := core.ValidateCreateIssue(req); err != nil {
+			writeError(w, http.StatusBadRequest, core.ErrValidationFailed, err.Error())
+			return
+		}
+
+		issue, err := sqlite.CreateIssue(db, req.Project, req)
+		if err != nil {
+			if apiErr, ok := errAsAPIError(err); ok {
+				if apiErr.Code == core.ErrNotFound {
+					writeError(w, http.StatusNotFound, core.ErrNotFound, apiErr.Message)
+					return
+				}
+			}
+			if isUniqueConstraintError(err) {
+				writeError(w, http.StatusConflict, "short_id_taken",
+					"an issue with this short_id already exists")
+				return
+			}
+			logger.Error("failed to create issue", "project", req.Project, "error", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "failed to create issue")
+			return
+		}
+
+		writeJSON(w, http.StatusCreated, map[string]core.Issue{"issue": issue})
+	}
+}
+
+func handleGetIssue(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		issueID := r.PathValue("issue_id")
+
+		issue, lease, err := sqlite.GetIssue(db, issueID)
+		if err != nil {
+			if apiErr, ok := errAsAPIError(err); ok && apiErr.Code == core.ErrNotFound {
+				writeError(w, http.StatusNotFound, core.ErrNotFound, "issue not found: "+issueID)
+				return
+			}
+			logger.Error("failed to get issue", "issue_id", issueID, "error", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "failed to get issue")
+			return
+		}
+
+		resp := map[string]interface{}{
+			"issue": issue,
+		}
+		if lease != nil {
+			resp["lease"] = lease
+		}
+
+		writeJSON(w, http.StatusOK, resp)
+	}
+}
+
+func handleListIssues(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		params := core.IssueListParams{
+			Project:  r.URL.Query().Get("project"),
+			Repo:     r.URL.Query().Get("repo"),
+			Worktree: r.URL.Query().Get("worktree"),
+			Status:   r.URL.Query().Get("status"),
+			Assignee: r.URL.Query().Get("assignee"),
+		}
+
+		issues, err := sqlite.ListIssues(db, params)
+		if err != nil {
+			if apiErr, ok := errAsAPIError(err); ok && apiErr.Code == core.ErrNotFound {
+				writeError(w, http.StatusNotFound, core.ErrNotFound, apiErr.Message)
+				return
+			}
+			logger.Error("failed to list issues", "error", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "failed to list issues")
+			return
+		}
+
+		writeJSON(w, http.StatusOK, map[string][]core.Issue{"issues": issues})
+	}
+}
+
+func handleListReadyIssues(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		projectFilter := r.URL.Query().Get("project")
+
+		// Resolve project key to ID if provided.
+		var projectID string
+		if projectFilter != "" {
+			proj, err := sqlite.GetProjectByKey(db, projectFilter)
+			if err != nil {
+				if apiErr, ok := errAsAPIError(err); ok && apiErr.Code == core.ErrNotFound {
+					writeError(w, http.StatusNotFound, core.ErrNotFound,
+						"project not found: "+projectFilter)
+					return
+				}
+				logger.Error("failed to resolve project for ready issues", "project", projectFilter, "error", err)
+				writeError(w, http.StatusInternalServerError, "internal_error", "failed to resolve project")
+				return
+			}
+			projectID = proj.ID
+		}
+
+		issues, err := sqlite.ListReadyIssues(db, projectID)
+		if err != nil {
+			logger.Error("failed to list ready issues", "error", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "failed to list ready issues")
+			return
+		}
+
+		writeJSON(w, http.StatusOK, map[string][]core.Issue{"issues": issues})
+	}
+}
