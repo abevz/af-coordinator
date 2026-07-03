@@ -12,6 +12,7 @@ multi-repository, multi-worktree AI execution.
 - Keep the coordinator as the source of truth for execution state.
 - Do not invent feature behavior in code that is not grounded in the active spec.
 - Do not access SQLite directly from helper scripts or agents for mutations.
+- Keep real runtime data out of git.
 
 ## SDD workflow
 
@@ -81,6 +82,26 @@ Rules:
 - treat `.bare` as repository internals; do not edit it manually
 - when additional worktrees are created, keep them tied to the same `.bare`
   repository
+
+## Public repo boundary
+
+This repository is expected to be publishable.
+
+Do commit:
+
+- code
+- docs
+- migrations
+- sanitized examples
+- service/unit files without embedded secrets
+
+Do not commit:
+
+- live SQLite databases
+- runtime sockets or state files
+- logs
+- local overrides with secrets
+- task exports containing real unsanitized operator data
 
 ## Build and verification
 

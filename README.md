@@ -33,6 +33,29 @@ The core design choice is simple:
 - GitHub-first source of truth
 - embedded scripting or plugin system
 
+## Public repo, private runtime data
+
+This repository is intended to be safe to publish.
+
+The rule is:
+
+- code, docs, schema, migrations, and service definitions may live in git
+- real runtime data must stay outside the repository
+
+Expected private runtime locations:
+
+- database: `~/.local/share/af-coordinator/af-coordinator.db`
+- socket: `~/.local/state/af-coordinator/af-coordinator.sock`
+- logs/state: `~/.local/state/af-coordinator/`
+
+Do not commit:
+
+- live databases
+- local runtime state
+- logs
+- tokens, secrets, or `.env` files
+- exports or snapshots containing real task data unless intentionally sanitized
+
 ## What we borrow from Beads
 
 `af-coordinator` should borrow workflow and UX ideas from Beads, but not its
