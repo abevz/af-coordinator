@@ -28,11 +28,29 @@ Repository location:
 docs/specs/NNN-feature/
 ```
 
-Current bootstrap packet:
+Active packet selection:
+
+- treat the active SDD packet as the lowest-numbered `docs/specs/NNN-*` packet
+  that is not explicitly declared complete by its packet-local artifacts
+- today that is the bootstrap packet:
 
 ```text
 docs/specs/001-foundation/
 ```
+
+Packet shape:
+
+- minimum v1 packet:
+  - `README.md`
+  - `requirements.md`
+  - `design.md`
+  - `tasks.md`
+  - `review.md`
+- supporting artifacts are first-class when present:
+  - `decisions/`
+  - `traceability.md`
+  - `glossary.md`
+  - `schemas/`
 
 Rules:
 
@@ -41,6 +59,15 @@ Rules:
 - tiny mechanical fixes may skip a full spec packet
 - when implementing a task, reference the concrete artifact path in commit and
   handoff language when useful
+- treat `tasks.md` as the canonical task-slicing artifact for the packet
+- do not mark a `tasks.md` entry done just because supporting code or documents
+  exist; mark it done only when the described slice is actually complete and
+  verified
+- do not assume task status is inferred automatically from commits or file
+  presence; update `tasks.md` and `review.md` deliberately as part of finishing
+  the slice
+- use `review.md` to capture what shipped, what was verified, what remains open,
+  and whether implementation still matches requirements and design
 
 ## Architecture assumptions for v1
 
@@ -70,11 +97,22 @@ Keep `main.go` files thin. Push behavior down into `internal/`.
 This project uses a `.bare` git worktree model. All implementation work
 MUST go through a git worktree, never write directly to the `main/` checkout.
 
-When opening a sub-agent with `worktree: true`, always set `worktree_path`
-explicitly:
+CodeWhale upstream supports first-class sub-agent worktree isolation through
+`worktree`, `worktree_branch`, `worktree_base`, and `worktree_path` on the
+sub-agent spawn call. For this repository:
+
+- when opening a sub-agent with `worktree: true`, always set
+  `worktree_path` explicitly
+- use an absolute sibling path at the repo root; relative paths still resolve
+  under CodeWhale's default `.codewhale-worktrees/` root
+- do not rely on CodeWhale defaults for this repository; without an explicit
+  absolute `worktree_path`, CodeWhale will create the child checkout under
+  `.codewhale-worktrees/...`
+
+Example:
 
 ```
-# CORRECT — worktree at repo root, alongside main/
+# CORRECT — sibling worktree at repo root, alongside main/
 agent(
     worktree=True,
     worktree_path="/home/abevz/github/af-coordinator/<branch-name>",
