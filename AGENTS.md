@@ -65,6 +65,32 @@ explicitly calls for them.
 
 Keep `main.go` files thin. Push behavior down into `internal/`.
 
+## CodeWhale agent conventions
+
+This project uses a `.bare` git worktree model. All implementation work
+MUST go through a git worktree, never write directly to the `main/` checkout.
+
+When opening a sub-agent with `worktree: true`, always set `worktree_path`
+explicitly:
+
+```
+# CORRECT — worktree at repo root, alongside main/
+agent(
+    worktree=True,
+    worktree_path="/home/abevz/github/af-coordinator/<branch-name>",
+)
+```
+
+```
+# WRONG — default path creates .codewhale-worktrees/ subdirectory
+agent(
+    worktree=True,  # missing worktree_path
+)
+```
+
+Every feature commit MUST land via a worktree branch that is merged into
+main. Do not write or commit directly from the main checkout.
+
 ## Git topology
 
 This repository uses a separate git dir:
