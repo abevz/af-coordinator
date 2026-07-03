@@ -33,6 +33,31 @@ The core design choice is simple:
 - GitHub-first source of truth
 - embedded scripting or plugin system
 
+## What we borrow from Beads
+
+`af-coordinator` should borrow workflow and UX ideas from Beads, but not its
+shared-Dolt operational model.
+
+Keep from Beads:
+
+- first-class tasks
+- dependency tracking
+- computed `ready` view
+- notes / comments / activity trail
+- short stable task ids
+- query-oriented CLI, not only flat listing
+
+Do not copy from Beads:
+
+- shared Dolt server as hot-path storage
+- auto-sync / auto-push in the write path
+- multi-writer semantics through shell commands over a shared VCS-backed store
+
+So the intended split is:
+
+- Beads ideas for task flow and operator UX
+- `af-coordinator` storage and concurrency model for correctness
+
 ## Architecture
 
 ```text
@@ -94,6 +119,14 @@ Rules for v1:
 - `leases`: active claims owned by agents
 - `notes`: human/agent notes attached to issues
 - `events`: append-only audit trail
+
+In practice, this means the product should eventually expose:
+
+- a `ready` view
+- dependency-aware task state
+- issue notes / comments
+- issue activity timeline
+- queryable task listings
 
 ## Why projects, repositories, and worktrees are separate
 

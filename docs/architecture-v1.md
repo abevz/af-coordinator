@@ -16,6 +16,8 @@ worktrees.
 - GitHub or other trackers can be mirrors, not the primary source of truth
 - SDD artifacts remain the source of truth for feature scope and design
 - execution state must link back to exact spec artifacts instead of duplicating them
+- borrow proven task semantics from Beads where they improve UX and operator flow
+- do not inherit Beads shared-Dolt write-path assumptions
 
 ## Transport
 
@@ -121,6 +123,44 @@ The product should model SDD artifacts directly enough to answer:
 
 So the domain model needs explicit artifact registration and issue-to-artifact
 links, not just free-form text fields.
+
+## Beads-inspired product semantics
+
+Beads is a useful source of task-system ideas even though its shared-Dolt server
+is not the right backend for this workload.
+
+### Concepts to adopt
+
+- tasks as first-class objects
+- blocking dependencies
+- computed `ready` state instead of only stored status
+- short stable ids
+- per-issue notes and activity trail
+- query-oriented CLI ergonomics
+
+These are product semantics and UX patterns. They are worth keeping.
+
+### Concepts not to adopt
+
+- shared Dolt server as the coordination hot path
+- auto-sync or auto-push in the mutation path
+- multi-agent mutation through shell commands against a VCS-backed shared store
+
+These are operational choices that became fragile under concurrent-agent load.
+
+### Resulting design stance
+
+The intended model for `af-coordinator` is:
+
+```text
+Beads-inspired task semantics
+        +
+single-writer daemon
+        +
+SQLite WAL
+```
+
+This keeps the useful workflow ideas while replacing the fragile write path.
 
 ## Identity model
 
@@ -289,6 +329,9 @@ Every important change should append an event:
 
 The event log is the audit trail and recovery aid.
 
+Over time, this should support a user-facing activity timeline comparable to
+the good parts of Beads comments/history, but backed by daemon-owned writes.
+
 ## CLI model
 
 `afctl` should be a thin client over the same API.
@@ -297,16 +340,21 @@ Core commands:
 
 - `afctl issue create`
 - `afctl issue get`
+- `afctl issue list`
 - `afctl issue ready`
 - `afctl issue claim`
 - `afctl issue release`
 - `afctl issue note`
+- `afctl issue events`
 - `afctl issue close`
 - `afctl project add`
 - `afctl repo add`
 - `afctl worktree register`
 - `afctl artifact register`
 - `afctl issue link-artifact`
+
+The CLI should eventually support query-style filters, not only fixed list
+views.
 
 ## Integration model
 
