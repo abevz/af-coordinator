@@ -36,6 +36,10 @@ func main() {
 		runArtifact(c, os.Args[2:])
 	case "issue":
 		runIssue(c, os.Args[2:])
+	case "ls":
+		runLs(c, os.Args[2:])
+	case "show":
+		runShow(c, os.Args[2:])
 	default:
 		printUsage()
 		os.Exit(1)
@@ -81,6 +85,8 @@ Commands:
     dependency          Manage issue dependencies
       add               Add a dependency between two issues
       remove            Remove a dependency between two issues
+  ls [flags]             List issues (shortcut for issue list)
+  show <issue-id>        Show issue details (shortcut for issue get)
 `)
 }
 
@@ -642,6 +648,20 @@ func runIssue(c *client.Client, args []string) {
 	}
 }
 
+// runLs is a top-level shortcut for `afctl issue list`.
+func runLs(c *client.Client, args []string) {
+	runIssueList(c, args)
+}
+
+// runShow is a top-level shortcut for `afctl issue get`.
+func runShow(c *client.Client, args []string) {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "Usage: afctl show <issue-id-or-short-id>")
+		os.Exit(1)
+	}
+	runIssueGet(c, args)
+}
+
 func runIssueCreate(c *client.Client, args []string) {
 	if len(args) < 4 {
 		fmt.Fprintln(os.Stderr, "Usage: afctl issue create --project <key> --scope-kind <project|repository|worktree> --title <title> [--repo <repo>] [--worktree <worktree>] [--description <desc>] [--priority <n>]")
@@ -709,12 +729,7 @@ func runIssueGet(c *client.Client, args []string) {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
-	printIssue(issue)
-	if lease != nil {
-		fmt.Printf("Lease Holder:   %s\n", lease.Holder)
-		fmt.Printf("Lease Token:    %s\n", lease.LeaseToken)
-		fmt.Printf("Lease Expires:  %s\n\n", lease.ExpiresAt)
-	}
+	printIssueDetailed(issue, lease)
 }
 
 func runIssueList(c *client.Client, args []string) {
@@ -723,6 +738,8 @@ func runIssueList(c *client.Client, args []string) {
 	worktree := ""
 	status := ""
 	assignee := ""
+	limit := 0
+	offset := 0
 
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
@@ -751,8 +768,22 @@ func runIssueList(c *client.Client, args []string) {
 				assignee = args[i+1]
 				i++
 			}
+		case "--limit":
+			if i+1 < len(args) {
+				fmt.Sscanf(args[i+1], "%d", &limit)
+				i++
+			}
+		case "--offset":
+			if i+1 < len(args) {
+				fmt.Sscanf(args[i+1], "%d", &offset)
+				i++
+			}
 		}
 	}
+
+	// limit/offset are defined for future use; pass them through when the API supports pagination
+	_ = limit
+	_ = offset
 
 	issues, err := c.ListIssues(project, repo, worktree, status, assignee)
 	if err != nil {
@@ -763,9 +794,7 @@ func runIssueList(c *client.Client, args []string) {
 		fmt.Println("No issues found.")
 		return
 	}
-	for _, issue := range issues {
-		printIssue(issue)
-	}
+	printIssuesTable(issues)
 }
 
 func runIssueReady(c *client.Client, args []string) {
@@ -785,9 +814,7 @@ func runIssueReady(c *client.Client, args []string) {
 		fmt.Println("No ready issues found.")
 		return
 	}
-	for _, issue := range issues {
-		printIssue(issue)
-	}
+	printIssuesTable(issues)
 }
 
 func runIssueClaim(c *client.Client, args []string) {
@@ -1299,6 +1326,73 @@ func printIssue(i core.Issue) {
 	}
 	fmt.Printf("Created:      %s\n", i.CreatedAt)
 	fmt.Printf("Updated:      %s\n\n", i.UpdatedAt)
+}
+
+// ─── Issue Display Helpers ───────────────────────────────────────────────────
+
+// statusSymbol returns a Unicode symbol representing the issue status.
+func statusSymbol(status string) string {
+	switch status {
+	case "open":
+		return "○"
+	case "in_progress":
+		return "●"
+	case "done":
+		return "✓"
+	case "cancelled":
+		return "✗"
+	case "blocked":
+		return "⊘"
+	case "deferred":
+		return "◌"
+	default:
+		return "?"
+	}
+}
+
+// truncate shortens a string to n characters, adding "..." if truncated.
+func truncate(s string, n int) string {
+	runes := []rune(s)
+	if len(runes) <= n {
+		return s
+	}
+	return string(runes[:n-3]) + "..."
+}
+
+// printIssueDetailed displays a single issue with full details.
+func printIssueDetailed(i core.Issue, l *core.IssueLease) {
+	fmt.Printf("ID:         %s\n", i.ID)
+	fmt.Printf("Short ID:   %s\n", i.ShortID)
+	fmt.Printf("Status:     %s %s\n", statusSymbol(i.Status), i.Status)
+	fmt.Printf("Title:      %s\n", i.Title)
+	fmt.Printf("Priority:   %d\n", i.Priority)
+	if i.Assignee != "" {
+		fmt.Printf("Assignee:   %s\n", i.Assignee)
+	} else {
+		fmt.Printf("Assignee:   (unassigned)\n")
+	}
+	fmt.Printf("Scope:      %s\n", i.ScopeKind)
+	fmt.Printf("Version:    %d\n", i.Version)
+	if l != nil {
+		fmt.Printf("Claimed:    %s (expires %s)\n", l.Holder, l.ExpiresAt)
+	} else {
+		fmt.Printf("Claimed:    (not claimed)\n")
+	}
+	fmt.Printf("Created:    %s\n", i.CreatedAt)
+	fmt.Printf("Updated:    %s\n", i.UpdatedAt)
+}
+
+// printIssuesTable displays a list of issues in a fixed-width table format.
+func printIssuesTable(issues []core.Issue) {
+	fmt.Printf("%-10s %-12s %-12s %-50s %-12s\n", "ID", "SHORT", "STATUS", "TITLE", "ASSIGNEE")
+	fmt.Printf("%-10s %-12s %-12s %-50s %-12s\n", "---", "-----", "------", "-----", "-------")
+	for _, i := range issues {
+		id := truncate(i.ID, 11) // 8 chars + "..."
+		title := truncate(i.Title, 50)
+		status := statusSymbol(i.Status) + " " + i.Status
+		assignee := truncate(i.Assignee, 12)
+		fmt.Printf("%-10s %-12s %-12s %-50s %-12s\n", id, i.ShortID, status, title, assignee)
+	}
 }
 
 func printWorktree(wt core.Worktree) {
