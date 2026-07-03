@@ -1238,3 +1238,230 @@ func TestCloseIssueVersionConflict(t *testing.T) {
 		t.Errorf("expected code %q, got %q", core.ErrConflict, apiErr.Code)
 	}
 }
+
+func TestCreateIssueAppendsEvent(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	issue, err := CreateIssue(db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Event test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	events, err := ListEvents(db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	if events[0].EventType != "issue_created" {
+		t.Errorf("expected event_type 'issue_created', got %q", events[0].EventType)
+	}
+}
+
+func TestClaimIssueAppendsEvent(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	issue, err := CreateIssue(db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Claim event"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = ClaimIssue(db, issue.ID, "agent-1", 3600)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	events, err := ListEvents(db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Should have issue_created + issue_claimed.
+	if len(events) < 2 {
+		t.Fatalf("expected at least 2 events, got %d", len(events))
+	}
+	found := false
+	for _, e := range events {
+		if e.EventType == "issue_claimed" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected an event with event_type 'issue_claimed'")
+	}
+}
+
+func TestReleaseLeaseAppendsEvent(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	issue, err := CreateIssue(db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Release event"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	claim, err := ClaimIssue(db, issue.ID, "agent-1", 3600)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = ReleaseLease(db, issue.ID, claim.LeaseToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	events, err := ListEvents(db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Should have issue_created + issue_claimed + issue_released.
+	found := false
+	for _, e := range events {
+		if e.EventType == "issue_released" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected an event with event_type 'issue_released'")
+	}
+}
+
+func TestCreateNoteAppendsEvent(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	issue, err := CreateIssue(db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Note event"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = CreateNote(db, issue.ID, core.CreateNoteRequest{Author: "tester", Body: "A note"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	events, err := ListEvents(db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Should have issue_created + note_added.
+	found := false
+	for _, e := range events {
+		if e.EventType == "note_added" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected an event with event_type 'note_added'")
+	}
+}
+
+func TestAddDependencyAppendsEvent(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	i1, err := CreateIssue(db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Source"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	i2, err := CreateIssue(db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Target"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = AddDependency(db, i1.ID, core.AddDependencyRequest{DependsOn: i2.ID, Kind: "blocks"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	events, err := ListEvents(db, i1.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Should have issue_created + dependency_added.
+	found := false
+	for _, e := range events {
+		if e.EventType == "dependency_added" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected an event with event_type 'dependency_added'")
+	}
+}
+
+func TestRemoveDependencyAppendsEvent(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	i1, err := CreateIssue(db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Src"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	i2, err := CreateIssue(db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Dst"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = AddDependency(db, i1.ID, core.AddDependencyRequest{DependsOn: i2.ID, Kind: "blocks"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = RemoveDependency(db, i1.ID, i2.ID, "blocks")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	events, err := ListEvents(db, i1.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Should have issue_created + dependency_added + dependency_removed.
+	found := false
+	for _, e := range events {
+		if e.EventType == "dependency_removed" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected an event with event_type 'dependency_removed'")
+	}
+}

@@ -79,6 +79,17 @@ func CreateIssue(db *sql.DB, projectKey string, req core.CreateIssueRequest) (co
 		return core.Issue{}, fmt.Errorf("update next_issue_seq: %w", err)
 	}
 
+	// Append event.
+	eventPayload := fmt.Sprintf(`{"title":"%s","scope_kind":"%s"}`, req.Title, req.ScopeKind)
+	_, err = tx.Exec(
+		`INSERT INTO events (id, issue_id, actor, event_type, payload_json, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
+		uuid.New().String(), id, "unknown", "issue_created", eventPayload, now,
+	)
+	if err != nil {
+		return core.Issue{}, fmt.Errorf("insert event: %w", err)
+	}
+
 	if err := tx.Commit(); err != nil {
 		return core.Issue{}, fmt.Errorf("commit tx: %w", err)
 	}
@@ -305,6 +316,16 @@ func ClaimIssue(db *sql.DB, issueID, holder string, ttlSeconds int) (core.ClaimR
 		return core.ClaimResponse{}, fmt.Errorf("update issue: %w", err)
 	}
 
+	// Append event.
+	_, err = tx.Exec(
+		`INSERT INTO events (id, issue_id, actor, event_type, payload_json, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
+		uuid.New().String(), issueID, holder, "issue_claimed", `{}`, nowStr,
+	)
+	if err != nil {
+		return core.ClaimResponse{}, fmt.Errorf("insert event: %w", err)
+	}
+
 	if err := tx.Commit(); err != nil {
 		return core.ClaimResponse{}, fmt.Errorf("commit tx: %w", err)
 	}
@@ -394,6 +415,16 @@ func ReleaseLease(db *sql.DB, issueID, leaseToken string) error {
 	)
 	if err != nil {
 		return fmt.Errorf("update issue: %w", err)
+	}
+
+	// Append event.
+	_, err = tx.Exec(
+		`INSERT INTO events (id, issue_id, actor, event_type, payload_json, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
+		uuid.New().String(), issueID, holder, "issue_released", `{}`, now,
+	)
+	if err != nil {
+		return fmt.Errorf("insert event: %w", err)
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -656,7 +687,13 @@ func AddDependency(db *sql.DB, issueID string, req core.AddDependencyRequest) er
 
 	now := time.Now().UTC().Format(time.RFC3339)
 
-	_, err := db.Exec(
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	_, err = tx.Exec(
 		`INSERT INTO dependencies (issue_id, depends_on_issue_id, kind, created_at)
 		 VALUES (?, ?, ?, ?)`,
 		issueID, req.DependsOn, kind, now,
@@ -670,6 +707,21 @@ func AddDependency(db *sql.DB, issueID string, req core.AddDependencyRequest) er
 		return fmt.Errorf("insert dependency: %w", err)
 	}
 
+	// Append event.
+	_, err = tx.Exec(
+		`INSERT INTO events (id, issue_id, actor, event_type, payload_json, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
+		uuid.New().String(), issueID, "unknown", "dependency_added",
+		fmt.Sprintf(`{"depends_on":"%s","kind":"%s"}`, req.DependsOn, kind), now,
+	)
+	if err != nil {
+		return fmt.Errorf("insert event: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit tx: %w", err)
+	}
+
 	return nil
 }
 
@@ -679,7 +731,13 @@ func RemoveDependency(db *sql.DB, issueID, dependsOn, kind string) error {
 		kind = "blocks"
 	}
 
-	result, err := db.Exec(
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	result, err := tx.Exec(
 		`DELETE FROM dependencies WHERE issue_id = ? AND depends_on_issue_id = ? AND kind = ?`,
 		issueID, dependsOn, kind,
 	)
@@ -693,6 +751,23 @@ func RemoveDependency(db *sql.DB, issueID, dependsOn, kind string) error {
 	}
 	if rows == 0 {
 		return core.NewAPIError(core.ErrNotFound, "dependency not found")
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	// Append event.
+	_, err = tx.Exec(
+		`INSERT INTO events (id, issue_id, actor, event_type, payload_json, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
+		uuid.New().String(), issueID, "unknown", "dependency_removed",
+		fmt.Sprintf(`{"depends_on":"%s","kind":"%s"}`, dependsOn, kind), now,
+	)
+	if err != nil {
+		return fmt.Errorf("insert event: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit tx: %w", err)
 	}
 
 	return nil
@@ -810,13 +885,33 @@ func CreateNote(db *sql.DB, issueID string, req core.CreateNoteRequest) (core.No
 	now := time.Now().UTC().Format(time.RFC3339)
 	id := uuid.New().String()
 
-	_, err := db.Exec(
+	tx, err := db.Begin()
+	if err != nil {
+		return core.Note{}, fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	_, err = tx.Exec(
 		`INSERT INTO notes (id, issue_id, author, body, created_at)
 		 VALUES (?, ?, ?, ?, ?)`,
 		id, issueID, req.Author, req.Body, now,
 	)
 	if err != nil {
 		return core.Note{}, fmt.Errorf("insert note: %w", err)
+	}
+
+	// Append event.
+	_, err = tx.Exec(
+		`INSERT INTO events (id, issue_id, actor, event_type, payload_json, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
+		uuid.New().String(), issueID, req.Author, "note_added", `{}`, now,
+	)
+	if err != nil {
+		return core.Note{}, fmt.Errorf("insert event: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return core.Note{}, fmt.Errorf("commit tx: %w", err)
 	}
 
 	return core.Note{
