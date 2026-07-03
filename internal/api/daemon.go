@@ -1,0 +1,124 @@
+package api
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log/slog"
+	"net"
+	"net/http"
+	"os"
+	"path/filepath"
+	"time"
+
+	"github.com/abevz/af-coordinator/internal/config"
+	"github.com/abevz/af-coordinator/internal/core"
+)
+
+func RunDaemon(ctx context.Context, logger *slog.Logger, cfg config.Config) error {
+	if err := os.MkdirAll(filepath.Dir(cfg.SocketPath), 0o755); err != nil {
+		return fmt.Errorf("create socket directory: %w", err)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(cfg.DBPath), 0o755); err != nil {
+		return fmt.Errorf("create db directory: %w", err)
+	}
+
+	if err := removeStaleSocket(cfg.SocketPath); err != nil {
+		return err
+	}
+
+	listener, err := net.Listen("unix", cfg.SocketPath)
+	if err != nil {
+		return fmt.Errorf("listen on unix socket: %w", err)
+	}
+	defer func() {
+		_ = listener.Close()
+		_ = os.Remove(cfg.SocketPath)
+	}()
+
+	if err := os.Chmod(cfg.SocketPath, 0o660); err != nil {
+		logger.Warn("failed to chmod socket", "path", cfg.SocketPath, "error", err)
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, core.Health{
+			Name:       "af-coordinator",
+			Status:     "ok",
+			DBPath:     cfg.DBPath,
+			SocketPath: cfg.SocketPath,
+			Time:       time.Now().UTC(),
+		})
+	})
+	mux.HandleFunc("/v1/health", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, core.Health{
+			Name:       "af-coordinator",
+			Status:     "ok",
+			DBPath:     cfg.DBPath,
+			SocketPath: cfg.SocketPath,
+			Time:       time.Now().UTC(),
+		})
+	})
+
+	server := &http.Server{
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+
+	errCh := make(chan error, 1)
+	go func() {
+		logger.Info("daemon started", "socket", cfg.SocketPath, "db", cfg.DBPath)
+		if serveErr := server.Serve(listener); serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
+			errCh <- serveErr
+			return
+		}
+		errCh <- nil
+	}()
+
+	select {
+	case <-ctx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			return fmt.Errorf("shutdown server: %w", err)
+		}
+
+		return nil
+	case err := <-errCh:
+		if err != nil {
+			return fmt.Errorf("serve http: %w", err)
+		}
+
+		return nil
+	}
+}
+
+func removeStaleSocket(path string) error {
+	info, err := os.Stat(path)
+	if err == nil {
+		if info.Mode()&os.ModeSocket == 0 {
+			return fmt.Errorf("path exists and is not a socket: %s", path)
+		}
+
+		if err := os.Remove(path); err != nil {
+			return fmt.Errorf("remove stale socket: %w", err)
+		}
+
+		return nil
+	}
+
+	if os.IsNotExist(err) {
+		return nil
+	}
+
+	return fmt.Errorf("stat socket path: %w", err)
+}
+
+func writeJSON(w http.ResponseWriter, status int, payload any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(payload)
+}

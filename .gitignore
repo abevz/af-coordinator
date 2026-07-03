@@ -1,0 +1,8 @@
+/.bare/
+/bin/
+/dist/
+/.cache/
+*.log
+*.out
+af-coordinatord
+afctl
