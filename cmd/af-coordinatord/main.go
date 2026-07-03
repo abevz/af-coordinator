@@ -7,6 +7,8 @@ import (
 	"os/signal"
 	"syscall"
 
+	"path/filepath"
+
 	"github.com/abevz/af-coordinator/internal/api"
 	"github.com/abevz/af-coordinator/internal/config"
 	"github.com/abevz/af-coordinator/internal/store/sqlite"
@@ -19,6 +21,12 @@ func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
 		Level: cfg.SlogLevel(),
 	}))
+
+	// Ensure database directory exists before opening.
+	if err := os.MkdirAll(filepath.Dir(cfg.DBPath), 0o755); err != nil {
+		logger.Error("failed to create database directory", "error", err)
+		os.Exit(1)
+	}
 
 	// Open database and run migrations.
 	db, err := sqlite.Open(cfg.DBPath)
