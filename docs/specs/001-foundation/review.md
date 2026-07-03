@@ -273,3 +273,17 @@ Use this file to capture:
 - `go build ./...` — compiles clean
 - `go test ./...` — all tests pass, including the new event tests
 - `go vet ./...` — clean
+
+## AFC-SDD-0016 — Enforce artifact kind validation on write
+
+### What shipped
+
+- Added `core.ValidateArtifactKind` call to `CreateArtifact` and `CreateArtifactRoot` in the SQLite store, rejecting invalid kinds with `ErrValidationFailed`
+- Added `"sdd"` to the known kinds list in `ValidateArtifactKind` (the default for artifact roots)
+- Added 2 tests verifying invalid kinds are rejected
+
+### What was verified
+
+- `go build ./...` — compiles clean
+- `go test ./...` — all tests pass, including the new validation tests
+- `go vet ./...` — clean

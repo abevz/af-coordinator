@@ -40,7 +40,7 @@
     The spec requires: issue created, issue claimed, note added,
     dependency added/removed. Release and lease-expiry sweep should also
     emit. Heartbeats must stay event-free.
-- [ ] AFC-SDD-0016 Enforce artifact kind validation on write
+- [x] AFC-SDD-0016 Enforce artifact kind validation on write
   - `ValidateArtifactKind` exists but is not called on the write path.
 
 ## Next tracks (after the punch list — nothing below starts without its own spec packet)
