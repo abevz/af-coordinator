@@ -45,6 +45,7 @@ func RunDaemon(ctx context.Context, logger *slog.Logger, cfg config.Config, db *
 
 	mux := http.NewServeMux()
 
+	// Health endpoints.
 	healthHandler := func(w http.ResponseWriter, r *http.Request) {
 		h := core.Health{
 			Name:       "af-coordinator",
@@ -64,6 +65,18 @@ func RunDaemon(ctx context.Context, logger *slog.Logger, cfg config.Config, db *
 
 	mux.HandleFunc("/healthz", healthHandler)
 	mux.HandleFunc("/v1/health", healthHandler)
+
+	// Project registration.
+	mux.HandleFunc("POST /v1/projects", handleCreateProject(db, logger))
+	mux.HandleFunc("GET /v1/projects", handleListProjects(db, logger))
+
+	// Repository registration.
+	mux.HandleFunc("POST /v1/repos", handleCreateRepo(db, logger))
+	mux.HandleFunc("GET /v1/repos", handleListRepos(db, logger))
+
+	// Worktree registration.
+	mux.HandleFunc("POST /v1/worktrees", handleRegisterWorktree(db, logger))
+	mux.HandleFunc("GET /v1/worktrees", handleListWorktrees(db, logger))
 
 	server := &http.Server{
 		Handler:           mux,
