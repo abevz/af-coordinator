@@ -97,33 +97,44 @@ Keep `main.go` files thin. Push behavior down into `internal/`.
 This project uses a `.bare` git worktree model. All implementation work
 MUST go through a git worktree, never write directly to the `main/` checkout.
 
-CodeWhale upstream supports first-class sub-agent worktree isolation through
-`worktree`, `worktree_branch`, `worktree_base`, and `worktree_path` on the
-sub-agent spawn call. For this repository:
+CodeWhale upstream supports first-class sub-agent worktree isolation on
+`agent_open` / sub-agent spawn arguments through `worktree`,
+`worktree_branch`, `worktree_base`, and `worktree_path`. For this repository:
 
-- when opening a sub-agent with `worktree: true`, always set
-  `worktree_path` explicitly
+- when opening a sub-agent, use the `agent_open` / spawn-argument form, not an
+  abstract `agent(...)` shorthand
+- set `worktree: true`
+- always set `worktree_path` explicitly
+- prefer setting `worktree_branch` explicitly too, so the child branch name is
+  deterministic and sibling worktree cleanup is easier
 - use an absolute sibling path at the repo root; relative paths still resolve
   under CodeWhale's default `.codewhale-worktrees/` root
 - do not rely on CodeWhale defaults for this repository; without an explicit
   absolute `worktree_path`, CodeWhale will create the child checkout under
   `.codewhale-worktrees/...`
+- do not pass both `cwd` and `worktree`; for isolated parallel edits in this
+  repo, use `worktree`, not a hand-picked `cwd`
 
-Example:
+Preferred shape:
 
-```
-# CORRECT — sibling worktree at repo root, alongside main/
-agent(
-    worktree=True,
-    worktree_path="/home/abevz/github/af-coordinator/<branch-name>",
-)
+```text
+agent_open / sub-agent spawn args:
+  {
+    "worktree": true,
+    "worktree_branch": "docs/example-branch",
+    "worktree_path": "/home/abevz/github/af-coordinator/docs-example-branch"
+  }
 ```
 
-```
-# WRONG — default path creates .codewhale-worktrees/ subdirectory
-agent(
-    worktree=True,  # missing worktree_path
-)
+Wrong:
+
+```text
+agent_open / sub-agent spawn args:
+  {
+    "worktree": true
+  }
+
+This falls back to CodeWhale's default `.codewhale-worktrees/...` layout.
 ```
 
 Every feature commit MUST land via a worktree branch that is merged into
