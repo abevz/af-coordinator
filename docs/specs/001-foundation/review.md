@@ -254,3 +254,22 @@ Use this file to capture:
 - what was verified
 - which tasks remain open
 - whether implementation still matches requirements and design
+
+## AFC-SDD-0015 — Complete event coverage for issue lifecycle
+
+### What shipped
+
+- Added `issue_created` event to `CreateIssue`
+- Added `issue_claimed` event to `ClaimIssue`
+- Added `note_added` event to `CreateNote`
+- Added `dependency_added`/`dependency_removed` events to `AddDependency`/`RemoveDependency`
+- Added `issue_released` event to `ReleaseLease`
+- Wrapped `CreateNote`, `AddDependency`, `RemoveDependency` in transactions for atomicity
+- Added 6 tests verifying each event type is correctly appended
+- HeartbeatLease explicitly left event-free per spec
+
+### What was verified
+
+- `go build ./...` — compiles clean
+- `go test ./...` — all tests pass, including the new event tests
+- `go vet ./...` — clean

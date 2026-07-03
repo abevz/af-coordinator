@@ -35,7 +35,7 @@
     joining `dependencies` (kind = 'blocks') to blocker issues whose
     status is not `done`/`cancelled`, plus tests for blocked/unblocked
     transitions.
-- [ ] AFC-SDD-0015 Complete event coverage per architecture spec
+- [x] AFC-SDD-0015 Complete event coverage per architecture spec
   - Events are currently appended only by `UpdateIssue` and `CloseIssue`.
     The spec requires: issue created, issue claimed, note added,
     dependency added/removed. Release and lease-expiry sweep should also
