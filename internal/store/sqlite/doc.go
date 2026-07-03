@@ -1,5 +1,4 @@
-// Package sqlite will contain the SQLite-backed persistence implementation for
-// af-coordinator. It is intentionally empty in the bootstrap phase so the
-// transport and process model can be compiled before schema and repository code
-// land.
+// Package sqlite implements SQLite-backed persistence for the coordinator.
+// It provides database initialization, migration application, and the
+// repository layer for all domain objects.
 package sqlite

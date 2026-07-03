@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,7 +17,7 @@ import (
 	"github.com/abevz/af-coordinator/internal/core"
 )
 
-func RunDaemon(ctx context.Context, logger *slog.Logger, cfg config.Config) error {
+func RunDaemon(ctx context.Context, logger *slog.Logger, cfg config.Config, db *sql.DB) error {
 	if err := os.MkdirAll(filepath.Dir(cfg.SocketPath), 0o755); err != nil {
 		return fmt.Errorf("create socket directory: %w", err)
 	}
@@ -43,24 +44,26 @@ func RunDaemon(ctx context.Context, logger *slog.Logger, cfg config.Config) erro
 	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, core.Health{
+
+	healthHandler := func(w http.ResponseWriter, r *http.Request) {
+		h := core.Health{
 			Name:       "af-coordinator",
 			Status:     "ok",
 			DBPath:     cfg.DBPath,
 			SocketPath: cfg.SocketPath,
 			Time:       time.Now().UTC(),
-		})
-	})
-	mux.HandleFunc("/v1/health", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, core.Health{
-			Name:       "af-coordinator",
-			Status:     "ok",
-			DBPath:     cfg.DBPath,
-			SocketPath: cfg.SocketPath,
-			Time:       time.Now().UTC(),
-		})
-	})
+		}
+
+		if err := db.PingContext(r.Context()); err != nil {
+			h.Status = "degraded"
+			logger.Warn("health check db ping failed", "error", err)
+		}
+
+		writeJSON(w, http.StatusOK, h)
+	}
+
+	mux.HandleFunc("/healthz", healthHandler)
+	mux.HandleFunc("/v1/health", healthHandler)
 
 	server := &http.Server{
 		Handler:           mux,
