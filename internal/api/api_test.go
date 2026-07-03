@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	_ "modernc.org/sqlite"
 )
@@ -363,6 +364,7 @@ func TestListProjects(t *testing.T) {
 	server, db := newTestServer(t)
 
 	// Insert two projects directly
+	now := time.Now().UTC().Format(time.RFC3339)
 	for _, p := range []struct {
 		id, key, name string
 	}{
@@ -371,8 +373,8 @@ func TestListProjects(t *testing.T) {
 	} {
 		_, err := db.Exec(
 			`INSERT INTO projects (id, key, name, description, next_issue_seq, created_at, updated_at)
-			 VALUES (?, ?, ?, '', 1, datetime('now'), datetime('now'))`,
-			p.id, p.key, p.name,
+			 VALUES (?, ?, ?, '', 1, ?, ?)`,
+			p.id, p.key, p.name, now, now,
 		)
 		if err != nil {
 			t.Fatal(err)
@@ -415,9 +417,11 @@ func TestCreateRepo(t *testing.T) {
 	server, db := newTestServer(t)
 
 	// Create a project first
+	now := time.Now().UTC().Format(time.RFC3339)
 	_, err := db.Exec(
 		`INSERT INTO projects (id, key, name, description, next_issue_seq, created_at, updated_at)
-		 VALUES ('proj-1', 'test', 'Test Project', '', 1, datetime('now'), datetime('now'))`,
+		 VALUES ('proj-1', 'test', 'Test Project', '', 1, ?, ?)`,
+		now, now,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -458,16 +462,19 @@ func TestListRepos(t *testing.T) {
 	server, db := newTestServer(t)
 
 	// Create a project and a repo
+	now := time.Now().UTC().Format(time.RFC3339)
 	_, err := db.Exec(
 		`INSERT INTO projects (id, key, name, description, next_issue_seq, created_at, updated_at)
-		 VALUES ('proj-1', 'test', 'Test', '', 1, datetime('now'), datetime('now'))`,
+		 VALUES ('proj-1', 'test', 'Test', '', 1, ?, ?)`,
+		now, now,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	_, err = db.Exec(
 		`INSERT INTO repositories (id, project_id, logical_name, canonical_git_dir, default_branch, created_at, updated_at)
-		 VALUES ('repo-1', 'proj-1', 'main', '/tmp/repo', 'main', datetime('now'), datetime('now'))`,
+		 VALUES ('repo-1', 'proj-1', 'main', '/tmp/repo', 'main', ?, ?)`,
+		now, now,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -505,9 +512,11 @@ func TestCreateIssue(t *testing.T) {
 	server, db := newTestServer(t)
 
 	// Create a project
+	now := time.Now().UTC().Format(time.RFC3339)
 	_, err := db.Exec(
 		`INSERT INTO projects (id, key, name, description, next_issue_seq, created_at, updated_at)
-		 VALUES ('proj-1', 'test', 'Test', '', 1, datetime('now'), datetime('now'))`,
+		 VALUES ('proj-1', 'test', 'Test', '', 1, ?, ?)`,
+		now, now,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -558,9 +567,11 @@ func TestCreateIssue(t *testing.T) {
 func TestCreateIssueMissingTitle(t *testing.T) {
 	server, db := newTestServer(t)
 
+	now := time.Now().UTC().Format(time.RFC3339)
 	_, err := db.Exec(
 		`INSERT INTO projects (id, key, name, description, next_issue_seq, created_at, updated_at)
-		 VALUES ('proj-1', 'test', 'Test', '', 1, datetime('now'), datetime('now'))`,
+		 VALUES ('proj-1', 'test', 'Test', '', 1, ?, ?)`,
+		now, now,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -593,9 +604,11 @@ func TestGetIssue(t *testing.T) {
 	server, db := newTestServer(t)
 
 	// Create project + issue directly
+	now := time.Now().UTC().Format(time.RFC3339)
 	_, err := db.Exec(
 		`INSERT INTO projects (id, key, name, description, next_issue_seq, created_at, updated_at)
-		 VALUES ('proj-1', 'test', 'Test', '', 1, datetime('now'), datetime('now'))`,
+		 VALUES ('proj-1', 'test', 'Test', '', 1, ?, ?)`,
+		now, now,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -603,8 +616,8 @@ func TestGetIssue(t *testing.T) {
 	issueID := "issue-1"
 	_, err = db.Exec(
 		`INSERT INTO issues (id, short_id, project_id, scope_kind, title, description, status, priority, assignee, version, created_at, updated_at)
-		 VALUES (?, 'test-1', 'proj-1', 'project', 'Test issue', '', 'open', 3, '', 1, datetime('now'), datetime('now'))`,
-		issueID,
+		 VALUES (?, 'test-1', 'proj-1', 'project', 'Test issue', '', 'open', 3, '', 1, ?, ?)`,
+		issueID, now, now,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -655,9 +668,11 @@ func TestClaimIssue(t *testing.T) {
 	server, db := newTestServer(t)
 
 	// Create project and issue
+	now := time.Now().UTC().Format(time.RFC3339)
 	_, err := db.Exec(
 		`INSERT INTO projects (id, key, name, description, next_issue_seq, created_at, updated_at)
-		 VALUES ('proj-1', 'test', 'Test', '', 1, datetime('now'), datetime('now'))`,
+		 VALUES ('proj-1', 'test', 'Test', '', 1, ?, ?)`,
+		now, now,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -665,8 +680,8 @@ func TestClaimIssue(t *testing.T) {
 	issueID := "issue-1"
 	_, err = db.Exec(
 		`INSERT INTO issues (id, short_id, project_id, scope_kind, title, description, status, priority, assignee, version, created_at, updated_at)
-		 VALUES (?, 'test-1', 'proj-1', 'project', 'Claimable', '', 'open', 3, '', 1, datetime('now'), datetime('now'))`,
-		issueID,
+		 VALUES (?, 'test-1', 'proj-1', 'project', 'Claimable', '', 'open', 3, '', 1, ?, ?)`,
+		issueID, now, now,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -725,9 +740,11 @@ func TestListIssues(t *testing.T) {
 	server, db := newTestServer(t)
 
 	// Create project and issues
+	now := time.Now().UTC().Format(time.RFC3339)
 	_, err := db.Exec(
 		`INSERT INTO projects (id, key, name, description, next_issue_seq, created_at, updated_at)
-		 VALUES ('proj-1', 'test', 'Test', '', 1, datetime('now'), datetime('now'))`,
+		 VALUES ('proj-1', 'test', 'Test', '', 1, ?, ?)`,
+		now, now,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -736,8 +753,8 @@ func TestListIssues(t *testing.T) {
 		shortID := "test-" + string(rune('1'+i))
 		_, err := db.Exec(
 			`INSERT INTO issues (id, short_id, project_id, scope_kind, title, description, status, priority, assignee, version, created_at, updated_at)
-			 VALUES (?, ?, 'proj-1', 'project', ?, '', 'open', 3, '', 1, datetime('now'), datetime('now'))`,
-			"issue-"+string(rune('a'+i)), shortID, title,
+			 VALUES (?, ?, 'proj-1', 'project', ?, '', 'open', 3, '', 1, ?, ?)`,
+			"issue-"+string(rune('a'+i)), shortID, title, now, now,
 		)
 		if err != nil {
 			t.Fatal(err)
@@ -817,16 +834,19 @@ func TestCreateWorktree(t *testing.T) {
 	server, db := newTestServer(t)
 
 	// Create project and repo
+	now := time.Now().UTC().Format(time.RFC3339)
 	_, err := db.Exec(
 		`INSERT INTO projects (id, key, name, description, next_issue_seq, created_at, updated_at)
-		 VALUES ('proj-1', 'test', 'Test', '', 1, datetime('now'), datetime('now'))`,
+		 VALUES ('proj-1', 'test', 'Test', '', 1, ?, ?)`,
+		now, now,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	_, err = db.Exec(
 		`INSERT INTO repositories (id, project_id, logical_name, canonical_git_dir, default_branch, created_at, updated_at)
-		 VALUES ('repo-1', 'proj-1', 'main', '/tmp/repo', 'main', datetime('now'), datetime('now'))`,
+		 VALUES ('repo-1', 'proj-1', 'main', '/tmp/repo', 'main', ?, ?)`,
+		now, now,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -869,16 +889,19 @@ func TestCreateArtifactRoot(t *testing.T) {
 	server, db := newTestServer(t)
 
 	// Create project and repo
+	now := time.Now().UTC().Format(time.RFC3339)
 	_, err := db.Exec(
 		`INSERT INTO projects (id, key, name, description, next_issue_seq, created_at, updated_at)
-		 VALUES ('proj-1', 'test', 'Test', '', 1, datetime('now'), datetime('now'))`,
+		 VALUES ('proj-1', 'test', 'Test', '', 1, ?, ?)`,
+		now, now,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	_, err = db.Exec(
 		`INSERT INTO repositories (id, project_id, logical_name, canonical_git_dir, default_branch, created_at, updated_at)
-		 VALUES ('repo-1', 'proj-1', 'main', '/tmp/repo', 'main', datetime('now'), datetime('now'))`,
+		 VALUES ('repo-1', 'proj-1', 'main', '/tmp/repo', 'main', ?, ?)`,
+		now, now,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -921,16 +944,19 @@ func TestCreateArtifact(t *testing.T) {
 	server, db := newTestServer(t)
 
 	// Create project and repo
+	now := time.Now().UTC().Format(time.RFC3339)
 	_, err := db.Exec(
 		`INSERT INTO projects (id, key, name, description, next_issue_seq, created_at, updated_at)
-		 VALUES ('proj-1', 'test', 'Test', '', 1, datetime('now'), datetime('now'))`,
+		 VALUES ('proj-1', 'test', 'Test', '', 1, ?, ?)`,
+		now, now,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	_, err = db.Exec(
 		`INSERT INTO repositories (id, project_id, logical_name, canonical_git_dir, default_branch, created_at, updated_at)
-		 VALUES ('repo-1', 'proj-1', 'main', '/tmp/repo', 'main', datetime('now'), datetime('now'))`,
+		 VALUES ('repo-1', 'proj-1', 'main', '/tmp/repo', 'main', ?, ?)`,
+		now, now,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -973,9 +999,11 @@ func TestUpdateIssue(t *testing.T) {
 	server, db := newTestServer(t)
 
 	// Create project and issue
+	now := time.Now().UTC().Format(time.RFC3339)
 	_, err := db.Exec(
 		`INSERT INTO projects (id, key, name, description, next_issue_seq, created_at, updated_at)
-		 VALUES ('proj-1', 'test', 'Test', '', 1, datetime('now'), datetime('now'))`,
+		 VALUES ('proj-1', 'test', 'Test', '', 1, ?, ?)`,
+		now, now,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -983,8 +1011,8 @@ func TestUpdateIssue(t *testing.T) {
 	issueID := "issue-1"
 	_, err = db.Exec(
 		`INSERT INTO issues (id, short_id, project_id, scope_kind, title, description, status, priority, assignee, version, created_at, updated_at)
-		 VALUES (?, 'test-1', 'proj-1', 'project', 'Original', '', 'open', 3, '', 1, datetime('now'), datetime('now'))`,
-		issueID,
+		 VALUES (?, 'test-1', 'proj-1', 'project', 'Original', '', 'open', 3, '', 1, ?, ?)`,
+		issueID, now, now,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -1030,9 +1058,11 @@ func TestCloseIssue(t *testing.T) {
 	server, db := newTestServer(t)
 
 	// Create project and issue
+	now := time.Now().UTC().Format(time.RFC3339)
 	_, err := db.Exec(
 		`INSERT INTO projects (id, key, name, description, next_issue_seq, created_at, updated_at)
-		 VALUES ('proj-1', 'test', 'Test', '', 1, datetime('now'), datetime('now'))`,
+		 VALUES ('proj-1', 'test', 'Test', '', 1, ?, ?)`,
+		now, now,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -1040,8 +1070,8 @@ func TestCloseIssue(t *testing.T) {
 	issueID := "issue-1"
 	_, err = db.Exec(
 		`INSERT INTO issues (id, short_id, project_id, scope_kind, title, description, status, priority, assignee, version, created_at, updated_at)
-		 VALUES (?, 'test-1', 'proj-1', 'project', 'Closable', '', 'open', 3, '', 1, datetime('now'), datetime('now'))`,
-		issueID,
+		 VALUES (?, 'test-1', 'proj-1', 'project', 'Closable', '', 'open', 3, '', 1, ?, ?)`,
+		issueID, now, now,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -1070,9 +1100,11 @@ func TestCreateAndListNotes(t *testing.T) {
 	server, db := newTestServer(t)
 
 	// Create project and issue
+	now := time.Now().UTC().Format(time.RFC3339)
 	_, err := db.Exec(
 		`INSERT INTO projects (id, key, name, description, next_issue_seq, created_at, updated_at)
-		 VALUES ('proj-1', 'test', 'Test', '', 1, datetime('now'), datetime('now'))`,
+		 VALUES ('proj-1', 'test', 'Test', '', 1, ?, ?)`,
+		now, now,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -1080,8 +1112,8 @@ func TestCreateAndListNotes(t *testing.T) {
 	issueID := "issue-1"
 	_, err = db.Exec(
 		`INSERT INTO issues (id, short_id, project_id, scope_kind, title, description, status, priority, assignee, version, created_at, updated_at)
-		 VALUES (?, 'test-1', 'proj-1', 'project', 'Noted', '', 'open', 3, '', 1, datetime('now'), datetime('now'))`,
-		issueID,
+		 VALUES (?, 'test-1', 'proj-1', 'project', 'Noted', '', 'open', 3, '', 1, ?, ?)`,
+		issueID, now, now,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -1142,9 +1174,11 @@ func TestListEvents(t *testing.T) {
 	server, db := newTestServer(t)
 
 	// Create project and issue
+	now := time.Now().UTC().Format(time.RFC3339)
 	_, err := db.Exec(
 		`INSERT INTO projects (id, key, name, description, next_issue_seq, created_at, updated_at)
-		 VALUES ('proj-1', 'test', 'Test', '', 1, datetime('now'), datetime('now'))`,
+		 VALUES ('proj-1', 'test', 'Test', '', 1, ?, ?)`,
+		now, now,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -1152,8 +1186,8 @@ func TestListEvents(t *testing.T) {
 	issueID := "issue-1"
 	_, err = db.Exec(
 		`INSERT INTO issues (id, short_id, project_id, scope_kind, title, description, status, priority, assignee, version, created_at, updated_at)
-		 VALUES (?, 'test-1', 'proj-1', 'project', 'Eventful', '', 'open', 3, '', 1, datetime('now'), datetime('now'))`,
-		issueID,
+		 VALUES (?, 'test-1', 'proj-1', 'project', 'Eventful', '', 'open', 3, '', 1, ?, ?)`,
+		issueID, now, now,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -1162,8 +1196,8 @@ func TestListEvents(t *testing.T) {
 	// Insert an event directly
 	_, err = db.Exec(
 		`INSERT INTO events (id, issue_id, actor, event_type, payload_json, created_at)
-		 VALUES ('evt-1', ?, 'system', 'issue.created', '{}', datetime('now'))`,
-		issueID,
+		 VALUES ('evt-1', ?, 'system', 'issue.created', '{}', ?)`,
+		issueID, now,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -1206,23 +1240,27 @@ func TestAddRemoveDependency(t *testing.T) {
 	server, db := newTestServer(t)
 
 	// Create project and two issues
+	now := time.Now().UTC().Format(time.RFC3339)
 	_, err := db.Exec(
 		`INSERT INTO projects (id, key, name, description, next_issue_seq, created_at, updated_at)
-		 VALUES ('proj-1', 'test', 'Test', '', 1, datetime('now'), datetime('now'))`,
+		 VALUES ('proj-1', 'test', 'Test', '', 1, ?, ?)`,
+		now, now,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	_, err = db.Exec(
 		`INSERT INTO issues (id, short_id, project_id, scope_kind, title, description, status, priority, assignee, version, created_at, updated_at)
-		 VALUES ('issue-1', 'test-1', 'proj-1', 'project', 'First', '', 'open', 3, '', 1, datetime('now'), datetime('now'))`,
+		 VALUES ('issue-1', 'test-1', 'proj-1', 'project', 'First', '', 'open', 3, '', 1, ?, ?)`,
+		now, now,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	_, err = db.Exec(
 		`INSERT INTO issues (id, short_id, project_id, scope_kind, title, description, status, priority, assignee, version, created_at, updated_at)
-		 VALUES ('issue-2', 'test-2', 'proj-1', 'project', 'Second', '', 'open', 3, '', 1, datetime('now'), datetime('now'))`,
+		 VALUES ('issue-2', 'test-2', 'proj-1', 'project', 'Second', '', 'open', 3, '', 1, ?, ?)`,
+		now, now,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -1265,9 +1303,11 @@ func TestReleaseLease(t *testing.T) {
 	server, db := newTestServer(t)
 
 	// Create project and issue
+	now := time.Now().UTC().Format(time.RFC3339)
 	_, err := db.Exec(
 		`INSERT INTO projects (id, key, name, description, next_issue_seq, created_at, updated_at)
-		 VALUES ('proj-1', 'test', 'Test', '', 1, datetime('now'), datetime('now'))`,
+		 VALUES ('proj-1', 'test', 'Test', '', 1, ?, ?)`,
+		now, now,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -1275,8 +1315,8 @@ func TestReleaseLease(t *testing.T) {
 	issueID := "issue-1"
 	_, err = db.Exec(
 		`INSERT INTO issues (id, short_id, project_id, scope_kind, title, description, status, priority, assignee, version, created_at, updated_at)
-		 VALUES (?, 'test-1', 'proj-1', 'project', 'Leased', '', 'open', 3, '', 1, datetime('now'), datetime('now'))`,
-		issueID,
+		 VALUES (?, 'test-1', 'proj-1', 'project', 'Leased', '', 'open', 3, '', 1, ?, ?)`,
+		issueID, now, now,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -1320,9 +1360,11 @@ func TestHeartbeatLease(t *testing.T) {
 	server, db := newTestServer(t)
 
 	// Create project and issue
+	now := time.Now().UTC().Format(time.RFC3339)
 	_, err := db.Exec(
 		`INSERT INTO projects (id, key, name, description, next_issue_seq, created_at, updated_at)
-		 VALUES ('proj-1', 'test', 'Test', '', 1, datetime('now'), datetime('now'))`,
+		 VALUES ('proj-1', 'test', 'Test', '', 1, ?, ?)`,
+		now, now,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -1330,8 +1372,8 @@ func TestHeartbeatLease(t *testing.T) {
 	issueID := "issue-1"
 	_, err = db.Exec(
 		`INSERT INTO issues (id, short_id, project_id, scope_kind, title, description, status, priority, assignee, version, created_at, updated_at)
-		 VALUES (?, 'test-1', 'proj-1', 'project', 'Heartbeatable', '', 'open', 3, '', 1, datetime('now'), datetime('now'))`,
-		issueID,
+		 VALUES (?, 'test-1', 'proj-1', 'project', 'Heartbeatable', '', 'open', 3, '', 1, ?, ?)`,
+		issueID, now, now,
 	)
 	if err != nil {
 		t.Fatal(err)

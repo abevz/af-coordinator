@@ -204,7 +204,9 @@ func ListReadyIssues(db *sql.DB, projectID string) ([]core.Issue, error) {
 	                 claimed_at, closed_at, created_at, updated_at
 	          FROM issues
 	          WHERE status NOT IN ('done', 'cancelled', 'deferred', 'blocked')
-	            AND id NOT IN (SELECT issue_id FROM leases WHERE expires_at > datetime('now'))`
+	            AND id NOT IN (SELECT issue_id FROM leases WHERE expires_at > ?)`
+
+	args = append(args, time.Now().UTC().Format(time.RFC3339))
 
 	if projectID != "" {
 		query += " AND project_id = ?"
@@ -259,9 +261,10 @@ func ClaimIssue(db *sql.DB, issueID, holder string, ttlSeconds int) (core.ClaimR
 
 	// Check no unexpired lease exists.
 	var leaseCount int
+	nowRFC := time.Now().UTC().Format(time.RFC3339)
 	err = tx.QueryRow(
-		`SELECT count(*) FROM leases WHERE issue_id = ? AND expires_at > datetime('now')`,
-		issueID,
+		`SELECT count(*) FROM leases WHERE issue_id = ? AND expires_at > ?`,
+		issueID, nowRFC,
 	).Scan(&leaseCount)
 	if err != nil {
 		return core.ClaimResponse{}, fmt.Errorf("check lease: %w", err)
@@ -395,8 +398,8 @@ func ReleaseLease(db *sql.DB, issueID, leaseToken string) error {
 
 func getActiveLease(db *sql.DB, issueID string) (*core.IssueLease, error) {
 	row := db.QueryRow(
-		`SELECT holder, lease_token, expires_at FROM leases WHERE issue_id = ? AND expires_at > datetime('now')`,
-		issueID,
+		`SELECT holder, lease_token, expires_at FROM leases WHERE issue_id = ? AND expires_at > ?`,
+		issueID, time.Now().UTC().Format(time.RFC3339),
 	)
 	var lease core.IssueLease
 	err := row.Scan(&lease.Holder, &lease.LeaseToken, &lease.ExpiresAt)

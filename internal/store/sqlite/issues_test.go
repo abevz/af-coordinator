@@ -3,8 +3,10 @@ package sqlite
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/abevz/af-coordinator/internal/core"
+	"github.com/google/uuid"
 )
 
 func TestCreateIssue(t *testing.T) {
@@ -505,6 +507,50 @@ func TestListReadyIssuesByProject(t *testing.T) {
 	}
 	if len(ready) > 0 && ready[0].Title != "P1 issue" {
 		t.Errorf("expected title 'P1 issue', got %q", ready[0].Title)
+	}
+}
+
+func TestListReadyIssuesWithExpiredLease(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	issue, err := CreateIssue(db, "test", core.CreateIssueRequest{
+		ScopeKind: "project",
+		Title:     "Expired lease",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Insert a lease with an already-expired RFC 3339 timestamp.
+	// This simulates the bug: same-day expiry where datetime('now') comparison
+	// would incorrectly match due to format mismatch.
+	leaseID := uuid.New().String()
+	pastTime := time.Now().UTC().Add(-1 * time.Hour).Format(time.RFC3339)
+	_, err = db.Exec(
+		`INSERT INTO leases (issue_id, holder, lease_token, expires_at, created_at, updated_at)
+		 VALUES (?, 'agent-1', ?, ?, ?, ?)`,
+		issue.ID, leaseID, pastTime, pastTime, pastTime,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// ListReadyIssues should return the issue despite the expired lease.
+	ready, err := ListReadyIssues(db, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ready) != 1 {
+		t.Fatalf("expected 1 ready issue (expired lease should not block), got %d", len(ready))
+	}
+	if ready[0].ID != issue.ID {
+		t.Errorf("expected issue %q, got %q", issue.ID, ready[0].ID)
 	}
 }
 
