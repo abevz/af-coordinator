@@ -115,6 +115,9 @@ CodeWhale upstream supports first-class sub-agent worktree isolation on
   `.codewhale-worktrees/...`
 - do not pass both `cwd` and `worktree`; for isolated parallel edits in this
   repo, use `worktree`, not a hand-picked `cwd`
+- `.codewhale/hooks.toml` enforces these spawn requirements for both the current
+  `agent` tool name and the documented `agent_open` name; a rejected spawn must
+  be retried with the required arguments, not bypassed by editing `main/`
 
 Preferred shape:
 
