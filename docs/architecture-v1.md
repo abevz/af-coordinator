@@ -347,6 +347,47 @@ Mutating requests include `expected_version` (plus `lease_token` where the
 matrix requires it). If the version mismatches, return conflict and require
 reread.
 
+### Walkthrough: two agents, one issue
+
+The whole model in one scenario — one lease per issue, one version per
+row, one writing daemon:
+
+```text
+Agent A                    daemon                       Agent B
+   |                          |                            |
+   |--- claim afc-42 -------->|                            |
+   |<-- lease token, v=2 -----|  open -> in_progress       |
+   |                          |<---------- claim afc-42 ---|
+   |                          |---- 409 lease_held ------->|
+   |                          |        (B picks other      |
+   |                          |         ready work)        |
+   |--- heartbeat (t+5m) ---->|  expires_at extended,      |
+   |                          |  no event written          |
+   |--- update, v=2 --------->|  v=3, event appended       |
+   |                          |                            |
+   X  A crashes, heartbeats   |                            |
+      stop                    |  lease expires by itself:  |
+                              |  lazy expiry, no cleanup   |
+                              |  job needed                |
+                              |                            |
+                              |<---------- ready? ---------|
+                              |---- afc-42 listed -------->|
+                              |<---------- claim afc-42 ---|
+                              |---- new lease, ok -------->|
+                              |                            |
+   |  A comes back, tries     |                            |
+   |--- update, old token --->|                            |
+   |<-- 410 lease_expired ----|  A rereads, moves on       |
+```
+
+Key properties this guarantees:
+
+- no work is ever lost to a dead agent: expiry frees the issue without
+  any operator action
+- no two agents ever hold the same issue: the second claim fails loudly
+- a resurrected agent cannot silently overwrite newer work: its stale
+  token and stale version are both rejected
+
 ## Issue state machine
 
 Recommended states for v1:
