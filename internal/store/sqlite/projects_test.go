@@ -150,5 +150,3 @@ func TestListProjects(t *testing.T) {
 		t.Errorf("expected first project key to be one of {a, b}, got %q (second: %q)", projects[0].Key, projects[1].Key)
 	}
 }
-
-

@@ -1,8 +1,8 @@
 package sqlite
 
 import (
-	"os"
 	"database/sql"
+	"os"
 	"testing"
 
 	_ "modernc.org/sqlite"
