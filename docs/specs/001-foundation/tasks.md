@@ -28,7 +28,7 @@
     they violate the schema time contract and are exactly why the suite
     did not catch this. Fixtures must write RFC 3339. Add a regression
     test: lease expired same-day → issue is ready again.
-- [ ] AFC-SDD-0014 Implement `blocks` dependency filtering in the ready view
+- [x] AFC-SDD-0014 Implement `blocks` dependency filtering in the ready view
   - `ListReadyIssues` still has "deferred to SDD-0008" in a comment, but
     SDD-0008 shipped without it. Per spec, an issue with an unfinished
     `blocks` dependency must not be ready. Add a `NOT EXISTS` subquery

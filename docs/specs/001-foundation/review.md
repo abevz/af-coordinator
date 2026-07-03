@@ -234,6 +234,20 @@ Shipped.
 - `go vet ./...` — clean
 - `git status` — working tree clean after commit
 
+## AFC-SDD-0014 — Implement blocks dependency filtering in ready view
+
+### What shipped
+
+- Added `NOT EXISTS` subquery to `ListReadyIssues` filtering out issues with unfinished `blocks` dependencies (blocker status not `done`/`cancelled`)
+- Updated the deferred comment in `ListReadyIssues`
+- Added 3 tests: open blocker → issue not ready, done blocker → issue ready, cancelled blocker → issue ready
+
+### What was verified
+
+- `go build ./...` — compiles clean
+- `go test ./...` — all tests pass, including the new dependency tests
+- `go vet ./...` — clean
+
 Use this file to capture:
 
 - what shipped
