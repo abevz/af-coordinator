@@ -530,3 +530,69 @@ func TestListArtifactsByRepo(t *testing.T) {
 		t.Errorf("expected 1 artifact for repo1, got %d", len(artifacts))
 	}
 }
+
+func TestCreateArtifactRejectsInvalidKind(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo, _, err := CreateRepo(db, "test", core.CreateRepoRequest{
+		Project:         "test",
+		LogicalName:     "repo",
+		CanonicalGitDir: "/tmp/repo",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = CreateArtifact(db, repo.ID, core.CreateArtifactRequest{
+		RelativePath: "bad.kind.md",
+		Kind:         "invalid-kind",
+	})
+	if err == nil {
+		t.Fatal("expected error for invalid artifact kind")
+	}
+	var apiErr core.APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("expected APIError, got %T: %v", err, err)
+	}
+	if apiErr.Code != core.ErrValidationFailed {
+		t.Errorf("expected code %q, got %q", core.ErrValidationFailed, apiErr.Code)
+	}
+}
+
+func TestCreateArtifactRootRejectsInvalidKind(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo, _, err := CreateRepo(db, "test", core.CreateRepoRequest{
+		Project:         "test",
+		LogicalName:     "repo",
+		CanonicalGitDir: "/tmp/repo",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = CreateArtifactRoot(db, repo.ID, core.CreateArtifactRootRequest{
+		RootPath: "/bad-kind",
+		Kind:     "invalid-kind",
+	})
+	if err == nil {
+		t.Fatal("expected error for invalid artifact root kind")
+	}
+	var apiErr core.APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("expected APIError, got %T: %v", err, err)
+	}
+	if apiErr.Code != core.ErrValidationFailed {
+		t.Errorf("expected code %q, got %q", core.ErrValidationFailed, apiErr.Code)
+	}
+}

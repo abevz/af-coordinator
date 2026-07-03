@@ -19,6 +19,11 @@ func CreateArtifactRoot(db *sql.DB, repoID string, req core.CreateArtifactRootRe
 		kind = "sdd"
 	}
 
+	if !core.ValidateArtifactKind(kind) {
+		return core.ArtifactRoot{}, core.NewAPIError(core.ErrValidationFailed,
+			fmt.Sprintf("invalid artifact root kind: %q", kind))
+	}
+
 	isPrimary := 0
 	if req.Primary {
 		isPrimary = 1
@@ -95,6 +100,11 @@ func ListArtifactRoots(db *sql.DB, repoID string) ([]core.ArtifactRoot, error) {
 func CreateArtifact(db *sql.DB, repoID string, req core.CreateArtifactRequest) (core.Artifact, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
 	id := uuid.New().String()
+
+	if !core.ValidateArtifactKind(req.Kind) {
+		return core.Artifact{}, core.NewAPIError(core.ErrValidationFailed,
+			fmt.Sprintf("invalid artifact kind: %q", req.Kind))
+	}
 
 	_, err := db.Exec(
 		`INSERT INTO artifacts (id, repository_id, worktree_id, artifact_root_id, kind, relative_path, title, external_key, status, created_at, updated_at)

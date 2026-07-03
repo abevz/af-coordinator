@@ -102,6 +102,7 @@ func ValidateArtifactKind(kind string) bool {
 		"code",
 		"test",
 		"doc",
+		"sdd",
 		"other":
 		return true
 	}
