@@ -155,6 +155,39 @@ Shipped.
 - Relation defaults to `"implements"` when omitted, consistent with the
   schema default
 
+## AFC-SDD-0010 — Notes and issue activity timeline APIs
+
+### What shipped
+
+- **Core types** (`internal/core/issue.go`): `Note`, `CreateNoteRequest`,
+  `Event`
+- **SQLite store** (`internal/store/sqlite/issues.go`): `CreateNote` (verify
+  issue exists, insert note), `ListNotes` (SELECT ordered by created_at),
+  `ListEvents` (SELECT ordered by created_at)
+- **API handlers** (`internal/api/issues.go`): `POST /v1/issues/{issue_id}/notes`,
+  `GET /v1/issues/{issue_id}/notes`, `GET /v1/issues/{issue_id}/events`
+- **Routes** (`internal/api/daemon.go`): three new routes registered
+- **Client methods** (`internal/client/client.go`): `CreateNote`, `ListNotes`,
+  `ListEvents`
+- **CLI commands** (`cmd/afctl/main.go`): `afctl issue note add`, `afctl issue note list`,
+  `afctl issue events list`
+- **Tasks** (`docs/specs/001-foundation/tasks.md`): marked `[x]`
+
+### What was verified
+
+- `go build ./...` — compiles clean
+- `go vet ./...` — no issues
+- `gofmt -w .` — all formatting correct
+
+### Open
+
+- No dedicated tests for the new handlers or store functions yet
+- Events are currently written by `UpdateIssue` and `CloseIssue` only;
+  future mutations (claim, release, link, dependency add) could also
+  write events for a fuller timeline
+- The `note add` CLI uses `--body` as a single string — multi-line
+  bodies require shell quoting
+
 Use this file to capture:
 
 - what shipped

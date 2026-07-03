@@ -417,3 +417,75 @@ func handleLinkArtifact(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 		writeJSON(w, http.StatusCreated, map[string]string{"created_at": createdAt})
 	}
 }
+
+func handleCreateNote(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		issueID := r.PathValue("issue_id")
+
+		var req core.CreateNoteRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, core.ErrValidationFailed, "invalid JSON body")
+			return
+		}
+
+		if req.Author == "" {
+			writeError(w, http.StatusBadRequest, core.ErrValidationFailed, "author is required")
+			return
+		}
+		if req.Body == "" {
+			writeError(w, http.StatusBadRequest, core.ErrValidationFailed, "body is required")
+			return
+		}
+
+		note, err := sqlite.CreateNote(db, issueID, req)
+		if err != nil {
+			if apiErr, ok := errAsAPIError(err); ok && apiErr.Code == core.ErrNotFound {
+				writeError(w, http.StatusNotFound, core.ErrNotFound, "issue not found: "+issueID)
+				return
+			}
+			logger.Error("failed to create note", "issue_id", issueID, "error", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "failed to create note")
+			return
+		}
+
+		writeJSON(w, http.StatusCreated, map[string]core.Note{"note": note})
+	}
+}
+
+func handleListNotes(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		issueID := r.PathValue("issue_id")
+
+		notes, err := sqlite.ListNotes(db, issueID)
+		if err != nil {
+			if apiErr, ok := errAsAPIError(err); ok && apiErr.Code == core.ErrNotFound {
+				writeError(w, http.StatusNotFound, core.ErrNotFound, "issue not found: "+issueID)
+				return
+			}
+			logger.Error("failed to list notes", "issue_id", issueID, "error", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "failed to list notes")
+			return
+		}
+
+		writeJSON(w, http.StatusOK, map[string][]core.Note{"notes": notes})
+	}
+}
+
+func handleListEvents(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		issueID := r.PathValue("issue_id")
+
+		events, err := sqlite.ListEvents(db, issueID)
+		if err != nil {
+			if apiErr, ok := errAsAPIError(err); ok && apiErr.Code == core.ErrNotFound {
+				writeError(w, http.StatusNotFound, core.ErrNotFound, "issue not found: "+issueID)
+				return
+			}
+			logger.Error("failed to list events", "issue_id", issueID, "error", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "failed to list events")
+			return
+		}
+
+		writeJSON(w, http.StatusOK, map[string][]core.Event{"events": events})
+	}
+}

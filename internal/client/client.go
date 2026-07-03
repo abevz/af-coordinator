@@ -293,6 +293,40 @@ func (c *Client) RemoveDependency(issueID, dependsOn, kind string) error {
 	return c.doJSON(http.MethodDelete, path, nil, nil)
 }
 
+// CreateNote sends a POST /v1/issues/{issueID}/notes request.
+func (c *Client) CreateNote(issueID, author, body string) (core.Note, error) {
+	req := core.CreateNoteRequest{Author: author, Body: body}
+	var result struct {
+		Note core.Note `json:"note"`
+	}
+	if err := c.doJSON(http.MethodPost, "/v1/issues/"+issueID+"/notes", req, &result); err != nil {
+		return core.Note{}, err
+	}
+	return result.Note, nil
+}
+
+// ListNotes sends a GET /v1/issues/{issueID}/notes request.
+func (c *Client) ListNotes(issueID string) ([]core.Note, error) {
+	var result struct {
+		Notes []core.Note `json:"notes"`
+	}
+	if err := c.doJSON(http.MethodGet, "/v1/issues/"+issueID+"/notes", nil, &result); err != nil {
+		return nil, err
+	}
+	return result.Notes, nil
+}
+
+// ListEvents sends a GET /v1/issues/{issueID}/events request.
+func (c *Client) ListEvents(issueID string) ([]core.Event, error) {
+	var result struct {
+		Events []core.Event `json:"events"`
+	}
+	if err := c.doJSON(http.MethodGet, "/v1/issues/"+issueID+"/events", nil, &result); err != nil {
+		return nil, err
+	}
+	return result.Events, nil
+}
+
 // ListReadyIssues sends a GET /v1/issues/ready request with an optional project filter.
 func (c *Client) ListReadyIssues(project string) ([]core.Issue, error) {
 	path := "/v1/issues/ready"

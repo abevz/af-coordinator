@@ -790,6 +790,104 @@ func ListIssueArtifacts(db *sql.DB, issueID string) ([]core.ArtifactRef, error) 
 	return refs, nil
 }
 
+// CreateNote inserts a new note on an issue.
+func CreateNote(db *sql.DB, issueID string, req core.CreateNoteRequest) (core.Note, error) {
+	// Verify issue exists.
+	if _, _, err := GetIssue(db, issueID); err != nil {
+		return core.Note{}, err
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	id := uuid.New().String()
+
+	_, err := db.Exec(
+		`INSERT INTO notes (id, issue_id, author, body, created_at)
+		 VALUES (?, ?, ?, ?, ?)`,
+		id, issueID, req.Author, req.Body, now,
+	)
+	if err != nil {
+		return core.Note{}, fmt.Errorf("insert note: %w", err)
+	}
+
+	return core.Note{
+		ID:        id,
+		IssueID:   issueID,
+		Author:    req.Author,
+		Body:      req.Body,
+		CreatedAt: now,
+	}, nil
+}
+
+// ListNotes returns all notes for an issue, ordered by creation time.
+func ListNotes(db *sql.DB, issueID string) ([]core.Note, error) {
+	// Verify issue exists.
+	if _, _, err := GetIssue(db, issueID); err != nil {
+		return nil, err
+	}
+
+	rows, err := db.Query(
+		`SELECT id, issue_id, author, body, created_at FROM notes WHERE issue_id = ? ORDER BY created_at ASC`,
+		issueID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list notes: %w", err)
+	}
+	defer rows.Close()
+
+	var notes []core.Note
+	for rows.Next() {
+		var n core.Note
+		if err := rows.Scan(&n.ID, &n.IssueID, &n.Author, &n.Body, &n.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan note: %w", err)
+		}
+		notes = append(notes, n)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate notes: %w", err)
+	}
+	if notes == nil {
+		notes = []core.Note{}
+	}
+	return notes, nil
+}
+
+// ListEvents returns all events for an issue, ordered by creation time.
+func ListEvents(db *sql.DB, issueID string) ([]core.Event, error) {
+	// Verify issue exists.
+	if _, _, err := GetIssue(db, issueID); err != nil {
+		return nil, err
+	}
+
+	rows, err := db.Query(
+		`SELECT id, issue_id, actor, event_type, payload_json, created_at FROM events WHERE issue_id = ? ORDER BY created_at ASC`,
+		issueID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list events: %w", err)
+	}
+	defer rows.Close()
+
+	var events []core.Event
+	for rows.Next() {
+		var e core.Event
+		var issueID sql.NullString
+		if err := rows.Scan(&e.ID, &issueID, &e.Actor, &e.EventType, &e.PayloadJSON, &e.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan event: %w", err)
+		}
+		if issueID.Valid {
+			e.IssueID = issueID.String
+		}
+		events = append(events, e)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate events: %w", err)
+	}
+	if events == nil {
+		events = []core.Event{}
+	}
+	return events, nil
+}
+
 // isSQLiteConstraintError checks if an error is a SQLite constraint violation.
 func isSQLiteConstraintError(err error) bool {
 	if err == nil {

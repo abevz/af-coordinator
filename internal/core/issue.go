@@ -5,6 +5,31 @@ import (
 	"strings"
 )
 
+// Note represents a comment attached to an issue.
+type Note struct {
+	ID        string `json:"id"`
+	IssueID   string `json:"issue_id"`
+	Author    string `json:"author"`
+	Body      string `json:"body"`
+	CreatedAt string `json:"created_at"`
+}
+
+// CreateNoteRequest is the JSON body for POST /v1/issues/{issue_id}/notes.
+type CreateNoteRequest struct {
+	Author string `json:"author"`
+	Body   string `json:"body"`
+}
+
+// Event represents an event in the issue activity timeline.
+type Event struct {
+	ID          string `json:"id"`
+	IssueID     string `json:"issue_id,omitempty"`
+	Actor       string `json:"actor"`
+	EventType   string `json:"event_type"`
+	PayloadJSON string `json:"payload_json"`
+	CreatedAt   string `json:"created_at"`
+}
+
 // Issue represents a task or work item in a project.
 type Issue struct {
 	ID           string `json:"id"`

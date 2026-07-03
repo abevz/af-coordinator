@@ -73,6 +73,11 @@ Commands:
     update              Update issue fields (title, description, priority, assignee, status)
     close               Close an issue (resolution: done or cancelled)
     link                Link an artifact to an issue
+    note                Manage notes on an issue
+      add              Add a note to an issue
+      list             List notes on an issue
+    events              Show activity timeline for an issue
+      list             List events for an issue
     dependency          Manage issue dependencies
       add               Add a dependency between two issues
       remove            Remove a dependency between two issues
@@ -627,6 +632,10 @@ func runIssue(c *client.Client, args []string) {
 		runIssueLink(c, args[1:])
 	case "dependency":
 		runIssueDependency(c, args[1:])
+	case "note":
+		runIssueNote(c, args[1:])
+	case "events":
+		runIssueEvents(c, args[1:])
 	default:
 		fmt.Fprintf(os.Stderr, "unknown issue subcommand: %s\n", args[0])
 		os.Exit(1)
@@ -1126,6 +1135,139 @@ func runIssueDependencyRemove(c *client.Client, args []string) {
 		os.Exit(1)
 	}
 	fmt.Println("Dependency removed.")
+}
+
+// ─── Issue Notes ────────────────────────────────────────────────────────────
+
+func runIssueNote(c *client.Client, args []string) {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "Usage: afctl issue note <add|list> <issue-id> [--author <name> --body <text>]")
+		os.Exit(1)
+	}
+
+	switch args[0] {
+	case "add":
+		runIssueNoteAdd(c, args[1:])
+	case "list":
+		runIssueNoteList(c, args[1:])
+	default:
+		fmt.Fprintf(os.Stderr, "unknown note subcommand: %s\n", args[0])
+		os.Exit(1)
+	}
+}
+
+func runIssueNoteAdd(c *client.Client, args []string) {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "Usage: afctl issue note add <issue-id> --author <name> --body <text>")
+		os.Exit(1)
+	}
+
+	issueID := args[0]
+	author := ""
+	body := ""
+
+	for i := 1; i < len(args); i++ {
+		switch args[i] {
+		case "--author":
+			if i+1 < len(args) {
+				author = args[i+1]
+				i++
+			}
+		case "--body":
+			if i+1 < len(args) {
+				body = args[i+1]
+				i++
+			}
+		}
+	}
+
+	if author == "" {
+		fmt.Fprintln(os.Stderr, "error: --author is required")
+		os.Exit(1)
+	}
+	if body == "" {
+		fmt.Fprintln(os.Stderr, "error: --body is required")
+		os.Exit(1)
+	}
+
+	note, err := c.CreateNote(issueID, author, body)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("Note ID:    %s\n", note.ID)
+	fmt.Printf("Issue ID:   %s\n", note.IssueID)
+	fmt.Printf("Author:     %s\n", note.Author)
+	fmt.Printf("Body:       %s\n", note.Body)
+	fmt.Printf("Created At: %s\n", note.CreatedAt)
+}
+
+func runIssueNoteList(c *client.Client, args []string) {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "Usage: afctl issue note list <issue-id>")
+		os.Exit(1)
+	}
+
+	issueID := args[0]
+
+	notes, err := c.ListNotes(issueID)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+	if len(notes) == 0 {
+		fmt.Println("No notes found.")
+		return
+	}
+	for _, n := range notes {
+		fmt.Printf("Note ID:    %s\n", n.ID)
+		fmt.Printf("Author:     %s\n", n.Author)
+		fmt.Printf("Body:       %s\n", n.Body)
+		fmt.Printf("Created At: %s\n\n", n.CreatedAt)
+	}
+}
+
+// ─── Issue Events ──────────────────────────────────────────────────────────
+
+func runIssueEvents(c *client.Client, args []string) {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "Usage: afctl issue events list <issue-id>")
+		os.Exit(1)
+	}
+
+	switch args[0] {
+	case "list":
+		runIssueEventsList(c, args[1:])
+	default:
+		fmt.Fprintf(os.Stderr, "unknown events subcommand: %s\n", args[0])
+		os.Exit(1)
+	}
+}
+
+func runIssueEventsList(c *client.Client, args []string) {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "Usage: afctl issue events list <issue-id>")
+		os.Exit(1)
+	}
+
+	issueID := args[0]
+
+	events, err := c.ListEvents(issueID)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+	if len(events) == 0 {
+		fmt.Println("No events found.")
+		return
+	}
+	for _, e := range events {
+		fmt.Printf("Event ID:    %s\n", e.ID)
+		fmt.Printf("Actor:       %s\n", e.Actor)
+		fmt.Printf("Type:        %s\n", e.EventType)
+		fmt.Printf("Payload:     %s\n", e.PayloadJSON)
+		fmt.Printf("Created At:  %s\n\n", e.CreatedAt)
+	}
 }
 
 func printIssue(i core.Issue) {
