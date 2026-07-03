@@ -128,6 +128,60 @@ func (c *Client) ListWorktrees(repo string) ([]core.Worktree, error) {
 	return result.Worktrees, nil
 }
 
+// CreateArtifactRoot sends a POST /v1/artifact-roots request.
+func (c *Client) CreateArtifactRoot(req core.CreateArtifactRootRequest) (core.ArtifactRoot, error) {
+	var result struct {
+		ArtifactRoot core.ArtifactRoot `json:"artifact_root"`
+	}
+	if err := c.doJSON(http.MethodPost, "/v1/artifact-roots", req, &result); err != nil {
+		return core.ArtifactRoot{}, err
+	}
+	return result.ArtifactRoot, nil
+}
+
+// ListArtifactRoots sends a GET /v1/artifact-roots request with an optional repo filter.
+func (c *Client) ListArtifactRoots(repo string) ([]core.ArtifactRoot, error) {
+	path := "/v1/artifact-roots"
+	if repo != "" {
+		path += "?repo=" + repo
+	}
+
+	var result struct {
+		ArtifactRoots []core.ArtifactRoot `json:"artifact_roots"`
+	}
+	if err := c.doJSON(http.MethodGet, path, nil, &result); err != nil {
+		return nil, err
+	}
+	return result.ArtifactRoots, nil
+}
+
+// CreateArtifact sends a POST /v1/artifacts request.
+func (c *Client) CreateArtifact(req core.CreateArtifactRequest) (core.Artifact, error) {
+	var result struct {
+		Artifact core.Artifact `json:"artifact"`
+	}
+	if err := c.doJSON(http.MethodPost, "/v1/artifacts", req, &result); err != nil {
+		return core.Artifact{}, err
+	}
+	return result.Artifact, nil
+}
+
+// ListArtifacts sends a GET /v1/artifacts request with an optional repo filter.
+func (c *Client) ListArtifacts(repo string) ([]core.Artifact, error) {
+	path := "/v1/artifacts"
+	if repo != "" {
+		path += "?repo=" + repo
+	}
+
+	var result struct {
+		Artifacts []core.Artifact `json:"artifacts"`
+	}
+	if err := c.doJSON(http.MethodGet, path, nil, &result); err != nil {
+		return nil, err
+	}
+	return result.Artifacts, nil
+}
+
 // doJSON performs an HTTP request and decodes the JSON response.
 func (c *Client) doJSON(method, path string, body any, target any) error {
 	var reqBody []byte

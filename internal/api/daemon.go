@@ -78,6 +78,14 @@ func RunDaemon(ctx context.Context, logger *slog.Logger, cfg config.Config, db *
 	mux.HandleFunc("POST /v1/worktrees", handleRegisterWorktree(db, logger))
 	mux.HandleFunc("GET /v1/worktrees", handleListWorktrees(db, logger))
 
+	// Artifact root registration.
+	mux.HandleFunc("POST /v1/artifact-roots", handleCreateArtifactRoot(db, logger))
+	mux.HandleFunc("GET /v1/artifact-roots", handleListArtifactRoots(db, logger))
+
+	// Artifact registration.
+	mux.HandleFunc("POST /v1/artifacts", handleCreateArtifact(db, logger))
+	mux.HandleFunc("GET /v1/artifacts", handleListArtifacts(db, logger))
+
 	server := &http.Server{
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
