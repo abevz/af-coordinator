@@ -449,6 +449,30 @@ Possible later integrations:
 
 But none of these should own the write path.
 
+### Known consumer: daily-check
+
+`daily-check board` (in `~/github/utils/daily-check/`) is the first known
+external consumer. Today it reads Beads by shelling out to `bd list --json`
+/ `bd query` / `bd ready` per configured repo, which breaks entirely
+whenever the Dolt server is down.
+
+Migration expectations when repos move to af-coordinator:
+
+- board provider switches from `bd` subprocesses to HTTP over the unix
+  socket (`GET /v1/issues`, `GET /v1/issues/ready`) — one daemon call
+  instead of N subprocesses, and no dependency on Dolt liveness
+- the `Ready` column maps to the daemon-computed ready view instead of
+  `bd ready` per repo
+- status mapping: `Open` (including blocked with a `[B]` badge),
+  `In Progress`, `Closed` (`done` + `cancelled`) map directly; the
+  `Deferred` column has no v1 counterpart — either model it via priority,
+  or add a `deferred` status in a later schema revision
+- board create actions go through `POST /v1/issues` like any other client
+
+This consumer is a good API litmus test: if daily-check needs to bypass
+the API, the API is too weak (a risk already named in the foundation
+design).
+
 ## Actor identity
 
 In v1, `actor` and `holder` are client-asserted strings (agent name,
