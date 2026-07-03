@@ -219,6 +219,21 @@ Shipped.
   The `contrib/systemd/Makefile` provides the same targets for use without the
   root Makefile.
 
+## AFC-SDD-0013 — Fix lease expiry comparison in ready view
+
+### What shipped
+
+- Fixed 3 SQL queries in `internal/store/sqlite/issues.go` that compared RFC 3339 `expires_at` values against SQLite `datetime('now')` (space format): replaced with Go-computed `time.Now().UTC().Format(time.RFC3339)` parameters
+- Added regression test `TestListReadyIssuesWithExpiredLease` in `internal/store/sqlite/issues_test.go`
+- Fixed all `datetime('now')` test fixture occurrences in `internal/api/api_test.go` to use RFC 3339 format
+
+### What was verified
+
+- `go build ./...` — compiles clean
+- `go test ./...` — all tests pass, including the new regression test
+- `go vet ./...` — clean
+- `git status` — working tree clean after commit
+
 Use this file to capture:
 
 - what shipped

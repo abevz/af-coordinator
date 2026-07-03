@@ -15,7 +15,7 @@
 
 ## Closure punch list (correctness gaps found in review)
 
-- [ ] AFC-SDD-0013 Fix lease expiry comparison in ready view (BUG)
+- [x] AFC-SDD-0013 Fix lease expiry comparison in ready view (BUG)
   - `ListReadyIssues` compares `expires_at > datetime('now')`, but leases
     write `expires_at` as RFC 3339 (`2026-07-03T19:35:00Z`) while
     `datetime('now')` yields `2026-07-03 19:35:00`. Lexicographically
