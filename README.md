@@ -148,7 +148,8 @@ Key semantics:
 - issues carry human-facing short ids (`<project_key>-<N>`, e.g. `afc-42`)
   allocated by the daemon from a per-project counter
 - "claimed" is not a stored status; it is derived from an unexpired lease
-- issue statuses: `open`, `in_progress`, `blocked`, `done`, `cancelled`
+- issue statuses: `open`, `in_progress`, `blocked`, `deferred`, `done`,
+  `cancelled`
 - only `blocks` dependencies affect readiness, and the daemon rejects
   dependency cycles
 

@@ -85,7 +85,7 @@ create table issues (
   title text not null,
   description text not null default '',
   status text not null
-    check (status in ('open', 'in_progress', 'blocked', 'done', 'cancelled')),
+    check (status in ('open', 'in_progress', 'blocked', 'deferred', 'done', 'cancelled')),
   priority integer not null default 3,
   assignee text not null default '',
   version integer not null default 1,

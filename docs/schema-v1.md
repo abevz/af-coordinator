@@ -150,7 +150,7 @@ create table issues (
   title text not null,
   description text not null default '',
   status text not null
-    check (status in ('open', 'in_progress', 'blocked', 'done', 'cancelled')),
+    check (status in ('open', 'in_progress', 'blocked', 'deferred', 'done', 'cancelled')),
   priority integer not null default 3,
   assignee text not null default '',
   version integer not null default 1,
@@ -295,10 +295,12 @@ create index idx_worktrees_repository_path
 
 Conceptually, a ready issue is:
 
-- not `done`
-- not `cancelled`
+- not `done`, `cancelled`, `deferred`, or `blocked`
 - not blocked by an unfinished issue through a `blocks` dependency
 - not covered by an unexpired lease
+
+(`in_progress` with an expired lease stays visible: the work is claimable
+again.)
 
 This should be implemented in SQL inside the daemon, not in clients.
 

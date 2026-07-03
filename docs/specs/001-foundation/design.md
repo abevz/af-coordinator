@@ -75,7 +75,7 @@ unexpired lease. Expired leases are treated as absent (lazy expiry).
 
 An issue is ready when:
 
-- it is not done or cancelled
+- its status is not `done`, `cancelled`, `deferred`, or `blocked`
 - no unfinished issue blocks it through a `blocks` dependency
 - it has no unexpired lease
 

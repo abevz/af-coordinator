@@ -66,7 +66,7 @@ Migrations:
 
 - plain SQL files in `migrations/`, applied in filename order
 - embedded migration runner in the daemon (stdlib only), tracking applied
-  migrations in a `schema_migrations` table
+  migrations by name in a `_migrations` table
 
 Reasoning:
 
@@ -354,8 +354,14 @@ Recommended states for v1:
 - `open`
 - `in_progress`
 - `blocked`
+- `deferred`
 - `done`
 - `cancelled`
+
+`deferred` means intentionally parked: not cancelled, but excluded from
+the ready view until someone unparks it. It exists as a stored status
+(not a priority hack) because operator tooling such as `daily-check
+board` treats deferred work as a first-class lane.
 
 Basic transitions:
 
@@ -365,11 +371,15 @@ in_progress -> open      (release / lease expiry sweep)
 in_progress -> blocked
 blocked -> in_progress
 blocked -> open
+open -> deferred         (park)
+deferred -> open         (unpark)
 in_progress -> done
 any -> cancelled
 done -> open             (reopen)
 cancelled -> open        (reopen)
 ```
+
+Claiming a `deferred` issue is not allowed; unpark it first.
 
 Claim creates the lease and moves `open -> in_progress` in one transaction.
 Release deletes the lease and moves `in_progress -> open` unless the issue
@@ -390,9 +400,12 @@ issues blocking each other silently disappear from the ready view forever.
 
 An issue is ready when:
 
-- state is not `done` or `cancelled`
+- state is not `done`, `cancelled`, `deferred`, or `blocked`
 - no unfinished issue blocks it through a `blocks` dependency
 - it has no unexpired lease
+
+`in_progress` with an expired lease stays in the ready view: the work is
+claimable again, which is the whole point of lease expiry.
 
 ## Event log
 
@@ -463,10 +476,9 @@ Migration expectations when repos move to af-coordinator:
   instead of N subprocesses, and no dependency on Dolt liveness
 - the `Ready` column maps to the daemon-computed ready view instead of
   `bd ready` per repo
-- status mapping: `Open` (including blocked with a `[B]` badge),
-  `In Progress`, `Closed` (`done` + `cancelled`) map directly; the
-  `Deferred` column has no v1 counterpart — either model it via priority,
-  or add a `deferred` status in a later schema revision
+- status mapping: all board columns map directly — `Deferred` to the
+  `deferred` status, `Open` (including blocked with a `[B]` badge),
+  `In Progress`, and `Closed` (`done` + `cancelled`)
 - board create actions go through `POST /v1/issues` like any other client
 
 This consumer is a good API litmus test: if daily-check needs to bypass
