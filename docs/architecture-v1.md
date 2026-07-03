@@ -512,6 +512,14 @@ APIs exist. The hard problem it must solve is adoption discipline, not
 transport: an agent that silently skips claiming is worse than having no
 coordinator at all.
 
+Enforcement: agents with hook support (Claude Code and Codex both have
+pre-tool-use hooks) should enforce the protocol mechanically — a hook
+that checks for an active lease before file edits and warns or blocks.
+Hooks call `afctl` like any other client. Agents without hooks fall back
+to instructions plus review. The protocol spec packet should ship these
+hook snippets alongside the contract text, so enforcing the rules costs
+one config line per agent.
+
 ## Actor identity
 
 In v1, `actor` and `holder` are client-asserted strings (agent name,
