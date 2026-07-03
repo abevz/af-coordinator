@@ -7,6 +7,8 @@ const (
 	ErrValidationFailed = "validation_failed"
 	ErrNotFound         = "not_found"
 	ErrConflict         = "version_conflict"
+	ErrLeaseHeld        = "lease_held"
+	ErrLeaseExpired     = "lease_expired"
 )
 
 // APIError is the standard error envelope returned by the daemon.

@@ -52,6 +52,29 @@ type IssueListParams struct {
 	Assignee string
 }
 
+// ClaimRequest is the JSON body for POST /v1/issues/{issue_id}/claim.
+type ClaimRequest struct {
+	Holder     string `json:"holder"`
+	TTLSeconds int    `json:"ttl_seconds"`
+}
+
+// ClaimResponse is returned on successful claim.
+type ClaimResponse struct {
+	LeaseToken string `json:"lease_token"`
+	ExpiresAt  string `json:"expires_at"`
+}
+
+// HeartbeatRequest is the JSON body for POST /v1/issues/{issue_id}/heartbeat.
+type HeartbeatRequest struct {
+	LeaseToken string `json:"lease_token"`
+	TTLSeconds int    `json:"ttl_seconds"`
+}
+
+// ReleaseRequest is the JSON body for POST /v1/issues/{issue_id}/release.
+type ReleaseRequest struct {
+	LeaseToken string `json:"lease_token"`
+}
+
 // ValidateCreateIssue checks required fields for creating an issue.
 func ValidateCreateIssue(req CreateIssueRequest) error {
 	var errs []string

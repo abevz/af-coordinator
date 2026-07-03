@@ -234,6 +234,164 @@ func ListReadyIssues(db *sql.DB, projectID string) ([]core.Issue, error) {
 	return issues, nil
 }
 
+// ClaimIssue acquires a lease on an issue, moving it from 'open' to 'in_progress'.
+func ClaimIssue(db *sql.DB, issueID, holder string, ttlSeconds int) (core.ClaimResponse, error) {
+	tx, err := db.Begin()
+	if err != nil {
+		return core.ClaimResponse{}, fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// Check issue exists and is open.
+	var status string
+	err = tx.QueryRow(`SELECT status FROM issues WHERE id = ?`, issueID).Scan(&status)
+	if err == sql.ErrNoRows {
+		return core.ClaimResponse{}, core.NewAPIError(core.ErrNotFound, "issue not found: "+issueID)
+	}
+	if err != nil {
+		return core.ClaimResponse{}, fmt.Errorf("select issue: %w", err)
+	}
+	if status != "open" {
+		return core.ClaimResponse{}, core.NewAPIError(core.ErrLeaseHeld,
+			"issue cannot be claimed from status: "+status)
+	}
+
+	// Check no unexpired lease exists.
+	var leaseCount int
+	err = tx.QueryRow(
+		`SELECT count(*) FROM leases WHERE issue_id = ? AND expires_at > datetime('now')`,
+		issueID,
+	).Scan(&leaseCount)
+	if err != nil {
+		return core.ClaimResponse{}, fmt.Errorf("check lease: %w", err)
+	}
+	if leaseCount > 0 {
+		return core.ClaimResponse{}, core.NewAPIError(core.ErrLeaseHeld,
+			"issue is already claimed: "+issueID)
+	}
+
+	// Generate lease.
+	now := time.Now().UTC()
+	leaseToken := uuid.New().String()
+	expiresAt := now.Add(time.Duration(ttlSeconds) * time.Second).Format(time.RFC3339)
+
+	_, err = tx.Exec(
+		`INSERT INTO leases (issue_id, holder, lease_token, expires_at, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
+		issueID, holder, leaseToken, expiresAt, now.Format(time.RFC3339), now.Format(time.RFC3339),
+	)
+	if err != nil {
+		return core.ClaimResponse{}, fmt.Errorf("insert lease: %w", err)
+	}
+
+	// Update issue status and version.
+	nowStr := now.Format(time.RFC3339)
+	_, err = tx.Exec(
+		`UPDATE issues SET status = 'in_progress', claimed_at = ?, version = version + 1, updated_at = ? WHERE id = ?`,
+		nowStr, nowStr, issueID,
+	)
+	if err != nil {
+		return core.ClaimResponse{}, fmt.Errorf("update issue: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return core.ClaimResponse{}, fmt.Errorf("commit tx: %w", err)
+	}
+
+	return core.ClaimResponse{LeaseToken: leaseToken, ExpiresAt: expiresAt}, nil
+}
+
+// HeartbeatLease extends the TTL on an existing lease.
+func HeartbeatLease(db *sql.DB, issueID, leaseToken string, ttlSeconds int) (string, error) {
+	// Look up the lease.
+	var holder, expiresAt string
+	err := db.QueryRow(
+		`SELECT holder, expires_at FROM leases WHERE issue_id = ? AND lease_token = ?`,
+		issueID, leaseToken,
+	).Scan(&holder, &expiresAt)
+	if err == sql.ErrNoRows {
+		return "", core.NewAPIError(core.ErrLeaseExpired, "lease not found or expired")
+	}
+	if err != nil {
+		return "", fmt.Errorf("select lease: %w", err)
+	}
+
+	// Check the lease hasn't expired.
+	expiresTime, err := time.Parse(time.RFC3339, expiresAt)
+	if err != nil {
+		return "", fmt.Errorf("parse expires_at: %w", err)
+	}
+	if time.Now().UTC().After(expiresTime) {
+		return "", core.NewAPIError(core.ErrLeaseExpired, "lease has expired")
+	}
+
+	// Extend the lease.
+	now := time.Now().UTC()
+	newExpiresAt := now.Add(time.Duration(ttlSeconds) * time.Second).Format(time.RFC3339)
+
+	_, err = db.Exec(
+		`UPDATE leases SET expires_at = ?, updated_at = ? WHERE issue_id = ? AND lease_token = ?`,
+		newExpiresAt, now.Format(time.RFC3339), issueID, leaseToken,
+	)
+	if err != nil {
+		return "", fmt.Errorf("update lease: %w", err)
+	}
+
+	return newExpiresAt, nil
+}
+
+// ReleaseLease releases a lease and returns the issue to 'open' (unless blocked).
+func ReleaseLease(db *sql.DB, issueID, leaseToken string) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// Find the lease.
+	var holder string
+	err = tx.QueryRow(
+		`SELECT holder FROM leases WHERE issue_id = ? AND lease_token = ?`,
+		issueID, leaseToken,
+	).Scan(&holder)
+	if err == sql.ErrNoRows {
+		return core.NewAPIError(core.ErrLeaseExpired, "lease not found")
+	}
+	if err != nil {
+		return fmt.Errorf("select lease: %w", err)
+	}
+
+	// Delete the lease.
+	_, err = tx.Exec(
+		`DELETE FROM leases WHERE issue_id = ? AND lease_token = ?`,
+		issueID, leaseToken,
+	)
+	if err != nil {
+		return fmt.Errorf("delete lease: %w", err)
+	}
+
+	// Update issue status: in_progress -> open (unless blocked).
+	now := time.Now().UTC().Format(time.RFC3339)
+	_, err = tx.Exec(
+		`UPDATE issues SET
+		     status = CASE WHEN status = 'blocked' THEN 'blocked' ELSE 'open' END,
+		     claimed_at = NULL,
+		     version = version + 1,
+		     updated_at = ?
+		 WHERE id = ?`,
+		now, issueID,
+	)
+	if err != nil {
+		return fmt.Errorf("update issue: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit tx: %w", err)
+	}
+
+	return nil
+}
+
 func getActiveLease(db *sql.DB, issueID string) (*core.IssueLease, error) {
 	row := db.QueryRow(
 		`SELECT holder, lease_token, expires_at FROM leases WHERE issue_id = ? AND expires_at > datetime('now')`,

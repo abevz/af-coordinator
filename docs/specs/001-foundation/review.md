@@ -62,7 +62,34 @@ Shipped.
 - Dependency filtering in `ListReadyIssues` (from `dependencies` table) is
   deferred to SDD-0008
 - No dedicated tests for the new handlers or store functions yet
-- Lease claim/release/heartbeat logic is deferred to SDD-0007
+
+## AFC-SDD-0007 — Lease claim/release/heartbeat flow
+
+### What shipped
+
+- **Error codes** (`internal/core/errors.go`): `ErrLeaseHeld` (409) and
+  `ErrLeaseExpired` (410)
+- **Core types** (`internal/core/issue.go`): `ClaimRequest`, `ClaimResponse`,
+  `HeartbeatRequest`, `ReleaseRequest`
+- **SQLite store** (`internal/store/sqlite/issues.go`): `ClaimIssue` (acquires
+  lease, moves open → in_progress), `HeartbeatLease` (extends TTL on existing
+  lease), `ReleaseLease` (deletes lease, returns in_progress → open unless
+  blocked)
+- **API handlers** (`internal/api/issues.go`): `POST /v1/issues/{issue_id}/claim`,
+  `POST /v1/issues/{issue_id}/heartbeat`, `POST /v1/issues/{issue_id}/release`
+- **Client methods** (`internal/client/client.go`): `ClaimIssue`,
+  `HeartbeatLease`, `ReleaseLease`
+- **CLI commands** (`cmd/afctl/main.go`): `afctl issue claim|heartbeat|release`
+
+### What was verified
+
+- `go build ./...` — compiles clean
+- `go vet ./...` — no issues
+- `gofmt -w .` — all formatting correct
+
+### Open
+
+- No dedicated tests for the new handlers or store functions yet
 
 Use this file to capture:
 

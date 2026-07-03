@@ -230,6 +230,34 @@ func (c *Client) ListIssues(project, repo, worktree, status, assignee string) ([
 	return result.Issues, nil
 }
 
+// ClaimIssue sends a POST /v1/issues/{issueID}/claim request.
+func (c *Client) ClaimIssue(issueID, holder string, ttlSeconds int) (core.ClaimResponse, error) {
+	body := core.ClaimRequest{Holder: holder, TTLSeconds: ttlSeconds}
+	var result core.ClaimResponse
+	if err := c.doJSON(http.MethodPost, "/v1/issues/"+issueID+"/claim", body, &result); err != nil {
+		return core.ClaimResponse{}, err
+	}
+	return result, nil
+}
+
+// HeartbeatLease sends a POST /v1/issues/{issueID}/heartbeat request.
+func (c *Client) HeartbeatLease(issueID, leaseToken string, ttlSeconds int) (string, error) {
+	body := core.HeartbeatRequest{LeaseToken: leaseToken, TTLSeconds: ttlSeconds}
+	var result struct {
+		ExpiresAt string `json:"expires_at"`
+	}
+	if err := c.doJSON(http.MethodPost, "/v1/issues/"+issueID+"/heartbeat", body, &result); err != nil {
+		return "", err
+	}
+	return result.ExpiresAt, nil
+}
+
+// ReleaseLease sends a POST /v1/issues/{issueID}/release request.
+func (c *Client) ReleaseLease(issueID, leaseToken string) error {
+	body := core.ReleaseRequest{LeaseToken: leaseToken}
+	return c.doJSON(http.MethodPost, "/v1/issues/"+issueID+"/release", body, nil)
+}
+
 // ListReadyIssues sends a GET /v1/issues/ready request with an optional project filter.
 func (c *Client) ListReadyIssues(project string) ([]core.Issue, error) {
 	path := "/v1/issues/ready"

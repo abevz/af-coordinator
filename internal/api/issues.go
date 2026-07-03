@@ -96,6 +96,120 @@ func handleListIssues(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 	}
 }
 
+func handleClaimIssue(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		issueID := r.PathValue("issue_id")
+
+		var req core.ClaimRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, core.ErrValidationFailed, "invalid JSON body")
+			return
+		}
+
+		if req.Holder == "" {
+			writeError(w, http.StatusBadRequest, core.ErrValidationFailed, "holder is required")
+			return
+		}
+		if req.TTLSeconds <= 0 {
+			req.TTLSeconds = 3600
+		}
+
+		resp, err := sqlite.ClaimIssue(db, issueID, req.Holder, req.TTLSeconds)
+		if err != nil {
+			if apiErr, ok := errAsAPIError(err); ok {
+				switch apiErr.Code {
+				case core.ErrLeaseHeld:
+					writeError(w, http.StatusConflict, core.ErrLeaseHeld, apiErr.Message)
+					return
+				case core.ErrNotFound:
+					writeError(w, http.StatusNotFound, core.ErrNotFound, apiErr.Message)
+					return
+				}
+			}
+			logger.Error("failed to claim issue", "issue_id", issueID, "error", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "failed to claim issue")
+			return
+		}
+
+		writeJSON(w, http.StatusOK, resp)
+	}
+}
+
+func handleHeartbeatLease(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		issueID := r.PathValue("issue_id")
+
+		var req core.HeartbeatRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, core.ErrValidationFailed, "invalid JSON body")
+			return
+		}
+
+		if req.LeaseToken == "" {
+			writeError(w, http.StatusBadRequest, core.ErrValidationFailed, "lease_token is required")
+			return
+		}
+		if req.TTLSeconds <= 0 {
+			req.TTLSeconds = 3600
+		}
+
+		newExpiresAt, err := sqlite.HeartbeatLease(db, issueID, req.LeaseToken, req.TTLSeconds)
+		if err != nil {
+			if apiErr, ok := errAsAPIError(err); ok {
+				switch apiErr.Code {
+				case core.ErrLeaseExpired:
+					writeError(w, http.StatusGone, core.ErrLeaseExpired, apiErr.Message)
+					return
+				case core.ErrNotFound:
+					writeError(w, http.StatusNotFound, core.ErrNotFound, apiErr.Message)
+					return
+				}
+			}
+			logger.Error("failed to heartbeat lease", "issue_id", issueID, "error", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "failed to heartbeat lease")
+			return
+		}
+
+		writeJSON(w, http.StatusOK, map[string]string{"expires_at": newExpiresAt})
+	}
+}
+
+func handleReleaseLease(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		issueID := r.PathValue("issue_id")
+
+		var req core.ReleaseRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, core.ErrValidationFailed, "invalid JSON body")
+			return
+		}
+
+		if req.LeaseToken == "" {
+			writeError(w, http.StatusBadRequest, core.ErrValidationFailed, "lease_token is required")
+			return
+		}
+
+		err := sqlite.ReleaseLease(db, issueID, req.LeaseToken)
+		if err != nil {
+			if apiErr, ok := errAsAPIError(err); ok {
+				switch apiErr.Code {
+				case core.ErrLeaseExpired:
+					writeError(w, http.StatusGone, core.ErrLeaseExpired, apiErr.Message)
+					return
+				case core.ErrNotFound:
+					writeError(w, http.StatusNotFound, core.ErrNotFound, apiErr.Message)
+					return
+				}
+			}
+			logger.Error("failed to release lease", "issue_id", issueID, "error", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "failed to release lease")
+			return
+		}
+
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
 func handleListReadyIssues(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		projectFilter := r.URL.Query().Get("project")

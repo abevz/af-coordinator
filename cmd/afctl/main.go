@@ -67,6 +67,9 @@ Commands:
     get                 Get an issue by ID or short_id
     list                List issues with optional filters
     ready               List ready (actionable, unleased) issues
+    claim               Claim an issue (acquire a lease)
+    heartbeat           Extend an existing lease
+    release             Release a claimed lease
 `)
 }
 
@@ -591,7 +594,7 @@ func printArtifact(a core.Artifact) {
 
 func runIssue(c *client.Client, args []string) {
 	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "Usage: afctl issue <create|get|list|ready>")
+		fmt.Fprintln(os.Stderr, "Usage: afctl issue <create|get|list|ready|claim|heartbeat|release>")
 		os.Exit(1)
 	}
 
@@ -604,6 +607,12 @@ func runIssue(c *client.Client, args []string) {
 		runIssueList(c, args[1:])
 	case "ready":
 		runIssueReady(c, args[1:])
+	case "claim":
+		runIssueClaim(c, args[1:])
+	case "heartbeat":
+		runIssueHeartbeat(c, args[1:])
+	case "release":
+		runIssueRelease(c, args[1:])
 	default:
 		fmt.Fprintf(os.Stderr, "unknown issue subcommand: %s\n", args[0])
 		os.Exit(1)
@@ -756,6 +765,114 @@ func runIssueReady(c *client.Client, args []string) {
 	for _, issue := range issues {
 		printIssue(issue)
 	}
+}
+
+func runIssueClaim(c *client.Client, args []string) {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "Usage: afctl issue claim <issue-id> --holder <name> [--ttl <seconds>]")
+		os.Exit(1)
+	}
+
+	issueID := args[0]
+	holder := ""
+	ttl := 3600
+
+	for i := 1; i < len(args); i++ {
+		switch args[i] {
+		case "--holder":
+			if i+1 < len(args) {
+				holder = args[i+1]
+				i++
+			}
+		case "--ttl":
+			if i+1 < len(args) {
+				fmt.Sscanf(args[i+1], "%d", &ttl)
+				i++
+			}
+		}
+	}
+
+	if holder == "" {
+		fmt.Fprintln(os.Stderr, "error: --holder is required")
+		os.Exit(1)
+	}
+
+	resp, err := c.ClaimIssue(issueID, holder, ttl)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("Lease Token: %s\n", resp.LeaseToken)
+	fmt.Printf("Expires At:  %s\n", resp.ExpiresAt)
+}
+
+func runIssueHeartbeat(c *client.Client, args []string) {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "Usage: afctl issue heartbeat <issue-id> --lease-token <token> [--ttl <seconds>]")
+		os.Exit(1)
+	}
+
+	issueID := args[0]
+	leaseToken := ""
+	ttl := 3600
+
+	for i := 1; i < len(args); i++ {
+		switch args[i] {
+		case "--lease-token":
+			if i+1 < len(args) {
+				leaseToken = args[i+1]
+				i++
+			}
+		case "--ttl":
+			if i+1 < len(args) {
+				fmt.Sscanf(args[i+1], "%d", &ttl)
+				i++
+			}
+		}
+	}
+
+	if leaseToken == "" {
+		fmt.Fprintln(os.Stderr, "error: --lease-token is required")
+		os.Exit(1)
+	}
+
+	expiresAt, err := c.HeartbeatLease(issueID, leaseToken, ttl)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("Expires At: %s\n", expiresAt)
+}
+
+func runIssueRelease(c *client.Client, args []string) {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "Usage: afctl issue release <issue-id> --lease-token <token>")
+		os.Exit(1)
+	}
+
+	issueID := args[0]
+	leaseToken := ""
+
+	for i := 1; i < len(args); i++ {
+		switch args[i] {
+		case "--lease-token":
+			if i+1 < len(args) {
+				leaseToken = args[i+1]
+				i++
+			}
+		}
+	}
+
+	if leaseToken == "" {
+		fmt.Fprintln(os.Stderr, "error: --lease-token is required")
+		os.Exit(1)
+	}
+
+	if err := c.ReleaseLease(issueID, leaseToken); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println("Lease released.")
 }
 
 func printIssue(i core.Issue) {
