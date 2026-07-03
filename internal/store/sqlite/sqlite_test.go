@@ -1,20 +1,29 @@
 package sqlite
 
 import (
+	"os"
 	"database/sql"
 	"testing"
 
 	_ "modernc.org/sqlite"
 )
 
-// newTestDB creates an in-memory SQLite database with the schema applied.
+// newTestDB creates a temp-file-backed SQLite database with the schema applied.
 func newTestDB(t *testing.T) *sql.DB {
 	t.Helper()
-	db, err := sql.Open("sqlite", ":memory:")
+	f, err := os.CreateTemp("", "af-coordinator-test-*.db")
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { db.Close() })
+	dbPath := f.Name()
+	f.Close()
+	_ = os.Remove(dbPath) // SQLite will keep the file handle open after open
+
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close(); os.Remove(dbPath) })
 
 	// Enable foreign keys and set pragmas.
 	for _, p := range []string{

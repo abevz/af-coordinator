@@ -781,3 +781,267 @@ func TestIssueWithDescription(t *testing.T) {
 		t.Errorf("expected description %q, got %q", "A detailed description", issue.Description)
 	}
 }
+
+func TestCreateIssueWithRepoScope(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo, _, err := CreateRepo(db, "test", core.CreateRepoRequest{
+		Project:         "test",
+		LogicalName:     "my-repo",
+		CanonicalGitDir: "/repos/my-repo.git",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	issue, err := CreateIssue(db, "test", core.CreateIssueRequest{
+		ScopeKind: "repository",
+		Repo:      repo.ID,
+		Title:     "Repo-scoped issue",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if issue.RepositoryID != repo.ID {
+		t.Errorf("expected repository_id %q, got %q", repo.ID, issue.RepositoryID)
+	}
+	if issue.ScopeKind != "repository" {
+		t.Errorf("expected scope_kind 'repository', got %q", issue.ScopeKind)
+	}
+	if issue.ProjectID == "" {
+		t.Error("expected non-empty project_id")
+	}
+}
+
+func TestListReadyIssuesWithLease(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create two issues.
+	i1, err := CreateIssue(db, "test", core.CreateIssueRequest{
+		ScopeKind: "project",
+		Title:     "Ready issue",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	i2, err := CreateIssue(db, "test", core.CreateIssueRequest{
+		ScopeKind: "project",
+		Title:     "Claimed issue",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Claim i2.
+	_, err = ClaimIssue(db, i2.ID, "agent-1", 3600)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// List ready issues: only i1 (unclaimed) should appear.
+	ready, err := ListReadyIssues(db, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ready) != 1 {
+		t.Fatalf("expected 1 ready issue, got %d", len(ready))
+	}
+	if ready[0].ID != i1.ID {
+		t.Errorf("expected ready issue ID %q, got %q", i1.ID, ready[0].ID)
+	}
+	if ready[0].Title != "Ready issue" {
+		t.Errorf("expected title 'Ready issue', got %q", ready[0].Title)
+	}
+}
+
+func TestUpdateIssue(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	issue, err := CreateIssue(db, "test", core.CreateIssueRequest{
+		ScopeKind: "project",
+		Title:     "Original title",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	updated, err := UpdateIssue(db, issue.ID, core.UpdateIssueRequest{
+		Title:           "Updated title",
+		ExpectedVersion: issue.Version,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Title != "Updated title" {
+		t.Errorf("expected title 'Updated title', got %q", updated.Title)
+	}
+	if updated.Version != issue.Version+1 {
+		t.Errorf("expected version %d, got %d", issue.Version+1, updated.Version)
+	}
+}
+
+func TestUpdateIssueVersionConflict(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	issue, err := CreateIssue(db, "test", core.CreateIssueRequest{
+		ScopeKind: "project",
+		Title:     "Version test",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// First update succeeds.
+	_, err = UpdateIssue(db, issue.ID, core.UpdateIssueRequest{
+		Title:           "First update",
+		ExpectedVersion: issue.Version,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Second update with stale version should fail.
+	_, err = UpdateIssue(db, issue.ID, core.UpdateIssueRequest{
+		Title:           "Stale update",
+		ExpectedVersion: issue.Version, // old version
+	})
+	if err == nil {
+		t.Fatal("expected error for version conflict")
+	}
+	var apiErr core.APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("expected APIError, got %T: %v", err, err)
+	}
+}
+
+func TestCloseIssue(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	issue, err := CreateIssue(db, "test", core.CreateIssueRequest{
+		ScopeKind: "project",
+		Title:     "Close me",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = CloseIssue(db, issue.ID, core.CloseIssueRequest{
+		Resolution:      "done",
+		ExpectedVersion: issue.Version,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify it's closed.
+	got, _, err := GetIssue(db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != "done" {
+		t.Errorf("expected status 'done', got %q", got.Status)
+	}
+	if got.ClosedAt == "" {
+		t.Error("expected non-empty closed_at")
+	}
+	if got.Version != issue.Version+1 {
+		t.Errorf("expected version %d, got %d", issue.Version+1, got.Version)
+	}
+}
+
+func TestCloseIssueCancelled(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	issue, err := CreateIssue(db, "test", core.CreateIssueRequest{
+		ScopeKind: "project",
+		Title:     "Cancel me",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = CloseIssue(db, issue.ID, core.CloseIssueRequest{
+		Resolution:      "cancelled",
+		ExpectedVersion: issue.Version,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, _, err := GetIssue(db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != "cancelled" {
+		t.Errorf("expected status 'cancelled', got %q", got.Status)
+	}
+}
+
+func TestCloseIssueVersionConflict(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	issue, err := CreateIssue(db, "test", core.CreateIssueRequest{
+		ScopeKind: "project",
+		Title:     "Conflict",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Use wrong expected version.
+	err = CloseIssue(db, issue.ID, core.CloseIssueRequest{
+		Resolution:      "done",
+		ExpectedVersion: 99,
+	})
+	if err == nil {
+		t.Fatal("expected error for version conflict")
+	}
+	var apiErr core.APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("expected APIError, got %T: %v", err, err)
+	}
+	if apiErr.Code != core.ErrConflict {
+		t.Errorf("expected code %q, got %q", core.ErrConflict, apiErr.Code)
+	}
+}
