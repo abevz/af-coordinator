@@ -554,6 +554,153 @@ func TestListReadyIssuesWithExpiredLease(t *testing.T) {
 	}
 }
 
+func TestListReadyIssuesBlocksDependency(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create three issues: A depends on B with blocks kind.
+	// B is open → A should NOT be ready.
+	iA, err := CreateIssue(db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "A depends on B"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	iB, err := CreateIssue(db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "B blocks A"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Add blocks dependency: A blocked by B
+	err = AddDependency(db, iA.ID, core.AddDependencyRequest{DependsOn: iB.ID, Kind: "blocks"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// ListReadyIssues: A should NOT appear (B is open, blocking A).
+	ready, err := ListReadyIssues(db, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range ready {
+		if r.ID == iA.ID {
+			t.Errorf("issue %q should not be ready: it has an unfinished blocks dependency", iA.ShortID)
+		}
+	}
+	// B itself should be ready (it has no blockers).
+	foundB := false
+	for _, r := range ready {
+		if r.ID == iB.ID {
+			foundB = true
+			break
+		}
+	}
+	if !foundB {
+		t.Errorf("issue %q should be ready: it has no blockers", iB.ShortID)
+	}
+}
+
+func TestListReadyIssuesBlocksDependencyDone(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// A depends on B with blocks. B is done → A IS ready.
+	iA, err := CreateIssue(db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "A depends on B"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	iB, err := CreateIssue(db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "B is done"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = AddDependency(db, iA.ID, core.AddDependencyRequest{DependsOn: iB.ID, Kind: "blocks"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Close B as done.
+	err = CloseIssue(db, iB.ID, core.CloseIssueRequest{Resolution: "done", ExpectedVersion: iB.Version})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Both should be ready: B is done, A's blocker is resolved.
+	ready, err := ListReadyIssues(db, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundA := false
+	foundB := false
+	for _, r := range ready {
+		if r.ID == iA.ID {
+			foundA = true
+		}
+		if r.ID == iB.ID {
+			foundB = true
+		}
+	}
+	if !foundA {
+		t.Errorf("issue %q should be ready: its blocks dependency is done", iA.ShortID)
+	}
+	if foundB {
+		t.Errorf("issue %q should not be ready: it is done", iB.ShortID)
+	}
+}
+
+func TestListReadyIssuesBlocksDependencyCancelled(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	iA, err := CreateIssue(db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "A depends on B"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	iB, err := CreateIssue(db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "B is cancelled"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = AddDependency(db, iA.ID, core.AddDependencyRequest{DependsOn: iB.ID, Kind: "blocks"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Close B as cancelled.
+	err = CloseIssue(db, iB.ID, core.CloseIssueRequest{Resolution: "cancelled", ExpectedVersion: iB.Version})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ready, err := ListReadyIssues(db, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundA := false
+	for _, r := range ready {
+		if r.ID == iA.ID {
+			foundA = true
+			break
+		}
+	}
+	if !foundA {
+		t.Errorf("issue %q should be ready: its blocks dependency is cancelled", iA.ShortID)
+	}
+}
+
 func TestAddDependency(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)

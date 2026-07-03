@@ -195,8 +195,8 @@ func ListIssues(db *sql.DB, params core.IssueListParams) ([]core.Issue, error) {
 	return issues, nil
 }
 
-// ListReadyIssues returns issues that are actionable (not terminal) and not currently leased.
-// Dependency filtering (from the dependencies table) is deferred to SDD-0008.
+// ListReadyIssues returns issues that are actionable (not terminal), not currently leased,
+// and not blocked by an unfinished blocks dependency.
 func ListReadyIssues(db *sql.DB, projectID string) ([]core.Issue, error) {
 	var args []interface{}
 	query := `SELECT id, short_id, project_id, repository_id, worktree_id, scope_kind,
@@ -204,7 +204,14 @@ func ListReadyIssues(db *sql.DB, projectID string) ([]core.Issue, error) {
 	                 claimed_at, closed_at, created_at, updated_at
 	          FROM issues
 	          WHERE status NOT IN ('done', 'cancelled', 'deferred', 'blocked')
-	            AND id NOT IN (SELECT issue_id FROM leases WHERE expires_at > ?)`
+	            AND id NOT IN (SELECT issue_id FROM leases WHERE expires_at > ?)
+	            AND NOT EXISTS (
+	                SELECT 1 FROM dependencies d
+	                JOIN issues blocker ON blocker.id = d.depends_on_issue_id
+	                WHERE d.issue_id = issues.id
+	                  AND d.kind = 'blocks'
+	                  AND blocker.status NOT IN ('done', 'cancelled')
+	            )`
 
 	args = append(args, time.Now().UTC().Format(time.RFC3339))
 
