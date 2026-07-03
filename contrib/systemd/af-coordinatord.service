@@ -1,0 +1,22 @@
+[Unit]
+Description=af-coordinator daemon — local AI multi-project coordination
+Documentation=https://github.com/abevz/af-coordinator
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/af-coordinatord
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/.local/share/af-coordinator %h/.local/state/af-coordinator
+
+[Install]
+WantedBy=default.target

@@ -15,4 +15,4 @@
 - [x] AFC-SDD-0009 Implement issue-to-artifact linking
 - [x] AFC-SDD-0010 Implement notes and issue activity timeline APIs
 - [ ] AFC-SDD-0011 Implement query-oriented CLI wrappers for core APIs
-- [ ] AFC-SDD-0012 Add systemd user service and basic operational docs (including VACUUM INTO backups)
+- [x] AFC-SDD-0012 Add systemd user service and basic operational docs (including VACUUM INTO backups)

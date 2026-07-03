@@ -188,6 +188,37 @@ Shipped.
 - The `note add` CLI uses `--body` as a single string — multi-line
   bodies require shell quoting
 
+## AFC-SDD-0012 — Systemd user service and operational docs
+
+### What shipped
+
+- **Systemd user service** (`contrib/systemd/af-coordinatord.service`): unit file
+  with hardening (NoNewPrivileges, PrivateTmp, ProtectSystem, ProtectHome,
+  minimal ReadWritePaths) and on-failure restart
+- **contrib Makefile** (`contrib/systemd/Makefile`): `install`/`uninstall` targets
+  for managing the service unit
+- **Operational docs** (`docs/operations.md`): building, systemd service
+  management, manual daemon start, curl interaction, backup (VACUUM INTO),
+  CLI usage, data locations, and configuration environment variables
+- **Makefile targets**: `build-install` (builds binaries to `~/.local/bin`),
+  `install-service`, `uninstall-service`
+- **Tasks** (`docs/specs/001-foundation/tasks.md`): marked `[x]`
+
+### What was verified
+
+- `go build ./...` — compiles clean
+- `gofmt -w .` — all formatting correct
+- Files reviewed for consistency with existing defaults in
+  `internal/config/config.go` (socket and db paths match)
+
+### Open
+
+- No automated tests for the service unit or docs (operational, not runtime code)
+- The `install-service` and `uninstall-service` targets in the root Makefile call
+  `systemctl --user` directly; they assume a systemd user session is available.
+  The `contrib/systemd/Makefile` provides the same targets for use without the
+  root Makefile.
+
 Use this file to capture:
 
 - what shipped
