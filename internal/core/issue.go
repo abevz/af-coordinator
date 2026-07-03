@@ -75,6 +75,36 @@ type ReleaseRequest struct {
 	LeaseToken string `json:"lease_token"`
 }
 
+// UpdateIssueRequest is the JSON body for PATCH /v1/issues/{issue_id}.
+type UpdateIssueRequest struct {
+	Title           string `json:"title,omitempty"`
+	Description     string `json:"description,omitempty"`
+	Priority        int    `json:"priority,omitempty"`
+	Assignee        string `json:"assignee,omitempty"`
+	Status          string `json:"status,omitempty"`
+	ExpectedVersion int    `json:"expected_version"`
+	LeaseToken      string `json:"lease_token,omitempty"`
+}
+
+// CloseIssueRequest is the JSON body for POST /v1/issues/{issue_id}/close.
+type CloseIssueRequest struct {
+	Resolution      string `json:"resolution"`
+	ExpectedVersion int    `json:"expected_version"`
+	LeaseToken      string `json:"lease_token"`
+}
+
+// AddDependencyRequest is the JSON body for POST /v1/issues/{issue_id}/dependencies.
+type AddDependencyRequest struct {
+	DependsOn string `json:"depends_on"`
+	Kind      string `json:"kind"`
+}
+
+// RemoveDependencyRequest holds the path and query params for DELETE /v1/issues/{issue_id}/dependencies/{depends_on}.
+type RemoveDependencyRequest struct {
+	DependsOn string
+	Kind      string
+}
+
 // ValidateCreateIssue checks required fields for creating an issue.
 func ValidateCreateIssue(req CreateIssueRequest) error {
 	var errs []string
@@ -97,4 +127,24 @@ func ValidateCreateIssue(req CreateIssueRequest) error {
 		return fmt.Errorf("validation_failed: %s", strings.Join(errs, "; "))
 	}
 	return nil
+}
+
+// ValidateStatusTransition checks if a status transition is valid.
+func ValidateStatusTransition(current, target string) error {
+	validTransitions := map[string][]string{
+		"open":        {"in_progress", "blocked", "deferred", "done", "cancelled"},
+		"in_progress": {"open", "blocked", "deferred", "done", "cancelled"},
+		"blocked":     {"open", "in_progress", "deferred", "done", "cancelled"},
+		"deferred":    {"open", "in_progress", "blocked", "done", "cancelled"},
+	}
+	valid, ok := validTransitions[current]
+	if !ok {
+		return fmt.Errorf("validation_failed: invalid current status: %s", current)
+	}
+	for _, v := range valid {
+		if target == v {
+			return nil
+		}
+	}
+	return fmt.Errorf("validation_failed: cannot transition from '%s' to '%s'", current, target)
 }

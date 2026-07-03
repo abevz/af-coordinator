@@ -91,6 +91,38 @@ Shipped.
 
 - No dedicated tests for the new handlers or store functions yet
 
+## AFC-SDD-0008 — Issue update/close and dependency management
+
+### What shipped
+
+- **Core types** (`internal/core/issue.go`): `UpdateIssueRequest`,
+  `CloseIssueRequest`, `AddDependencyRequest`, `RemoveDependencyRequest`,
+  `ValidateStatusTransition`
+- **Error codes** (`internal/core/errors.go`): `ErrDependencyCycle`
+- **SQLite store** (`internal/store/sqlite/issues.go`): `UpdateIssue` (dynamic
+  SET clause, version/lease checks, event logging), `CloseIssue` (resolution
+  check, lease cleanup, event logging), `AddDependency` (BFS cycle detection
+  for `blocks` kind), `RemoveDependency`, `wouldCreateCycle`
+- **API handlers** (`internal/api/issues.go`): `PATCH /v1/issues/{issue_id}`,
+  `POST /v1/issues/{issue_id}/close`, `POST /v1/issues/{issue_id}/dependencies`,
+  `DELETE /v1/issues/{issue_id}/dependencies/{depends_on}`
+- **Client methods** (`internal/client/client.go`): `UpdateIssue`, `CloseIssue`,
+  `AddDependency`, `RemoveDependency`
+- **CLI commands** (`cmd/afctl/main.go`): `afctl issue update`, `afctl issue close`,
+  `afctl issue dependency add`, `afctl issue dependency remove`
+
+### What was verified
+
+- `go build ./...` — compiles clean
+- `go vet ./...` — no issues
+- `gofmt -w .` — all formatting correct
+
+### Open
+
+- No dedicated tests for the new handlers or store functions yet
+- `ListReadyIssues` dependency filtering from the `dependencies` table
+  (deferred from SDD-0006) is not yet implemented
+
 Use this file to capture:
 
 - what shipped

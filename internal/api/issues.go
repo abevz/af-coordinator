@@ -241,3 +241,143 @@ func handleListReadyIssues(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 		writeJSON(w, http.StatusOK, map[string][]core.Issue{"issues": issues})
 	}
 }
+
+func handleUpdateIssue(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		issueID := r.PathValue("issue_id")
+
+		var req core.UpdateIssueRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, core.ErrValidationFailed, "invalid JSON body")
+			return
+		}
+
+		updated, err := sqlite.UpdateIssue(db, issueID, req)
+		if err != nil {
+			if apiErr, ok := errAsAPIError(err); ok {
+				switch apiErr.Code {
+				case core.ErrConflict:
+					writeError(w, http.StatusConflict, core.ErrConflict, apiErr.Message)
+					return
+				case core.ErrNotFound:
+					writeError(w, http.StatusNotFound, core.ErrNotFound, apiErr.Message)
+					return
+				case core.ErrLeaseExpired:
+					writeError(w, http.StatusGone, core.ErrLeaseExpired, apiErr.Message)
+					return
+				case core.ErrValidationFailed:
+					writeError(w, http.StatusBadRequest, core.ErrValidationFailed, apiErr.Message)
+					return
+				}
+			}
+			logger.Error("failed to update issue", "issue_id", issueID, "error", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "failed to update issue")
+			return
+		}
+
+		writeJSON(w, http.StatusOK, map[string]core.Issue{"issue": updated})
+	}
+}
+
+func handleCloseIssue(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		issueID := r.PathValue("issue_id")
+
+		var req core.CloseIssueRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, core.ErrValidationFailed, "invalid JSON body")
+			return
+		}
+
+		err := sqlite.CloseIssue(db, issueID, req)
+		if err != nil {
+			if apiErr, ok := errAsAPIError(err); ok {
+				switch apiErr.Code {
+				case core.ErrConflict:
+					writeError(w, http.StatusConflict, core.ErrConflict, apiErr.Message)
+					return
+				case core.ErrLeaseExpired:
+					writeError(w, http.StatusGone, core.ErrLeaseExpired, apiErr.Message)
+					return
+				case core.ErrNotFound:
+					writeError(w, http.StatusNotFound, core.ErrNotFound, apiErr.Message)
+					return
+				case core.ErrValidationFailed:
+					writeError(w, http.StatusBadRequest, core.ErrValidationFailed, apiErr.Message)
+					return
+				}
+			}
+			logger.Error("failed to close issue", "issue_id", issueID, "error", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "failed to close issue")
+			return
+		}
+
+		writeJSON(w, http.StatusOK, map[string]string{"status": "closed"})
+	}
+}
+
+func handleAddDependency(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		issueID := r.PathValue("issue_id")
+
+		var req core.AddDependencyRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, core.ErrValidationFailed, "invalid JSON body")
+			return
+		}
+
+		if req.DependsOn == "" {
+			writeError(w, http.StatusBadRequest, core.ErrValidationFailed, "depends_on is required")
+			return
+		}
+		if req.Kind == "" {
+			req.Kind = "blocks"
+		}
+
+		err := sqlite.AddDependency(db, issueID, req)
+		if err != nil {
+			if apiErr, ok := errAsAPIError(err); ok {
+				switch apiErr.Code {
+				case core.ErrDependencyCycle:
+					writeError(w, http.StatusUnprocessableEntity, core.ErrDependencyCycle, apiErr.Message)
+					return
+				case core.ErrNotFound:
+					writeError(w, http.StatusNotFound, core.ErrNotFound, apiErr.Message)
+					return
+				case core.ErrConflict:
+					writeError(w, http.StatusConflict, core.ErrConflict, apiErr.Message)
+					return
+				}
+			}
+			logger.Error("failed to add dependency", "issue_id", issueID, "depends_on", req.DependsOn, "error", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "failed to add dependency")
+			return
+		}
+
+		w.WriteHeader(http.StatusCreated)
+	}
+}
+
+func handleRemoveDependency(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		issueID := r.PathValue("issue_id")
+		dependsOn := r.PathValue("depends_on")
+		kind := r.URL.Query().Get("kind")
+		if kind == "" {
+			kind = "blocks"
+		}
+
+		err := sqlite.RemoveDependency(db, issueID, dependsOn, kind)
+		if err != nil {
+			if apiErr, ok := errAsAPIError(err); ok && apiErr.Code == core.ErrNotFound {
+				writeError(w, http.StatusNotFound, core.ErrNotFound, apiErr.Message)
+				return
+			}
+			logger.Error("failed to remove dependency", "issue_id", issueID, "depends_on", dependsOn, "error", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "failed to remove dependency")
+			return
+		}
+
+		w.WriteHeader(http.StatusNoContent)
+	}
+}

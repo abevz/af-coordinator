@@ -93,6 +93,10 @@ func RunDaemon(ctx context.Context, logger *slog.Logger, cfg config.Config, db *
 	mux.HandleFunc("POST /v1/issues/{issue_id}/claim", handleClaimIssue(db, logger))
 	mux.HandleFunc("POST /v1/issues/{issue_id}/heartbeat", handleHeartbeatLease(db, logger))
 	mux.HandleFunc("POST /v1/issues/{issue_id}/release", handleReleaseLease(db, logger))
+	mux.HandleFunc("PATCH /v1/issues/{issue_id}", handleUpdateIssue(db, logger))
+	mux.HandleFunc("POST /v1/issues/{issue_id}/close", handleCloseIssue(db, logger))
+	mux.HandleFunc("POST /v1/issues/{issue_id}/dependencies", handleAddDependency(db, logger))
+	mux.HandleFunc("DELETE /v1/issues/{issue_id}/dependencies/{depends_on}", handleRemoveDependency(db, logger))
 	mux.HandleFunc("GET /v1/issues", handleListIssues(db, logger))
 
 	server := &http.Server{

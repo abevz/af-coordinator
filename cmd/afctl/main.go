@@ -70,6 +70,11 @@ Commands:
     claim               Claim an issue (acquire a lease)
     heartbeat           Extend an existing lease
     release             Release a claimed lease
+    update              Update issue fields (title, description, priority, assignee, status)
+    close               Close an issue (resolution: done or cancelled)
+    dependency          Manage issue dependencies
+      add               Add a dependency between two issues
+      remove            Remove a dependency between two issues
 `)
 }
 
@@ -613,6 +618,12 @@ func runIssue(c *client.Client, args []string) {
 		runIssueHeartbeat(c, args[1:])
 	case "release":
 		runIssueRelease(c, args[1:])
+	case "update":
+		runIssueUpdate(c, args[1:])
+	case "close":
+		runIssueClose(c, args[1:])
+	case "dependency":
+		runIssueDependency(c, args[1:])
 	default:
 		fmt.Fprintf(os.Stderr, "unknown issue subcommand: %s\n", args[0])
 		os.Exit(1)
@@ -873,6 +884,209 @@ func runIssueRelease(c *client.Client, args []string) {
 		os.Exit(1)
 	}
 	fmt.Println("Lease released.")
+}
+
+func runIssueUpdate(c *client.Client, args []string) {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "Usage: afctl issue update <issue-id> [--title ...] [--description ...] [--priority N] [--assignee ...] [--status ...] --expected-version N [--lease-token ...]")
+		os.Exit(1)
+	}
+
+	issueID := args[0]
+	var req core.UpdateIssueRequest
+	req.ExpectedVersion = -1
+
+	for i := 1; i < len(args); i++ {
+		switch args[i] {
+		case "--title":
+			if i+1 < len(args) {
+				req.Title = args[i+1]
+				i++
+			}
+		case "--description":
+			if i+1 < len(args) {
+				req.Description = args[i+1]
+				i++
+			}
+		case "--priority":
+			if i+1 < len(args) {
+				fmt.Sscanf(args[i+1], "%d", &req.Priority)
+				i++
+			}
+		case "--assignee":
+			if i+1 < len(args) {
+				req.Assignee = args[i+1]
+				i++
+			}
+		case "--status":
+			if i+1 < len(args) {
+				req.Status = args[i+1]
+				i++
+			}
+		case "--expected-version":
+			if i+1 < len(args) {
+				fmt.Sscanf(args[i+1], "%d", &req.ExpectedVersion)
+				i++
+			}
+		case "--lease-token":
+			if i+1 < len(args) {
+				req.LeaseToken = args[i+1]
+				i++
+			}
+		}
+	}
+
+	if req.ExpectedVersion < 0 {
+		fmt.Fprintln(os.Stderr, "error: --expected-version is required")
+		os.Exit(1)
+	}
+
+	issue, err := c.UpdateIssue(issueID, req)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+	printIssue(issue)
+}
+
+func runIssueClose(c *client.Client, args []string) {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "Usage: afctl issue close <issue-id> --resolution done|cancelled --expected-version N --lease-token ...")
+		os.Exit(1)
+	}
+
+	issueID := args[0]
+	var req core.CloseIssueRequest
+	req.ExpectedVersion = -1
+
+	for i := 1; i < len(args); i++ {
+		switch args[i] {
+		case "--resolution":
+			if i+1 < len(args) {
+				req.Resolution = args[i+1]
+				i++
+			}
+		case "--expected-version":
+			if i+1 < len(args) {
+				fmt.Sscanf(args[i+1], "%d", &req.ExpectedVersion)
+				i++
+			}
+		case "--lease-token":
+			if i+1 < len(args) {
+				req.LeaseToken = args[i+1]
+				i++
+			}
+		}
+	}
+
+	if req.Resolution == "" {
+		fmt.Fprintln(os.Stderr, "error: --resolution is required (done or cancelled)")
+		os.Exit(1)
+	}
+	if req.ExpectedVersion < 0 {
+		fmt.Fprintln(os.Stderr, "error: --expected-version is required")
+		os.Exit(1)
+	}
+	if req.LeaseToken == "" {
+		fmt.Fprintln(os.Stderr, "error: --lease-token is required")
+		os.Exit(1)
+	}
+
+	if err := c.CloseIssue(issueID, req); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println("Issue closed.")
+}
+
+func runIssueDependency(c *client.Client, args []string) {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "Usage: afctl issue dependency <add|remove> <issue-id> --depends-on <other-issue> [--kind blocks|parent|related|discovered-from]")
+		os.Exit(1)
+	}
+
+	switch args[0] {
+	case "add":
+		runIssueDependencyAdd(c, args[1:])
+	case "remove":
+		runIssueDependencyRemove(c, args[1:])
+	default:
+		fmt.Fprintf(os.Stderr, "unknown dependency subcommand: %s\n", args[0])
+		os.Exit(1)
+	}
+}
+
+func runIssueDependencyAdd(c *client.Client, args []string) {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "Usage: afctl issue dependency add <issue-id> --depends-on <other-issue> [--kind blocks|parent|related|discovered-from]")
+		os.Exit(1)
+	}
+
+	issueID := args[0]
+	var req core.AddDependencyRequest
+
+	for i := 1; i < len(args); i++ {
+		switch args[i] {
+		case "--depends-on":
+			if i+1 < len(args) {
+				req.DependsOn = args[i+1]
+				i++
+			}
+		case "--kind":
+			if i+1 < len(args) {
+				req.Kind = args[i+1]
+				i++
+			}
+		}
+	}
+
+	if req.DependsOn == "" {
+		fmt.Fprintln(os.Stderr, "error: --depends-on is required")
+		os.Exit(1)
+	}
+
+	if err := c.AddDependency(issueID, req); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println("Dependency added.")
+}
+
+func runIssueDependencyRemove(c *client.Client, args []string) {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "Usage: afctl issue dependency remove <issue-id> --depends-on <other-issue> [--kind blocks]")
+		os.Exit(1)
+	}
+
+	issueID := args[0]
+	dependsOn := ""
+	kind := "blocks"
+
+	for i := 1; i < len(args); i++ {
+		switch args[i] {
+		case "--depends-on":
+			if i+1 < len(args) {
+				dependsOn = args[i+1]
+				i++
+			}
+		case "--kind":
+			if i+1 < len(args) {
+				kind = args[i+1]
+				i++
+			}
+		}
+	}
+
+	if dependsOn == "" {
+		fmt.Fprintln(os.Stderr, "error: --depends-on is required")
+		os.Exit(1)
+	}
+
+	if err := c.RemoveDependency(issueID, dependsOn, kind); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println("Dependency removed.")
 }
 
 func printIssue(i core.Issue) {

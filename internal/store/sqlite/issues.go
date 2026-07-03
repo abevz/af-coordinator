@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -434,6 +435,299 @@ func scanIssue(s scanner) (core.Issue, error) {
 		i.ClosedAt = closedAt.String
 	}
 	return i, nil
+}
+
+// UpdateIssue updates an issue's mutable fields with optimistic concurrency.
+func UpdateIssue(db *sql.DB, issueID string, req core.UpdateIssueRequest) (core.Issue, error) {
+	issue, lease, err := GetIssue(db, issueID)
+	if err != nil {
+		return core.Issue{}, err
+	}
+
+	// Version check.
+	if req.ExpectedVersion != issue.Version {
+		return core.Issue{}, core.NewAPIError(core.ErrConflict,
+			fmt.Sprintf("expected version %d, current version is %d", req.ExpectedVersion, issue.Version))
+	}
+
+	// Lease check: if issue has an active lease, require lease_token to match.
+	if lease != nil && lease.LeaseToken != req.LeaseToken {
+		return core.Issue{}, core.NewAPIError(core.ErrLeaseExpired,
+			"issue is leased and lease_token does not match")
+	}
+
+	// Validate status transition if updating status.
+	if req.Status != "" && req.Status != issue.Status {
+		if err := core.ValidateStatusTransition(issue.Status, req.Status); err != nil {
+			return core.Issue{}, err
+		}
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	tx, err := db.Begin()
+	if err != nil {
+		return core.Issue{}, fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// Build dynamic SET clause for non-zero / non-empty fields.
+	var sets []string
+	var args []interface{}
+
+	if req.Title != "" {
+		sets = append(sets, "title = ?")
+		args = append(args, req.Title)
+	}
+	if req.Description != "" {
+		sets = append(sets, "description = ?")
+		args = append(args, req.Description)
+	}
+	if req.Priority > 0 {
+		sets = append(sets, "priority = ?")
+		args = append(args, req.Priority)
+	}
+	if req.Assignee != "" {
+		sets = append(sets, "assignee = ?")
+		args = append(args, req.Assignee)
+	}
+	if req.Status != "" {
+		sets = append(sets, "status = ?")
+		args = append(args, req.Status)
+	}
+
+	if len(sets) == 0 {
+		return core.Issue{}, core.NewAPIError(core.ErrValidationFailed, "no fields to update")
+	}
+
+	sets = append(sets, "version = version + 1")
+	sets = append(sets, "updated_at = ?")
+	args = append(args, now)
+	args = append(args, issueID)
+
+	query := "UPDATE issues SET " + strings.Join(sets, ", ") + " WHERE id = ?"
+	result, err := tx.Exec(query, args...)
+	if err != nil {
+		return core.Issue{}, fmt.Errorf("update issue: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return core.Issue{}, fmt.Errorf("rows affected: %w", err)
+	}
+	if rows == 0 {
+		return core.Issue{}, core.NewAPIError(core.ErrNotFound, "issue not found: "+issueID)
+	}
+
+	// Append event.
+	changed := buildChangedFields(req)
+	eventPayload := map[string]interface{}{"changed": changed}
+	payloadBytes, _ := json.Marshal(eventPayload)
+	_, err = tx.Exec(
+		`INSERT INTO events (id, issue_id, actor, event_type, payload_json, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
+		uuid.New().String(), issueID, "unknown", "issue_updated", string(payloadBytes), now,
+	)
+	if err != nil {
+		return core.Issue{}, fmt.Errorf("insert event: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return core.Issue{}, fmt.Errorf("commit tx: %w", err)
+	}
+
+	// Re-read to get updated version, timestamps, etc.
+	updated, _, err := GetIssue(db, issueID)
+	if err != nil {
+		return core.Issue{}, fmt.Errorf("re-read issue: %w", err)
+	}
+	return updated, nil
+}
+
+// buildChangedFields returns the list of field names that were changed in the update request.
+func buildChangedFields(req core.UpdateIssueRequest) []string {
+	var changed []string
+	if req.Title != "" {
+		changed = append(changed, "title")
+	}
+	if req.Description != "" {
+		changed = append(changed, "description")
+	}
+	if req.Priority > 0 {
+		changed = append(changed, "priority")
+	}
+	if req.Assignee != "" {
+		changed = append(changed, "assignee")
+	}
+	if req.Status != "" {
+		changed = append(changed, "status")
+	}
+	return changed
+}
+
+// CloseIssue closes an issue by setting its status to 'done' or 'cancelled'.
+func CloseIssue(db *sql.DB, issueID string, req core.CloseIssueRequest) error {
+	issue, lease, err := GetIssue(db, issueID)
+	if err != nil {
+		return err
+	}
+
+	// Version check.
+	if req.ExpectedVersion != issue.Version {
+		return core.NewAPIError(core.ErrConflict,
+			fmt.Sprintf("expected version %d, current version is %d", req.ExpectedVersion, issue.Version))
+	}
+
+	// Lease check.
+	if lease != nil && lease.LeaseToken != req.LeaseToken {
+		return core.NewAPIError(core.ErrLeaseExpired,
+			"issue is leased and lease_token does not match")
+	}
+
+	// Resolution validation.
+	if req.Resolution != "done" && req.Resolution != "cancelled" {
+		return core.NewAPIError(core.ErrValidationFailed,
+			"resolution must be 'done' or 'cancelled'")
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	_, err = tx.Exec(
+		`UPDATE issues SET status = ?, closed_at = ?, version = version + 1, updated_at = ? WHERE id = ?`,
+		req.Resolution, now, now, issueID,
+	)
+	if err != nil {
+		return fmt.Errorf("update issue: %w", err)
+	}
+
+	// Remove any active lease on this issue.
+	_, _ = tx.Exec(`DELETE FROM leases WHERE issue_id = ?`, issueID)
+
+	// Append event.
+	payload := fmt.Sprintf(`{"changed":["status","closed_at"],"resolution":"%s"}`, req.Resolution)
+	_, err = tx.Exec(
+		`INSERT INTO events (id, issue_id, actor, event_type, payload_json, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
+		uuid.New().String(), issueID, "unknown", "issue_closed", payload, now,
+	)
+	if err != nil {
+		return fmt.Errorf("insert event: %w", err)
+	}
+
+	return tx.Commit()
+}
+
+// AddDependency adds a dependency between two issues. For 'blocks' kind, it performs cycle detection.
+func AddDependency(db *sql.DB, issueID string, req core.AddDependencyRequest) error {
+	// Verify both issues exist.
+	if _, _, err := GetIssue(db, issueID); err != nil {
+		return err
+	}
+	if _, _, err := GetIssue(db, req.DependsOn); err != nil {
+		return err
+	}
+
+	kind := req.Kind
+	if kind == "" {
+		kind = "blocks"
+	}
+
+	if kind == "blocks" {
+		if wouldCreateCycle(db, issueID, req.DependsOn) {
+			return core.NewAPIError(core.ErrDependencyCycle,
+				"adding this dependency would create a cycle")
+		}
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	_, err := db.Exec(
+		`INSERT INTO dependencies (issue_id, depends_on_issue_id, kind, created_at)
+		 VALUES (?, ?, ?, ?)`,
+		issueID, req.DependsOn, kind, now,
+	)
+	if err != nil {
+		// Handle duplicate / unique constraint.
+		if isSQLiteConstraintError(err) {
+			return core.NewAPIError(core.ErrConflict,
+				"dependency already exists")
+		}
+		return fmt.Errorf("insert dependency: %w", err)
+	}
+
+	return nil
+}
+
+// RemoveDependency removes a dependency record.
+func RemoveDependency(db *sql.DB, issueID, dependsOn, kind string) error {
+	if kind == "" {
+		kind = "blocks"
+	}
+
+	result, err := db.Exec(
+		`DELETE FROM dependencies WHERE issue_id = ? AND depends_on_issue_id = ? AND kind = ?`,
+		issueID, dependsOn, kind,
+	)
+	if err != nil {
+		return fmt.Errorf("delete dependency: %w", err)
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("rows affected: %w", err)
+	}
+	if rows == 0 {
+		return core.NewAPIError(core.ErrNotFound, "dependency not found")
+	}
+
+	return nil
+}
+
+// wouldCreateCycle checks if adding a 'blocks' dependency from fromIssueID to toIssueID would create a cycle.
+// It does a BFS from toIssueID following 'blocks' edges to see if we reach fromIssueID.
+func wouldCreateCycle(db *sql.DB, fromIssueID, toIssueID string) bool {
+	visited := map[string]bool{}
+	queue := []string{toIssueID}
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+		if current == fromIssueID {
+			return true // cycle!
+		}
+		if visited[current] {
+			continue
+		}
+		visited[current] = true
+		rows, err := db.Query(
+			`SELECT depends_on_issue_id FROM dependencies WHERE issue_id = ? AND kind = 'blocks'`, current)
+		if err != nil {
+			continue
+		}
+		for rows.Next() {
+			var dep string
+			if err := rows.Scan(&dep); err != nil {
+				continue
+			}
+			if !visited[dep] {
+				queue = append(queue, dep)
+			}
+		}
+		rows.Close()
+	}
+	return false
+}
+
+// isSQLiteConstraintError checks if an error is a SQLite constraint violation.
+func isSQLiteConstraintError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "UNIQUE constraint failed")
 }
 
 // scanIssueRow builds an Issue struct from raw fields (used by CreateIssue to avoid a second query).

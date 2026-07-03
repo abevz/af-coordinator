@@ -258,6 +258,36 @@ func (c *Client) ReleaseLease(issueID, leaseToken string) error {
 	return c.doJSON(http.MethodPost, "/v1/issues/"+issueID+"/release", body, nil)
 }
 
+// UpdateIssue sends a PATCH /v1/issues/{issueID} request.
+func (c *Client) UpdateIssue(issueID string, req core.UpdateIssueRequest) (core.Issue, error) {
+	var result struct {
+		Issue core.Issue `json:"issue"`
+	}
+	if err := c.doJSON(http.MethodPatch, "/v1/issues/"+issueID, req, &result); err != nil {
+		return core.Issue{}, err
+	}
+	return result.Issue, nil
+}
+
+// CloseIssue sends a POST /v1/issues/{issueID}/close request.
+func (c *Client) CloseIssue(issueID string, req core.CloseIssueRequest) error {
+	return c.doJSON(http.MethodPost, "/v1/issues/"+issueID+"/close", req, nil)
+}
+
+// AddDependency sends a POST /v1/issues/{issueID}/dependencies request.
+func (c *Client) AddDependency(issueID string, req core.AddDependencyRequest) error {
+	return c.doJSON(http.MethodPost, "/v1/issues/"+issueID+"/dependencies", req, nil)
+}
+
+// RemoveDependency sends a DELETE /v1/issues/{issueID}/dependencies/{dependsOn} request.
+func (c *Client) RemoveDependency(issueID, dependsOn, kind string) error {
+	path := "/v1/issues/" + issueID + "/dependencies/" + dependsOn
+	if kind != "" {
+		path += "?kind=" + kind
+	}
+	return c.doJSON(http.MethodDelete, path, nil, nil)
+}
+
 // ListReadyIssues sends a GET /v1/issues/ready request with an optional project filter.
 func (c *Client) ListReadyIssues(project string) ([]core.Issue, error) {
 	path := "/v1/issues/ready"
