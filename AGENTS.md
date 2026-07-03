@@ -121,6 +121,9 @@ CodeWhale upstream supports first-class sub-agent worktree isolation on
 - the same hook policy blocks direct file-write and shell tools when the active
   CodeWhale workspace is `main/`; use read-only tools there and perform all
   mutations and verification commands in the sibling worktree
+- in CodeWhale 0.8.66 this enforcement applies to the interactive TUI only;
+  headless `codewhale exec` does not attach the hook executor, so never run a
+  mutating headless task from `main/` -- launch it from the sibling worktree
 
 Preferred shape:
 

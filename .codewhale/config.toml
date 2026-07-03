@@ -6,7 +6,8 @@
 # AGENTS.md is loaded automatically.
 #
 # Worktree behavior is not a config-level setting. AGENTS.md defines the policy,
-# and hooks.toml rejects invalid sub-agent spawns and direct writes from main/.
+# and hooks.toml rejects invalid sub-agent spawns and direct writes from main/
+# in the interactive TUI. CodeWhale 0.8.66 headless `exec` bypasses hooks.
 
 reasoning_effort = "high"
 max_subagents = 8
