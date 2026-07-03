@@ -10,6 +10,7 @@ const (
 	ErrLeaseHeld        = "lease_held"
 	ErrLeaseExpired     = "lease_expired"
 	ErrDependencyCycle  = "dependency_cycle"
+	ErrAlreadyLinked    = "already_linked"
 )
 
 // APIError is the standard error envelope returned by the daemon.

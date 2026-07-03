@@ -274,6 +274,11 @@ func (c *Client) CloseIssue(issueID string, req core.CloseIssueRequest) error {
 	return c.doJSON(http.MethodPost, "/v1/issues/"+issueID+"/close", req, nil)
 }
 
+// LinkArtifact sends a POST /v1/issues/{issueID}/links request.
+func (c *Client) LinkArtifact(issueID string, req core.LinkArtifactRequest) error {
+	return c.doJSON(http.MethodPost, "/v1/issues/"+issueID+"/links", req, nil)
+}
+
 // AddDependency sends a POST /v1/issues/{issueID}/dependencies request.
 func (c *Client) AddDependency(issueID string, req core.AddDependencyRequest) error {
 	return c.doJSON(http.MethodPost, "/v1/issues/"+issueID+"/dependencies", req, nil)

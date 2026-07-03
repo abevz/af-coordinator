@@ -123,6 +123,38 @@ Shipped.
 - `ListReadyIssues` dependency filtering from the `dependencies` table
   (deferred from SDD-0006) is not yet implemented
 
+## AFC-SDD-0009 — Issue-to-artifact linking
+
+### What shipped
+
+- **Core types** (`internal/core/issue.go`): `LinkArtifactRequest`,
+  `ArtifactRef`
+- **Error codes** (`internal/core/errors.go`): `ErrAlreadyLinked`
+- **SQLite store** (`internal/store/sqlite/issues.go`): `LinkArtifact`
+  (issue+artifact existence verification, INSERT with unique constraint
+  handling), `ListIssueArtifacts` (JOIN query returning artifact refs with
+  relation info)
+- **API handler** (`internal/api/issues.go`): `POST /v1/issues/{issue_id}/links`
+  — extracts issue_id from path, decodes JSON, validates artifact required,
+  maps not_found→404, already_linked→409, returns 201 with created_at
+- **Route** (`internal/api/daemon.go`): `POST /v1/issues/{issue_id}/links`
+- **Client method** (`internal/client/client.go`): `LinkArtifact`
+- **CLI command** (`cmd/afctl/main.go`): `afctl issue link <issue-id> --artifact <artifact-id> [--relation implements|...]`
+
+### What was verified
+
+- `go build ./...` — compiles clean
+- `go vet ./...` — no issues
+- `gofmt -w .` — all formatting correct
+
+### Open
+
+- No dedicated tests for the new handler or store functions yet
+- `ListIssueArtifacts` is implemented but does not yet have a dedicated
+  API handler or CLI subcommand — it is ready for use when needed
+- Relation defaults to `"implements"` when omitted, consistent with the
+  schema default
+
 Use this file to capture:
 
 - what shipped

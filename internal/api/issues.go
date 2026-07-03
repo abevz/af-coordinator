@@ -381,3 +381,39 @@ func handleRemoveDependency(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 		w.WriteHeader(http.StatusNoContent)
 	}
 }
+
+func handleLinkArtifact(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		issueID := r.PathValue("issue_id")
+
+		var req core.LinkArtifactRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, core.ErrValidationFailed, "invalid JSON body")
+			return
+		}
+
+		if req.Artifact == "" {
+			writeError(w, http.StatusBadRequest, core.ErrValidationFailed, "artifact is required")
+			return
+		}
+
+		createdAt, err := sqlite.LinkArtifact(db, issueID, req)
+		if err != nil {
+			if apiErr, ok := errAsAPIError(err); ok {
+				switch apiErr.Code {
+				case core.ErrNotFound:
+					writeError(w, http.StatusNotFound, core.ErrNotFound, apiErr.Message)
+					return
+				case core.ErrAlreadyLinked:
+					writeError(w, http.StatusConflict, core.ErrAlreadyLinked, apiErr.Message)
+					return
+				}
+			}
+			logger.Error("failed to link artifact", "issue_id", issueID, "artifact", req.Artifact, "error", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "failed to link artifact")
+			return
+		}
+
+		writeJSON(w, http.StatusCreated, map[string]string{"created_at": createdAt})
+	}
+}

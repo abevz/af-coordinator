@@ -72,6 +72,7 @@ Commands:
     release             Release a claimed lease
     update              Update issue fields (title, description, priority, assignee, status)
     close               Close an issue (resolution: done or cancelled)
+    link                Link an artifact to an issue
     dependency          Manage issue dependencies
       add               Add a dependency between two issues
       remove            Remove a dependency between two issues
@@ -622,6 +623,8 @@ func runIssue(c *client.Client, args []string) {
 		runIssueUpdate(c, args[1:])
 	case "close":
 		runIssueClose(c, args[1:])
+	case "link":
+		runIssueLink(c, args[1:])
 	case "dependency":
 		runIssueDependency(c, args[1:])
 	default:
@@ -997,6 +1000,42 @@ func runIssueClose(c *client.Client, args []string) {
 		os.Exit(1)
 	}
 	fmt.Println("Issue closed.")
+}
+
+func runIssueLink(c *client.Client, args []string) {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "Usage: afctl issue link <issue-id> --artifact <artifact-id> [--relation implements|...]")
+		os.Exit(1)
+	}
+
+	issueID := args[0]
+	var req core.LinkArtifactRequest
+
+	for i := 1; i < len(args); i++ {
+		switch args[i] {
+		case "--artifact":
+			if i+1 < len(args) {
+				req.Artifact = args[i+1]
+				i++
+			}
+		case "--relation":
+			if i+1 < len(args) {
+				req.Relation = args[i+1]
+				i++
+			}
+		}
+	}
+
+	if req.Artifact == "" {
+		fmt.Fprintln(os.Stderr, "error: --artifact is required")
+		os.Exit(1)
+	}
+
+	if err := c.LinkArtifact(issueID, req); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println("Artifact linked.")
 }
 
 func runIssueDependency(c *client.Client, args []string) {

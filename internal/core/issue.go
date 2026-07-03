@@ -105,6 +105,20 @@ type RemoveDependencyRequest struct {
 	Kind      string
 }
 
+// LinkArtifactRequest is the JSON body for POST /v1/issues/{issue_id}/links.
+type LinkArtifactRequest struct {
+	Artifact string `json:"artifact"`           // artifact ID or relative path
+	Relation string `json:"relation,omitempty"` // default: "implements"
+}
+
+// ArtifactRef is a linked artifact with relation info.
+type ArtifactRef struct {
+	ID           string `json:"id"`
+	RelativePath string `json:"relative_path"`
+	Kind         string `json:"kind"`
+	Relation     string `json:"relation"`
+}
+
 // ValidateCreateIssue checks required fields for creating an issue.
 func ValidateCreateIssue(req CreateIssueRequest) error {
 	var errs []string

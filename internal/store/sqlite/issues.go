@@ -722,6 +722,74 @@ func wouldCreateCycle(db *sql.DB, fromIssueID, toIssueID string) bool {
 	return false
 }
 
+// LinkArtifact links an artifact to an issue by inserting into issue_artifacts.
+func LinkArtifact(db *sql.DB, issueID string, req core.LinkArtifactRequest) (string, error) {
+	// Verify the issue exists.
+	if _, _, err := GetIssue(db, issueID); err != nil {
+		return "", err
+	}
+
+	// Resolve artifact by ID.
+	artifact, err := GetArtifact(db, req.Artifact)
+	if err != nil {
+		return "", err
+	}
+
+	relation := req.Relation
+	if relation == "" {
+		relation = "implements"
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	_, err = db.Exec(
+		`INSERT INTO issue_artifacts (issue_id, artifact_id, relation, created_at)
+		 VALUES (?, ?, ?, ?)`,
+		issueID, artifact.ID, relation, now,
+	)
+	if err != nil {
+		if isSQLiteConstraintError(err) {
+			return "", core.NewAPIError(core.ErrAlreadyLinked,
+				"issue is already linked to this artifact with relation '"+relation+"'")
+		}
+		return "", fmt.Errorf("insert issue_artifact: %w", err)
+	}
+
+	return now, nil
+}
+
+// ListIssueArtifacts returns all artifacts linked to an issue.
+func ListIssueArtifacts(db *sql.DB, issueID string) ([]core.ArtifactRef, error) {
+	rows, err := db.Query(
+		`SELECT a.id, a.relative_path, a.kind, ia.relation
+		 FROM issue_artifacts ia
+		 JOIN artifacts a ON ia.artifact_id = a.id
+		 WHERE ia.issue_id = ?
+		 ORDER BY ia.created_at`,
+		issueID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list issue artifacts: %w", err)
+	}
+	defer rows.Close()
+
+	var refs []core.ArtifactRef
+	for rows.Next() {
+		var ref core.ArtifactRef
+		if err := rows.Scan(&ref.ID, &ref.RelativePath, &ref.Kind, &ref.Relation); err != nil {
+			return nil, fmt.Errorf("scan artifact ref: %w", err)
+		}
+		refs = append(refs, ref)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate artifact refs: %w", err)
+	}
+	if refs == nil {
+		refs = []core.ArtifactRef{}
+	}
+	return refs, nil
+}
+
 // isSQLiteConstraintError checks if an error is a SQLite constraint violation.
 func isSQLiteConstraintError(err error) bool {
 	if err == nil {
