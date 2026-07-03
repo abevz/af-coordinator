@@ -1,0 +1,92 @@
+package api
+
+import (
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"log/slog"
+	"net/http"
+
+	"github.com/abevz/af-coordinator/internal/core"
+	"github.com/abevz/af-coordinator/internal/store/sqlite"
+)
+
+func handleCreateRepo(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req core.CreateRepoRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, core.ErrValidationFailed, "invalid JSON body")
+			return
+		}
+
+		if err := core.ValidateCreateRepo(req); err != nil {
+			writeError(w, http.StatusBadRequest, core.ErrValidationFailed, err.Error())
+			return
+		}
+
+		repo, remotes, err := sqlite.CreateRepo(db, req.Project, req)
+		if err != nil {
+			if apiErr, ok := errAsAPIError(err); ok {
+				if apiErr.Code == core.ErrNotFound {
+					writeError(w, http.StatusNotFound, core.ErrNotFound,
+						"project not found: "+req.Project)
+					return
+				}
+			}
+			if isUniqueConstraintError(err) {
+				writeError(w, http.StatusConflict, "repo_name_taken",
+					"a repository with this name already exists in the project")
+				return
+			}
+			logger.Error("failed to create repo", "logical_name", req.LogicalName, "error", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "failed to create repository")
+			return
+		}
+
+		writeJSON(w, http.StatusCreated, map[string]any{
+			"repository": repo,
+			"remotes":    remotes,
+		})
+	}
+}
+
+func handleListRepos(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		projectFilter := r.URL.Query().Get("project")
+
+		var repos []core.Repository
+		var err error
+
+		if projectFilter != "" {
+			repos, err = sqlite.ListReposByProjectKey(db, projectFilter)
+			if err != nil {
+				if apiErr, ok := errAsAPIError(err); ok && apiErr.Code == core.ErrNotFound {
+					writeError(w, http.StatusNotFound, core.ErrNotFound,
+						"project not found: "+projectFilter)
+					return
+				}
+				logger.Error("failed to list repos by project", "project", projectFilter, "error", err)
+				writeError(w, http.StatusInternalServerError, "internal_error", "failed to list repositories")
+				return
+			}
+		} else {
+			repos, err = sqlite.ListRepos(db, "")
+			if err != nil {
+				logger.Error("failed to list repos", "error", err)
+				writeError(w, http.StatusInternalServerError, "internal_error", "failed to list repositories")
+				return
+			}
+		}
+
+		writeJSON(w, http.StatusOK, map[string][]core.Repository{"repositories": repos})
+	}
+}
+
+// errAsAPIError checks if an error is an APIError from core.
+func errAsAPIError(err error) (core.APIError, bool) {
+	var apiErr core.APIError
+	if errors.As(err, &apiErr) {
+		return apiErr, true
+	}
+	return core.APIError{}, false
+}
