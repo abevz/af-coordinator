@@ -1,0 +1,12 @@
+# af-coordinator project overlay.
+#
+# Supported keys: model, reasoning_effort, approval_policy, sandbox_mode,
+#                  allow_shell, max_subagents, notes_path.
+# Unsupported keys are silently ignored by the runtime.
+#
+# Worktree behavior is NOT a config-level setting — it is enforced through
+# AGENTS.md (Non-negotiable rules) and the sub-agent spawn parameters.
+# See AGENTS.md → "CodeWhale agent conventions" for the required shape.
+
+reasoning_effort = "high"
+max_subagents = 8

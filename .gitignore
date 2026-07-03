@@ -3,6 +3,7 @@
 /bin/
 /dist/
 /.cache/
+/.codewhale/state/
 *.log
 *.out
 /af-coordinatord

@@ -13,6 +13,7 @@ multi-repository, multi-worktree AI execution.
 - Do not invent feature behavior in code that is not grounded in the active spec.
 - Do not access SQLite directly from helper scripts or agents for mutations.
 - Keep real runtime data out of git.
+- **All implementation work MUST go through a git worktree, never write directly to the `main/` checkout.** See CodeWhale agent conventions below.
 
 ## SDD workflow
 
