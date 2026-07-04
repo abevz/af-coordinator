@@ -41,3 +41,13 @@ Shipped.
 ### Open
 
 - Soak period (0027) — pending
+
+## Known limitations
+
+- **AFC-SDD-0031 — GetRepo logical-name ambiguity**:
+  `GetRepo` queries `WHERE id = ? OR logical_name = ?`, but `logical_name`
+  is only unique per project (`UNIQUE(project_id, logical_name)`). If two
+  projects have a repo with the same logical name, `GetRepo` may return
+  the wrong one. This is acceptable for the pilot (single project `utils`),
+  but before multi-project use a scoped lookup (project_key + logical_name)
+  should replace the bare name resolve. Tracked in the 0031 commit message.
