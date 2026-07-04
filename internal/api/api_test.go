@@ -477,6 +477,57 @@ func TestGetIssue(t *testing.T) {
 	}
 }
 
+func TestGetIssueLeaseTokenLeak(t *testing.T) {
+	server, db := newTestServer(t)
+
+	// Create project + issue
+	now := time.Now().UTC().Format(time.RFC3339)
+	_, _ = db.Exec(
+		`INSERT INTO projects (id, key, name, description, next_issue_seq, created_at, updated_at)
+		 VALUES ('proj-1', 'test', 'Test', '', 1, ?, ?)`,
+		now, now,
+	)
+	issueID := "issue-1"
+	_, _ = db.Exec(
+		`INSERT INTO issues (id, short_id, project_id, scope_kind, title, description, status, priority, assignee, version, created_at, updated_at)
+		 VALUES (?, 'test-1', 'proj-1', 'project', 'Test issue', '', 'open', 3, '', 1, ?, ?)`,
+		issueID, now, now,
+	)
+
+	// Claim it
+	claimBody := `{"holder":"agent-1","ttl_seconds":3600}`
+	claimReq, _ := http.NewRequest("POST", server.URL+"/v1/issues/"+issueID+"/claim", strings.NewReader(claimBody))
+	claimReq.Header.Set("Content-Type", "application/json")
+	claimRespHTTP, err := http.DefaultClient.Do(claimReq)
+	if err != nil || claimRespHTTP.StatusCode != http.StatusOK {
+		t.Fatalf("failed to claim issue")
+	}
+
+	// Get it
+	resp, err := http.Get(server.URL + "/v1/issues/" + issueID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	
+	var result map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	
+	leaseObj, ok := result["lease"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected lease object in response, got %v", result["lease"])
+	}
+	
+	if _, hasToken := leaseObj["lease_token"]; hasToken {
+		t.Errorf("SECURITY LEAK: lease_token must not be returned in GET issue response")
+	}
+	if holder, ok := leaseObj["holder"].(string); !ok || holder != "agent-1" {
+		t.Errorf("expected holder agent-1, got %v", leaseObj["holder"])
+	}
+}
+
 func TestGetIssueNotFound(t *testing.T) {
 	server, _ := newTestServer(t)
 
