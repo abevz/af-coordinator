@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-var validProjectKey = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
+var validProjectKey = regexp.MustCompile(`^[a-z][a-z0-9]*(-[a-z0-9]+)*$`)
 
 // Project represents a logical top-level initiative.
 type Project struct {
@@ -24,8 +24,10 @@ func ValidateCreateProject(key, name string) error {
 	var errs []string
 	if key == "" {
 		errs = append(errs, "key is required")
+	} else if len(key) > 16 {
+		errs = append(errs, "key must start with a letter, contain only lowercase letters and digits (no leading/trailing/double hyphens), max 16 chars — key becomes the issue prefix (<key>-<n>); keep it short")
 	} else if !validProjectKey.MatchString(key) {
-		errs = append(errs, "key must start with a letter and contain only lowercase letters, digits, and hyphens")
+		errs = append(errs, "key must start with a letter, contain only lowercase letters and digits (no leading/trailing/double hyphens), max 16 chars — key becomes the issue prefix (<key>-<n>); keep it short")
 	}
 	if name == "" {
 		errs = append(errs, "name is required")

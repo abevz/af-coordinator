@@ -22,6 +22,10 @@
 `next_issue_seq` backs short id allocation. The daemon increments it inside
 the same write transaction that inserts the issue.
 
+Project key rules: must start with a letter, contain only lowercase letters
+and digits (no leading, trailing, or double hyphens), max 16 characters. The
+key forms the short-id prefix (`<key>-<n>`), so keep it short.
+
 ```sql
 create table projects (
   id text primary key,

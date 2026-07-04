@@ -53,7 +53,9 @@ Clients handle `version_conflict` by rereading and retrying;
 
 ## Registry
 
-- `POST /v1/projects` — create project (`key`, `name`, `description`)
+- `POST /v1/projects` — create project (`key`, `name`, `description`);
+  key must start with a letter, contain only lowercase letters and digits (no
+  leading/trailing/double hyphens), max 16 characters
 - `GET  /v1/projects` — list
 - `POST /v1/repos` — register repository (`project`, `logical_name`,
   `canonical_git_dir`, `default_branch`, remotes)
