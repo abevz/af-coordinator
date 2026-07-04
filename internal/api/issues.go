@@ -441,7 +441,10 @@ func handleRemoveDependency(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 
 func handleLinkArtifact(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		issueID := r.PathValue("issue_id")
+		issueID, ok := resolveIssueID(db, w, r)
+		if !ok {
+			return
+		}
 
 		var req core.LinkArtifactRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
