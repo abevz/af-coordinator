@@ -360,3 +360,16 @@ Use this file to capture:
   - Ran `afctl health` using the temp socket and it returned `Status: ok` with correct paths.
   - Ran `afctl issue list --project utils` using the temp socket and it returned the actual database issues (7 issues).
   - Drill date: 2026-07-04.
+
+## AFC-SDD-0056 — Identifier resolution is still inconsistent across endpoints
+
+### What shipped
+- `resolveIssueID` is now used in `handleLinkArtifact` to allow linking by short ID.
+- `handleListArtifacts` and `handleListArtifactRoots` now correctly use `repo.ID` to resolve logical repository names instead of passing the raw string filter to the backend.
+- Added regression tests for issue linking by short ID and artifact listing by logical repository name to `internal/api/api_afc7_test.go`.
+
+### What was verified
+- `go build ./...` — compiles clean
+- `go test ./...` — all tests pass, including the new regression tests
+- `make build-install` — completed successfully
+- `afctl issue close` executed cleanly.

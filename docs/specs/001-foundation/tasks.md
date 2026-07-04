@@ -170,7 +170,7 @@ Mechanical quality work, no behavior changes.
     mismatch: "afctl <v> != daemon <v>; restart af-coordinatord"
   - tests: mismatch → warning on stderr, exit code unaffected;
     match → silent
-- [ ] AFC-SDD-0056 Identifier resolution is still inconsistent across endpoints
+- [x] AFC-SDD-0056 Identifier resolution is still inconsistent across endpoints
   - found while linking issues to spec artifacts:
     (a) `issue link <short_id>` → not_found; by UUID → works. 0037
     listed links in scope and is marked done, but the links handler was
