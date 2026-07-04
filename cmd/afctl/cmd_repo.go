@@ -25,7 +25,6 @@ func runRepo(ctx context.Context, c *client.Client, args []string) error {
 	default:
 		return fmt.Errorf("unknown repo subcommand: %s\n", args[0])
 	}
-	return nil
 }
 
 func runRepoAdd(ctx context.Context, c *client.Client, args []string) error {

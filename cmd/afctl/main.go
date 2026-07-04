@@ -51,32 +51,36 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	var err error
 	switch filtered[0] {
 	case "health":
-		runHealth(ctx, c)
+		err = runHealth(ctx, c)
 	case "protocol":
 		runProtocol()
 	case "init":
-		runInit(filtered[1:])
+		err = runInit(filtered[1:])
 	case "project":
-		runProject(ctx, c, filtered[1:])
+		err = runProject(ctx, c, filtered[1:])
 	case "repo":
-		runRepo(ctx, c, filtered[1:])
+		err = runRepo(ctx, c, filtered[1:])
 	case "worktree":
-		runWorktree(ctx, c, filtered[1:])
+		err = runWorktree(ctx, c, filtered[1:])
 	case "artifact-root":
-		runArtifactRoot(ctx, c, filtered[1:])
+		err = runArtifactRoot(ctx, c, filtered[1:])
 	case "artifact":
-		runArtifact(ctx, c, filtered[1:])
+		err = runArtifact(ctx, c, filtered[1:])
 	case "issue":
-		runIssue(ctx, c, filtered[1:])
+		err = runIssue(ctx, c, filtered[1:])
 	case "ls":
-		runLs(ctx, c, filtered[1:])
+		err = runLs(ctx, c, filtered[1:])
 	case "show":
-		runShow(ctx, c, filtered[1:])
+		err = runShow(ctx, c, filtered[1:])
 	default:
 		printUsage()
 		os.Exit(1)
+	}
+	if err != nil {
+		fail(err)
 	}
 }
 
@@ -194,34 +198,34 @@ func resolveActor(flagVal string) (string, error) {
 
 // ─── Health ──────────────────────────────────────────────────────────────────
 
-func runHealth(ctx context.Context, c *client.Client) {
+func runHealth(ctx context.Context, c *client.Client) error {
 	health, err := c.Health(ctx)
 	if err != nil {
-		fail(err)
+		return err
 	}
 	if jsonOutput {
 		json.NewEncoder(os.Stdout).Encode(health)
-		return
+		return nil
 	}
 	fmt.Printf("Name:       %s\n", health.Name)
 	fmt.Printf("Status:     %s\n", health.Status)
 	fmt.Printf("DBPath:     %s\n", health.DBPath)
 	fmt.Printf("SocketPath: %s\n", health.SocketPath)
 	fmt.Printf("Time:       %s\n", health.Time.UTC().Format(time.RFC3339))
+	return nil
 }
 
 // runLs is a top-level shortcut for `afctl issue list`.
-func runLs(ctx context.Context, c *client.Client, args []string) {
-	runIssueList(ctx, c, args)
+func runLs(ctx context.Context, c *client.Client, args []string) error {
+	return runIssueList(ctx, c, args)
 }
 
 // runShow is a top-level shortcut for `afctl issue get`.
-func runShow(ctx context.Context, c *client.Client, args []string) {
+func runShow(ctx context.Context, c *client.Client, args []string) error {
 	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "Usage: afctl show <issue-id-or-short-id>")
-		os.Exit(1)
+		return fmt.Errorf("Usage: afctl show <issue-id-or-short-id>")
 	}
-	runIssueGet(ctx, c, args)
+	return runIssueGet(ctx, c, args)
 }
 
 func printIssue(i core.Issue) {

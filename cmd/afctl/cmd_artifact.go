@@ -25,7 +25,6 @@ func runArtifactRoot(ctx context.Context, c *client.Client, args []string) error
 	default:
 		return fmt.Errorf("unknown artifact-root subcommand: %s\n", args[0])
 	}
-	return nil
 }
 
 func runArtifactRootAdd(ctx context.Context, c *client.Client, args []string) error {
@@ -124,7 +123,6 @@ func runArtifact(ctx context.Context, c *client.Client, args []string) error {
 	default:
 		return fmt.Errorf("unknown artifact subcommand: %s\n", args[0])
 	}
-	return nil
 }
 
 func runArtifactRegister(ctx context.Context, c *client.Client, args []string) error {

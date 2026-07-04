@@ -25,7 +25,6 @@ func runWorktree(ctx context.Context, c *client.Client, args []string) error {
 	default:
 		return fmt.Errorf("unknown worktree subcommand: %s\n", args[0])
 	}
-	return nil
 }
 
 func runWorktreeRegister(ctx context.Context, c *client.Client, args []string) error {

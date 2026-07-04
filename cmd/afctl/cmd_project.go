@@ -25,7 +25,6 @@ func runProject(ctx context.Context, c *client.Client, args []string) error {
 	default:
 		return fmt.Errorf("unknown project subcommand: %s\n", args[0])
 	}
-	return nil
 }
 
 func runProjectAdd(ctx context.Context, c *client.Client, args []string) error {

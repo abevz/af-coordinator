@@ -47,7 +47,6 @@ func runIssue(ctx context.Context, c *client.Client, args []string) error {
 	default:
 		return fmt.Errorf("unknown issue subcommand: %s\n", args[0])
 	}
-	return nil
 }
 
 func runIssueCreate(ctx context.Context, c *client.Client, args []string) error {
@@ -525,7 +524,6 @@ func runIssueDependency(ctx context.Context, c *client.Client, args []string) er
 	default:
 		return fmt.Errorf("unknown dependency subcommand: %s\n", args[0])
 	}
-	return nil
 }
 
 func runIssueDependencyAdd(ctx context.Context, c *client.Client, args []string) error {
@@ -620,7 +618,6 @@ func runIssueNote(ctx context.Context, c *client.Client, args []string) error {
 	default:
 		return fmt.Errorf("unknown note subcommand: %s\n", args[0])
 	}
-	return nil
 }
 
 func runIssueNoteAdd(ctx context.Context, c *client.Client, args []string) error {
@@ -713,7 +710,6 @@ func runIssueEvents(ctx context.Context, c *client.Client, args []string) error 
 	default:
 		return fmt.Errorf("unknown events subcommand: %s\n", args[0])
 	}
-	return nil
 }
 
 func runIssueEventsList(ctx context.Context, c *client.Client, args []string) error {
