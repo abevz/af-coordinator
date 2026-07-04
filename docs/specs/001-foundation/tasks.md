@@ -170,6 +170,22 @@ Mechanical quality work, no behavior changes.
     mismatch: "afctl <v> != daemon <v>; restart af-coordinatord"
   - tests: mismatch → warning on stderr, exit code unaffected;
     match → silent
+- [ ] AFC-SDD-0056 Identifier resolution is still inconsistent across endpoints
+  - found while linking issues to spec artifacts:
+    (a) `issue link <short_id>` → not_found; by UUID → works. 0037
+    listed links in scope and is marked done, but the links handler was
+    missed — reopen that slice;
+    (b) `artifact list --repo <logical-name>` → silent `[]` while
+    `artifact register --repo <logical-name>` resolves fine; by UUID
+    list works. Same disease as 0031/0037, third occurrence
+  - principle to enforce once: every endpoint accepts the human-facing
+    identifier (short_id for issues, logical name for repos, key for
+    projects); unknown identifier → not_found, NEVER a silent empty list
+  - audit ALL handlers against that principle in one pass (issues,
+    leases, notes, events, links, dependencies, artifacts, worktrees),
+    table-driven test per endpoint × {friendly id, uuid, unknown}
+  - bonus: `show --full` prints events and notes but not artifact
+    links — add a Links section
 
 Deferred from the audit, deliberately: CI pipeline (GitHub Actions) —
 worth doing before the repo is shared, not before Monday's soak
