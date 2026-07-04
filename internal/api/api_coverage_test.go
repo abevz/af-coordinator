@@ -12,7 +12,7 @@ func TestApiCoverage_ListEndpoints(t *testing.T) {
 	ts, db := newTestServer(t)
 	// Suppress errcheck warning for the test
 	_ = db
-	
+
 	// Create required entities so list endpoints don't just return empty arrays
 	resp1, _ := http.Post(ts.URL+"/v1/projects", "application/json", strings.NewReader(`{"key":"cov-proj","name":"Cov Proj"}`))
 	resp1.Body.Close()
@@ -28,10 +28,10 @@ func TestApiCoverage_ListEndpoints(t *testing.T) {
 	resp4, _ := http.Post(ts.URL+"/v1/artifact-roots", "application/json", strings.NewReader(`{"repo_identifier":"cov-repo","root_path":"/tmp/cov/art","kind":"test"}`))
 	resp4.Body.Close()
 	resp5, _ := http.Post(ts.URL+"/v1/issues", "application/json", strings.NewReader(`{"scope_kind":"project","scope_identifier":"cov-proj","title":"Cov Issue"}`))
-	
+
 	body, _ := io.ReadAll(resp5.Body)
 	resp5.Body.Close()
-	
+
 	var issue struct {
 		ID string `json:"id"`
 	}
@@ -42,9 +42,9 @@ func TestApiCoverage_ListEndpoints(t *testing.T) {
 
 	// Now hit the untested list endpoints
 	endpoints := []string{
-		"/v1/worktrees?repo="+repo.ID,
-		"/v1/artifact-roots?repo="+repo.ID,
-		"/v1/artifacts?repo="+repo.ID,
+		"/v1/worktrees?repo=" + repo.ID,
+		"/v1/artifact-roots?repo=" + repo.ID,
+		"/v1/artifacts?repo=" + repo.ID,
 		"/v1/issues/ready?project=cov-proj",
 	}
 

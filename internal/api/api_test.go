@@ -2,8 +2,8 @@ package api
 
 import (
 	"context"
-	"github.com/abevz/af-coordinator/migrations"
 	"github.com/abevz/af-coordinator/internal/store/sqlite"
+	"github.com/abevz/af-coordinator/migrations"
 
 	"database/sql"
 	"encoding/json"
@@ -18,7 +18,6 @@ import (
 
 	_ "modernc.org/sqlite"
 )
-
 
 // registerRoutes duplicates the route setup from daemon.go for testing.
 func registerRoutes(mux *http.ServeMux, db *sql.DB, logger *slog.Logger) {

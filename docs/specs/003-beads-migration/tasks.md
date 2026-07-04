@@ -25,5 +25,7 @@ Numbering continues the global AFC-SDD sequence.
 
 - [x] AFC-SDD-0049 Improve API and Client test coverage
       (User requested to increase test coverage for `internal/api` and `internal/client`)
+- [x] AFC-SDD-0050 Update `afctl show` output to include all issue fields and history events
+      (Files: cmd/afctl/cmd_issue.go, cmd/afctl/main.go)
 
 Ordering: 0024 → 0031 → 0025 → 0026 → 0027 → 0028 → 0049 → 0029.

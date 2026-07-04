@@ -294,26 +294,52 @@ func truncate(s string, n int) string {
 }
 
 // printIssueDetailed displays a single issue with full details.
-func printIssueDetailed(i core.Issue, l *core.IssueLease) {
-	fmt.Printf("ID:         %s\n", i.ID)
-	fmt.Printf("Short ID:   %s\n", i.ShortID)
-	fmt.Printf("Status:     %s %s\n", statusSymbol(i.Status), i.Status)
-	fmt.Printf("Title:      %s\n", i.Title)
-	fmt.Printf("Priority:   %d\n", i.Priority)
+func printIssueDetailed(i core.Issue, l *core.IssueLease, events []core.Event) {
+	fmt.Printf("ID:            %s\n", i.ID)
+	fmt.Printf("Short ID:      %s\n", i.ShortID)
+	fmt.Printf("Status:        %s %s\n", statusSymbol(i.Status), i.Status)
+	fmt.Printf("Title:         %s\n", i.Title)
+	if i.Description != "" {
+		fmt.Printf("Description:   %s\n", i.Description)
+	}
+	fmt.Printf("Priority:      %d\n", i.Priority)
 	if i.Assignee != "" {
-		fmt.Printf("Assignee:   %s\n", i.Assignee)
+		fmt.Printf("Assignee:      %s\n", i.Assignee)
 	} else {
-		fmt.Printf("Assignee:   (unassigned)\n")
+		fmt.Printf("Assignee:      (unassigned)\n")
 	}
-	fmt.Printf("Scope:      %s\n", i.ScopeKind)
-	fmt.Printf("Version:    %d\n", i.Version)
+	fmt.Printf("Project ID:    %s\n", i.ProjectID)
+	if i.RepositoryID != "" {
+		fmt.Printf("Repository ID: %s\n", i.RepositoryID)
+	}
+	if i.WorktreeID != "" {
+		fmt.Printf("Worktree ID:   %s\n", i.WorktreeID)
+	}
+	fmt.Printf("Scope:         %s\n", i.ScopeKind)
+	fmt.Printf("Version:       %d\n", i.Version)
 	if l != nil {
-		fmt.Printf("Claimed:    %s (expires %s)\n", l.Holder, l.ExpiresAt)
+		fmt.Printf("Claimed:       %s (expires %s)\n", l.Holder, l.ExpiresAt)
 	} else {
-		fmt.Printf("Claimed:    (not claimed)\n")
+		fmt.Printf("Claimed:       (not claimed)\n")
 	}
-	fmt.Printf("Created:    %s\n", i.CreatedAt)
-	fmt.Printf("Updated:    %s\n", i.UpdatedAt)
+	if i.ClaimedAt != "" {
+		fmt.Printf("Claimed At:    %s\n", i.ClaimedAt)
+	}
+	if i.ClosedAt != "" {
+		fmt.Printf("Closed At:     %s\n", i.ClosedAt)
+	}
+	fmt.Printf("Created:       %s\n", i.CreatedAt)
+	fmt.Printf("Updated:       %s\n", i.UpdatedAt)
+
+	if len(events) > 0 {
+		fmt.Printf("\nHistory:\n")
+		for _, e := range events {
+			fmt.Printf("  [%s] %s by %s\n", e.CreatedAt, e.EventType, e.Actor)
+			if e.PayloadJSON != "" && e.PayloadJSON != "{}" {
+				fmt.Printf("    %s\n", e.PayloadJSON)
+			}
+		}
+	}
 }
 
 // printIssuesTable displays a list of issues in a fixed-width table format.
