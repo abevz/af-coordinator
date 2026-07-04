@@ -1,0 +1,7 @@
+[Unit]
+Description=af-coordinator daily backup
+Documentation=https://github.com/abevz/af-coordinator
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/af-coordinator-backup.sh
