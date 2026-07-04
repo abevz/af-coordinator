@@ -62,6 +62,27 @@ Numbering continues the global AFC-SDD sequence.
   - tests: listed issue with active lease shows holder; with expired
     lease shows empty (regression for the lazy-expiry contract)
 
+- [ ] AFC-SDD-0053 `afctl issue close --note` and protocol discipline for closures
+  - observed in the wild: agents close issues without recording why —
+    utils-6 was closed by antigravity-1 with no note at all; the close
+    reason lives only in a git commit. Beads had `bd close --reason`;
+    parity was lost in the migration
+  - server: optional `note` field on `CloseIssueRequest`; when present,
+    the close transaction appends the note AND closes atomically
+    (note_added then issue_closed in the same tx — the timeline must
+    read note-then-close)
+  - CLI: `afctl issue close ... --note "what was done"`; update
+    docs/api-v1.md and docs/agent-protocol-v1.md (step 5 shows --note;
+    prohibitions gain "do not close without a note — the audit trail is
+    for whoever comes after you")
+  - templates: update `cmd/afctl/init-snippet.md` (add the close-note
+    rule line), then re-run `afctl init` in coordinated repos
+    (utils, and af-coordinator itself once initialized) — this is the
+    managed-block upgrade path working as designed
+  - tests: close with note → both events in order, single version bump
+    semantics preserved; close without note still works (advisory, not
+    a 400)
+
 Ordering: 0017 blocks everything else (hooks and the protocol doc quote
 `--json` commands). 0018 before 0019-0021 so snippets can link to it.
 0032 blocks 0033 (shared embedded snippet).

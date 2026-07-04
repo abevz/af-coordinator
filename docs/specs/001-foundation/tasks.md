@@ -117,6 +117,35 @@ Mechanical quality work, no behavior changes.
   - Remove outdated "Recommended implementation order" section
 - [x] AFC-SDD-0048 Refactor afctl error handling
   - Return `error` from handler functions instead of abruptly calling `os.Exit(1)`. This makes testing easier and the codebase more idiomatic.
+- [ ] AFC-SDD-0052 Backup automation and verified restore path
+  - beads-dolt had `dolt-backup.timer` + `backup-health-check.timer`;
+    they are decommissioned and the coordinator has NO automated backup —
+    only a manual `VACUUM INTO` recipe in operations.md
+  - ship `contrib/systemd/af-coordinator-backup.service` (oneshot) +
+    `af-coordinator-backup.timer` (daily, off-peak minute, not :00):
+    `VACUUM INTO $BACKUPDIR/af-coordinator-YYYYMMDD-HHMM.db`, then
+    `PRAGMA integrity_check` ON THE BACKUP FILE (a backup that was never
+    opened is a hope, not a backup), prune to last 14
+  - hard rule from the Dolt post-mortems (vault:
+    BASE/Beads-Dolt-Sync-Troubleshooting.md): backups must live OUTSIDE
+    the live data dir — use `~/backups/af-coordinator/` (Makefile
+    `BACKUPDIR` already points there, currently unused)
+  - Makefile: `install-backup` target; operations.md: replace the cron
+    suggestion with the timer instructions
+  - fix operations.md env-var names while there: it documents
+    `AF_COORDINATOR_DB_PATH`/`AF_COORDINATOR_SOCKET_PATH`, the real ones
+    per internal/config/config.go are `AF_COORDINATOR_DB`/
+    `AF_COORDINATOR_SOCKET` (verify against code, not this task)
+  - RESTORE DRILL, not just docs: restore latest backup to a scratch
+    path, start a second daemon against it with env overrides
+    (socket in /tmp — mind the ~108-byte unix socket path limit),
+    `afctl health` + `ls --project utils` against that socket must
+    return real data; record the drill outcome in review.md
+  - vault runbook: new note in Obsidian
+    `BASE/AF-Coordinator-Backup-Restore.md` (schedule, paths, restore
+    steps, verification, drill date); add a deprecation pointer at the
+    top of `BASE/Beads-Dolt-Sync-Troubleshooting.md` (beads-dolt
+    decommissioned 2026-07-04 → link to the new runbook)
 
 Deferred from the audit, deliberately: CI pipeline (GitHub Actions) —
 worth doing before the repo is shared, not before Monday's soak
