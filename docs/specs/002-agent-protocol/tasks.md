@@ -40,6 +40,14 @@ Numbering continues the global AFC-SDD sequence.
   - tests (per AGENTS.md testing policy): table-driven over the four
     states — missing file, file without block, stale block, current
     block (must be a no-op)
+- [ ] AFC-SDD-0034 `afctl init --dry-run` output must be distinguishable
+      from a real run
+  - found by operator: `--dry-run` prints `updated: AGENTS.md` — byte-identical
+    to the real run; `runInit` ignores `dryRun` in both text and `--json` output
+  - text mode: prefix with `would ` (`would update: AGENTS.md`);
+    json mode: add `"dry_run": true`
+  - regression test: dry-run output differs from real output AND leaves
+    the file untouched (assert file bytes unchanged)
 
 Ordering: 0017 blocks everything else (hooks and the protocol doc quote
 `--json` commands). 0018 before 0019-0021 so snippets can link to it.
