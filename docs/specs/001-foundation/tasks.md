@@ -146,7 +146,7 @@ Mechanical quality work, no behavior changes.
     steps, verification, drill date); add a deprecation pointer at the
     top of `BASE/Beads-Dolt-Sync-Troubleshooting.md` (beads-dolt
     decommissioned 2026-07-04 → link to the new runbook)
-- [ ] AFC-SDD-0054 SECURITY: `GET /v1/issues/{id}` leaks the lease_token
+- [x] AFC-SDD-0054 SECURITY: `GET /v1/issues/{id}` leaks the lease_token
   - found live: `afctl --json show afc-2` returned another session's
     full `lease_token`. The protocol declares the token secret ("proves
     your right to mutate"); if any client can read it via GET, any agent

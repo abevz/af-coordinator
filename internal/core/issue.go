@@ -55,7 +55,7 @@ type Issue struct {
 // IssueLease represents the current lease on an issue (included in responses).
 type IssueLease struct {
 	Holder     string `json:"holder"`
-	LeaseToken string `json:"lease_token"`
+	LeaseToken string `json:"-"`
 	ExpiresAt  string `json:"expires_at"`
 }
 
