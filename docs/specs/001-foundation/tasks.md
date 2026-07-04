@@ -42,7 +42,7 @@
     emit. Heartbeats must stay event-free.
 - [x] AFC-SDD-0016 Enforce artifact kind validation on write
   - `ValidateArtifactKind` exists but is not called on the write path.
-- [ ] AFC-SDD-0036 Tighten project key validation (it is the short-id prefix)
+- [x] AFC-SDD-0036 Tighten project key validation (it is the short-id prefix)
   - found by operator: `validProjectKey` (`^[a-z][a-z0-9-]*$`) accepts a
     51-char repo name as a key, so every issue id would carry it; it also
     accepts trailing and doubled hyphens (`saa-` → short_id `saa--1`)
@@ -53,7 +53,7 @@
   - document in schema-v1.md and api-v1.md; table-driven tests incl. the
     51-char and `saa-` cases
   - existing keys are unaffected (validation is create-time only)
-- [ ] AFC-SDD-0037 Resolve short_id in every issue endpoint, not only GetIssue
+- [x] AFC-SDD-0037 Resolve short_id in every issue endpoint, not only GetIssue
   - api-v1.md promises "issues are addressable by short_id everywhere an
     {issue_id} appears"; today only `GetIssue` has the short_id fallback.
     Claim/heartbeat/release/close/update/notes/links/dependencies/events
