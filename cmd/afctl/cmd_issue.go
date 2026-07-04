@@ -115,30 +115,51 @@ func runIssueCreate(ctx context.Context, c *client.Client, args []string) error 
 
 func runIssueGet(ctx context.Context, c *client.Client, args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("%s", "Usage: afctl issue get <issue-id-or-short-id>")
+		return fmt.Errorf("%s", "Usage: afctl issue get <issue-id-or-short-id> [--full]")
 	}
 
-	issueID := args[0]
+	fullView := false
+	issueID := ""
+
+	for i := 0; i < len(args); i++ {
+		if args[i] == "--full" {
+			fullView = true
+		} else if issueID == "" {
+			issueID = args[i]
+		}
+	}
+
+	if issueID == "" {
+		return fmt.Errorf("%s", "Usage: afctl issue get <issue-id-or-short-id> [--full]")
+	}
+
 	issue, lease, err := c.GetIssue(ctx, issueID)
 	if err != nil {
 		fail(err)
 	}
 
-	events, err := c.ListEvents(ctx, issueID)
-	if err != nil {
-		fail(err)
-	}
+	var events []core.Event
+	var notes []core.Note
 
-	notes, err := c.ListNotes(ctx, issueID)
-	if err != nil {
-		fail(err)
+	if fullView {
+		events, err = c.ListEvents(ctx, issueID)
+		if err != nil {
+			fail(err)
+		}
+
+		notes, err = c.ListNotes(ctx, issueID)
+		if err != nil {
+			fail(err)
+		}
 	}
 
 	if jsonOutput {
 		resp := map[string]any{
-			"issue":  issue,
-			"events": events,
-			"notes":  notes,
+			"issue": issue,
+		}
+		if fullView {
+			resp["events"] = events
+			resp["notes"]  = notes
 		}
 		if lease != nil {
 			resp["lease"] = lease
@@ -146,7 +167,12 @@ func runIssueGet(ctx context.Context, c *client.Client, args []string) error {
 		json.NewEncoder(os.Stdout).Encode(resp)
 		return nil
 	}
-	printIssueDetailed(issue, lease, events, notes)
+	
+	if fullView {
+		printIssueFull(issue, lease, events, notes)
+	} else {
+		printIssueDetailed(issue, lease)
+	}
 	return nil
 }
 

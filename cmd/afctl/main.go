@@ -112,7 +112,7 @@ Commands:
     list                List artifacts
   issue                 Manage issues
     create              Create a new issue
-    get                 Get an issue by ID or short_id
+    get                 Get an issue by ID or short_id [--full]
     list                List issues with optional filters
     ready               List ready (actionable, unleased) issues
     claim               Claim an issue (acquire a lease)
@@ -130,7 +130,7 @@ Commands:
       add               Add a dependency between two issues
       remove            Remove a dependency between two issues
   ls [flags]             List issues (shortcut for issue list)
-  show <issue-id>        Show issue details (shortcut for issue get)
+  show <issue-id> [--full] Show issue details (shortcut for issue get)
 `)
 }
 
@@ -223,7 +223,7 @@ func runLs(ctx context.Context, c *client.Client, args []string) error {
 // runShow is a top-level shortcut for `afctl issue get`.
 func runShow(ctx context.Context, c *client.Client, args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("Usage: afctl show <issue-id-or-short-id>")
+		return fmt.Errorf("Usage: afctl show <issue-id-or-short-id> [--full]")
 	}
 	return runIssueGet(ctx, c, args)
 }
@@ -293,8 +293,31 @@ func truncate(s string, n int) string {
 	return string(runes[:n-3]) + "..."
 }
 
-// printIssueDetailed displays a single issue with full details.
-func printIssueDetailed(i core.Issue, l *core.IssueLease, events []core.Event, notes []core.Note) {
+// printIssueDetailed displays a single issue with basic details.
+func printIssueDetailed(i core.Issue, l *core.IssueLease) {
+	fmt.Printf("ID:         %s\n", i.ID)
+	fmt.Printf("Short ID:   %s\n", i.ShortID)
+	fmt.Printf("Status:     %s %s\n", statusSymbol(i.Status), i.Status)
+	fmt.Printf("Title:      %s\n", i.Title)
+	fmt.Printf("Priority:   %d\n", i.Priority)
+	if i.Assignee != "" {
+		fmt.Printf("Assignee:   %s\n", i.Assignee)
+	} else {
+		fmt.Printf("Assignee:   (unassigned)\n")
+	}
+	fmt.Printf("Scope:      %s\n", i.ScopeKind)
+	fmt.Printf("Version:    %d\n", i.Version)
+	if l != nil {
+		fmt.Printf("Claimed:    %s (expires %s)\n", l.Holder, l.ExpiresAt)
+	} else {
+		fmt.Printf("Claimed:    (not claimed)\n")
+	}
+	fmt.Printf("Created:    %s\n", i.CreatedAt)
+	fmt.Printf("Updated:    %s\n", i.UpdatedAt)
+}
+
+// printIssueFull displays a single issue with all fields and full history.
+func printIssueFull(i core.Issue, l *core.IssueLease, events []core.Event, notes []core.Note) {
 	fmt.Printf("ID:            %s\n", i.ID)
 	fmt.Printf("Short ID:      %s\n", i.ShortID)
 	fmt.Printf("Status:        %s %s\n", statusSymbol(i.Status), i.Status)
