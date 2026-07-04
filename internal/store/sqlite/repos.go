@@ -80,11 +80,11 @@ func CreateRepo(db *sql.DB, projectKey string, req core.CreateRepoRequest) (core
 	return repo, remotes, nil
 }
 
-// GetRepo retrieves a repository by ID.
-func GetRepo(db *sql.DB, id string) (core.Repository, error) {
+// GetRepo retrieves a repository by ID or logical name.
+func GetRepo(db *sql.DB, idOrName string) (core.Repository, error) {
 	row := db.QueryRow(
 		`SELECT id, project_id, logical_name, canonical_git_dir, default_branch, hosting_kind, hosting_slug, created_at, updated_at
-		 FROM repositories WHERE id = ?`, id,
+		 FROM repositories WHERE id = ? OR logical_name = ?`, idOrName, idOrName,
 	)
 	return scanRepo(row)
 }
