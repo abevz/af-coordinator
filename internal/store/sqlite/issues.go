@@ -102,10 +102,12 @@ func CreateIssue(db *sql.DB, projectKey string, req core.CreateIssueRequest) (co
 func GetIssue(db *sql.DB, id string) (core.Issue, *core.IssueLease, error) {
 	// Try by primary key first.
 	row := db.QueryRow(
-		`SELECT id, short_id, project_id, repository_id, worktree_id, scope_kind,
-		        title, description, status, priority, assignee, version,
-		        claimed_at, closed_at, created_at, updated_at
-		 FROM issues WHERE id = ?`, id,
+		`SELECT issues.id, issues.short_id, issues.project_id, issues.repository_id, issues.worktree_id, issues.scope_kind,
+		        issues.title, issues.description, issues.status, issues.priority, issues.assignee, issues.version,
+		        issues.claimed_at, issues.closed_at, issues.created_at, issues.updated_at,
+		        COALESCE(l.holder, ''), COALESCE(l.expires_at, '')
+		 FROM issues LEFT JOIN leases l ON l.issue_id = issues.id AND l.expires_at > datetime('now')
+		 WHERE issues.id = ?`, id,
 	)
 	issue, err := scanIssue(row)
 	if err != nil {
@@ -113,10 +115,12 @@ func GetIssue(db *sql.DB, id string) (core.Issue, *core.IssueLease, error) {
 		var apiErr core.APIError
 		if errors.As(err, &apiErr) && apiErr.Code == core.ErrNotFound {
 			row2 := db.QueryRow(
-				`SELECT id, short_id, project_id, repository_id, worktree_id, scope_kind,
-				        title, description, status, priority, assignee, version,
-				        claimed_at, closed_at, created_at, updated_at
-				 FROM issues WHERE short_id = ?`, id,
+				`SELECT issues.id, issues.short_id, issues.project_id, issues.repository_id, issues.worktree_id, issues.scope_kind,
+				        issues.title, issues.description, issues.status, issues.priority, issues.assignee, issues.version,
+				        issues.claimed_at, issues.closed_at, issues.created_at, issues.updated_at,
+				        COALESCE(l.holder, ''), COALESCE(l.expires_at, '')
+				 FROM issues LEFT JOIN leases l ON l.issue_id = issues.id AND l.expires_at > datetime('now')
+				 WHERE issues.short_id = ?`, id,
 			)
 			issue, err = scanIssue(row2)
 			if err != nil {
@@ -174,14 +178,15 @@ func ListIssues(db *sql.DB, params core.IssueListParams) ([]core.Issue, error) {
 		args = append(args, params.Assignee)
 	}
 
-	query := `SELECT id, short_id, project_id, repository_id, worktree_id, scope_kind,
-	                 title, description, status, priority, assignee, version,
-	                 claimed_at, closed_at, created_at, updated_at
-	          FROM issues`
+	query := `SELECT issues.id, issues.short_id, issues.project_id, issues.repository_id, issues.worktree_id, issues.scope_kind,
+	                 issues.title, issues.description, issues.status, issues.priority, issues.assignee, issues.version,
+	                 issues.claimed_at, issues.closed_at, issues.created_at, issues.updated_at,
+	                 COALESCE(l.holder, ''), COALESCE(l.expires_at, '')
+	          FROM issues LEFT JOIN leases l ON l.issue_id = issues.id AND l.expires_at > datetime('now')`
 	if len(where) > 0 {
 		query += " WHERE " + strings.Join(where, " AND ")
 	}
-	query += " ORDER BY updated_at DESC"
+	query += " ORDER BY issues.updated_at DESC"
 
 	rows, err := db.Query(query, args...)
 	if err != nil {
@@ -210,10 +215,11 @@ func ListIssues(db *sql.DB, params core.IssueListParams) ([]core.Issue, error) {
 // and not blocked by an unfinished blocks dependency.
 func ListReadyIssues(db *sql.DB, projectID string) ([]core.Issue, error) {
 	var args []interface{}
-	query := `SELECT id, short_id, project_id, repository_id, worktree_id, scope_kind,
-	                 title, description, status, priority, assignee, version,
-	                 claimed_at, closed_at, created_at, updated_at
-	          FROM issues
+	query := `SELECT issues.id, issues.short_id, issues.project_id, issues.repository_id, issues.worktree_id, issues.scope_kind,
+	                 issues.title, issues.description, issues.status, issues.priority, issues.assignee, issues.version,
+	                 issues.claimed_at, issues.closed_at, issues.created_at, issues.updated_at,
+	                 COALESCE(l.holder, ''), COALESCE(l.expires_at, '')
+	          FROM issues LEFT JOIN leases l ON l.issue_id = issues.id AND l.expires_at > datetime('now')
 	          WHERE status NOT IN ('done', 'cancelled', 'deferred', 'blocked')
 	            AND id NOT IN (SELECT issue_id FROM leases WHERE expires_at > ?)
 	            AND NOT EXISTS (
@@ -230,7 +236,7 @@ func ListReadyIssues(db *sql.DB, projectID string) ([]core.Issue, error) {
 		query += " AND project_id = ?"
 		args = append(args, projectID)
 	}
-	query += " ORDER BY priority, updated_at DESC"
+	query += " ORDER BY issues.priority, issues.updated_at DESC"
 
 	rows, err := db.Query(query, args...)
 	if err != nil {
@@ -459,10 +465,11 @@ func getActiveLease(db *sql.DB, issueID string) (*core.IssueLease, error) {
 func scanIssue(s scanner) (core.Issue, error) {
 	var i core.Issue
 	var repoID, worktreeID, claimedAt, closedAt sql.NullString
+	var holder, expiresAt sql.NullString
 	err := s.Scan(&i.ID, &i.ShortID, &i.ProjectID, &repoID, &worktreeID,
 		&i.ScopeKind, &i.Title, &i.Description, &i.Status, &i.Priority,
 		&i.Assignee, &i.Version, &claimedAt, &closedAt,
-		&i.CreatedAt, &i.UpdatedAt)
+		&i.CreatedAt, &i.UpdatedAt, &holder, &expiresAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return core.Issue{}, core.NewAPIError(core.ErrNotFound, "issue not found")
@@ -480,6 +487,12 @@ func scanIssue(s scanner) (core.Issue, error) {
 	}
 	if closedAt.Valid {
 		i.ClosedAt = closedAt.String
+	}
+	if holder.Valid {
+		i.Holder = holder.String
+	}
+	if expiresAt.Valid {
+		i.LeaseExpiresAt = expiresAt.String
 	}
 	return i, nil
 }

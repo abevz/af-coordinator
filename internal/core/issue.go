@@ -45,6 +45,8 @@ type Issue struct {
 	Assignee     string `json:"assignee,omitempty"`
 	Version      int    `json:"version"`
 	ClaimedAt    string `json:"claimed_at,omitempty"`
+	Holder         string `json:"holder,omitempty"`
+	LeaseExpiresAt string `json:"lease_expires_at,omitempty"`
 	ClosedAt     string `json:"closed_at,omitempty"`
 	CreatedAt    string `json:"created_at"`
 	UpdatedAt    string `json:"updated_at"`
