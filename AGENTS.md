@@ -230,3 +230,38 @@ Running tests is not the same as having tests. Rules:
 - Do not add network-backed dependencies for core local operation.
 - Do not widen from bootstrap/service skeleton into full feature delivery unless
   the user asks for that explicitly.
+
+## Self-coordination (this repo eats its own dog food)
+
+This repository is registered in its own coordinator as project **`afc`**.
+The daemon you are modifying is the daemon that tracks your work — so:
+
+- Before starting work, check `afctl issue ready --project afc`. If a
+  coordinator issue exists for the spec task you are about to implement,
+  claim it first and close it (with `--note`) when done. The issue links
+  to the AFC-SDD task; the spec stays the contract, the issue tracks
+  execution.
+- If you implement a spec task that has no coordinator issue, that is
+  fine — spec-first is the canon here. But if the issue exists and you
+  ignore it, another agent may claim it and duplicate your work.
+- The daemon must stay running while you work: your own claims live in
+  the database you are changing. Never test destructive changes against
+  the live daemon — use a scratch DB and socket via
+  `AF_COORDINATOR_DB`/`AF_COORDINATOR_SOCKET` overrides.
+- After changing daemon or CLI behavior: `make build-install`, restart
+  the service (`systemctl --user restart af-coordinatord`), and verify
+  your change through the installed binary before marking anything done.
+  Two of the same binary live in PATH history (`~/go/bin` vs
+  `~/.local/bin`) — `make build-install` targets the right one.
+
+<!-- BEGIN AF-COORDINATOR INTEGRATION v:1 -->
+This repo is coordinated by [af-coordinator](https://github.com/abevz/af-coordinator).
+
+- **Read the protocol**: `afctl protocol` (or `~/github/af-coordinator/main/docs/agent-protocol-v1.md`)
+- **Export your identity**: `export AF_COORDINATOR_ACTOR=<agent-name>`
+- **Session cycle**: `ready → claim → heartbeat → note → close`
+- **Never** edit files without an active claim.
+- **Never** touch the coordinator database.
+- **Never** restate specs in issue descriptions — link them.
+- **Never** close an issue without a note (`--note`) — the audit trail is for whoever comes after you.
+<!-- END AF-COORDINATOR INTEGRATION -->
