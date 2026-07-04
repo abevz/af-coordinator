@@ -3,6 +3,7 @@ package api
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -261,6 +262,7 @@ func newTestServer(t *testing.T) (*httptest.Server, *sql.DB) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { db.Close() })
+	db.SetMaxOpenConns(1)
 
 	if _, err := db.Exec(schema); err != nil {
 		t.Fatal(err)
@@ -1417,5 +1419,85 @@ func TestHeartbeatLease(t *testing.T) {
 
 	if hbResp.ExpiresAt == "" {
 		t.Error("expected non-empty expires_at in heartbeat response")
+	}
+}
+
+// ─── Concurrency ────────────────────────────────────────────────────────────
+
+func TestConcurrentClaimSameIssue(t *testing.T) {
+	t.Parallel()
+	server, db := newTestServer(t)
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	_, err := db.Exec(
+		`INSERT INTO projects (id, key, name, description, next_issue_seq, created_at, updated_at)
+		 VALUES ('proj-concur', 'concur', 'Concur', '', 1, ?, ?)`,
+		now, now,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	issueID := "issue-concur-1"
+	_, err = db.Exec(
+		`INSERT INTO issues (id, short_id, project_id, scope_kind, title, description, status, priority, assignee, version, created_at, updated_at)
+		 VALUES (?, 'concur-1', 'proj-concur', 'project', 'Concurrent claim', '', 'open', 3, '', 1, ?, ?)`,
+		issueID, now, now,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const goroutines = 2
+	results := make(chan int, goroutines)
+
+	for i := 0; i < goroutines; i++ {
+		go func(id int) {
+			body := `{"holder":"agent-` + fmt.Sprintf("%d", id) + `","ttl_seconds":3600}`
+			req, reqErr := http.NewRequest("POST", server.URL+"/v1/issues/"+issueID+"/claim", strings.NewReader(body))
+			if reqErr != nil {
+				t.Errorf("goroutine %d: build request: %v", id, reqErr)
+				results <- 0
+				return
+			}
+			req.Header.Set("Content-Type", "application/json")
+			resp, reqErr := http.DefaultClient.Do(req)
+			if reqErr != nil {
+				t.Errorf("goroutine %d: do request: %v", id, reqErr)
+				results <- 0
+				return
+			}
+			bodyBytes, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if resp.StatusCode != http.StatusOK {
+				t.Logf("goroutine %d: status=%d body=%s", id, resp.StatusCode, string(bodyBytes))
+			}
+			results <- resp.StatusCode
+		}(i)
+	}
+
+	statuses := make([]int, 0, goroutines)
+	for i := 0; i < goroutines; i++ {
+		statuses = append(statuses, <-results)
+	}
+
+	successCount := 0
+	conflictCount := 0
+	for _, s := range statuses {
+		switch s {
+		case http.StatusOK:
+			successCount++
+		case http.StatusConflict:
+			conflictCount++
+		default:
+			t.Errorf("unexpected status: %d", s)
+		}
+	}
+
+	if successCount != 1 {
+		t.Errorf("expected exactly 1 success, got %d", successCount)
+	}
+	if conflictCount != 1 {
+		t.Errorf("expected exactly 1 conflict (409), got %d", conflictCount)
 	}
 }
