@@ -47,16 +47,16 @@ func New(socketPath string) *Client {
 }
 
 // Health sends a GET /healthz request.
-func (c *Client) Health() (core.Health, error) {
+func (c *Client) Health(ctx context.Context) (core.Health, error) {
 	var result core.Health
-	if err := c.doJSON(http.MethodGet, "/healthz", nil, &result); err != nil {
+	if err := c.doJSON(ctx, http.MethodGet, "/healthz", nil, &result); err != nil {
 		return core.Health{}, err
 	}
 	return result, nil
 }
 
 // CreateProject sends a POST /v1/projects request.
-func (c *Client) CreateProject(key, name, description string) (core.Project, error) {
+func (c *Client) CreateProject(ctx context.Context, key, name, description string) (core.Project, error) {
 	body := map[string]string{
 		"key":         key,
 		"name":        name,
@@ -66,37 +66,37 @@ func (c *Client) CreateProject(key, name, description string) (core.Project, err
 	var result struct {
 		Project core.Project `json:"project"`
 	}
-	if err := c.doJSON(http.MethodPost, "/v1/projects", body, &result); err != nil {
+	if err := c.doJSON(ctx, http.MethodPost, "/v1/projects", body, &result); err != nil {
 		return core.Project{}, err
 	}
 	return result.Project, nil
 }
 
 // ListProjects sends a GET /v1/projects request.
-func (c *Client) ListProjects() ([]core.Project, error) {
+func (c *Client) ListProjects(ctx context.Context) ([]core.Project, error) {
 	var result struct {
 		Projects []core.Project `json:"projects"`
 	}
-	if err := c.doJSON(http.MethodGet, "/v1/projects", nil, &result); err != nil {
+	if err := c.doJSON(ctx, http.MethodGet, "/v1/projects", nil, &result); err != nil {
 		return nil, err
 	}
 	return result.Projects, nil
 }
 
 // CreateRepo sends a POST /v1/repos request.
-func (c *Client) CreateRepo(req core.CreateRepoRequest) (core.Repository, []core.RepoRemote, error) {
+func (c *Client) CreateRepo(ctx context.Context, req core.CreateRepoRequest) (core.Repository, []core.RepoRemote, error) {
 	var result struct {
 		Repository core.Repository   `json:"repository"`
 		Remotes    []core.RepoRemote `json:"remotes"`
 	}
-	if err := c.doJSON(http.MethodPost, "/v1/repos", req, &result); err != nil {
+	if err := c.doJSON(ctx, http.MethodPost, "/v1/repos", req, &result); err != nil {
 		return core.Repository{}, nil, err
 	}
 	return result.Repository, result.Remotes, nil
 }
 
 // ListRepos sends a GET /v1/repos request with an optional project filter.
-func (c *Client) ListRepos(project string) ([]core.Repository, error) {
+func (c *Client) ListRepos(ctx context.Context, project string) ([]core.Repository, error) {
 	path := "/v1/repos"
 	if project != "" {
 		path += "?project=" + project
@@ -105,25 +105,25 @@ func (c *Client) ListRepos(project string) ([]core.Repository, error) {
 	var result struct {
 		Repositories []core.Repository `json:"repositories"`
 	}
-	if err := c.doJSON(http.MethodGet, path, nil, &result); err != nil {
+	if err := c.doJSON(ctx, http.MethodGet, path, nil, &result); err != nil {
 		return nil, err
 	}
 	return result.Repositories, nil
 }
 
 // RegisterWorktree sends a POST /v1/worktrees request.
-func (c *Client) RegisterWorktree(req core.CreateWorktreeRequest) (core.Worktree, error) {
+func (c *Client) RegisterWorktree(ctx context.Context, req core.CreateWorktreeRequest) (core.Worktree, error) {
 	var result struct {
 		Worktree core.Worktree `json:"worktree"`
 	}
-	if err := c.doJSON(http.MethodPost, "/v1/worktrees", req, &result); err != nil {
+	if err := c.doJSON(ctx, http.MethodPost, "/v1/worktrees", req, &result); err != nil {
 		return core.Worktree{}, err
 	}
 	return result.Worktree, nil
 }
 
 // ListWorktrees sends a GET /v1/worktrees request with an optional repo filter.
-func (c *Client) ListWorktrees(repo string) ([]core.Worktree, error) {
+func (c *Client) ListWorktrees(ctx context.Context, repo string) ([]core.Worktree, error) {
 	path := "/v1/worktrees"
 	if repo != "" {
 		path += "?repo=" + repo
@@ -132,25 +132,25 @@ func (c *Client) ListWorktrees(repo string) ([]core.Worktree, error) {
 	var result struct {
 		Worktrees []core.Worktree `json:"worktrees"`
 	}
-	if err := c.doJSON(http.MethodGet, path, nil, &result); err != nil {
+	if err := c.doJSON(ctx, http.MethodGet, path, nil, &result); err != nil {
 		return nil, err
 	}
 	return result.Worktrees, nil
 }
 
 // CreateArtifactRoot sends a POST /v1/artifact-roots request.
-func (c *Client) CreateArtifactRoot(req core.CreateArtifactRootRequest) (core.ArtifactRoot, error) {
+func (c *Client) CreateArtifactRoot(ctx context.Context, req core.CreateArtifactRootRequest) (core.ArtifactRoot, error) {
 	var result struct {
 		ArtifactRoot core.ArtifactRoot `json:"artifact_root"`
 	}
-	if err := c.doJSON(http.MethodPost, "/v1/artifact-roots", req, &result); err != nil {
+	if err := c.doJSON(ctx, http.MethodPost, "/v1/artifact-roots", req, &result); err != nil {
 		return core.ArtifactRoot{}, err
 	}
 	return result.ArtifactRoot, nil
 }
 
 // ListArtifactRoots sends a GET /v1/artifact-roots request with an optional repo filter.
-func (c *Client) ListArtifactRoots(repo string) ([]core.ArtifactRoot, error) {
+func (c *Client) ListArtifactRoots(ctx context.Context, repo string) ([]core.ArtifactRoot, error) {
 	path := "/v1/artifact-roots"
 	if repo != "" {
 		path += "?repo=" + repo
@@ -159,25 +159,25 @@ func (c *Client) ListArtifactRoots(repo string) ([]core.ArtifactRoot, error) {
 	var result struct {
 		ArtifactRoots []core.ArtifactRoot `json:"artifact_roots"`
 	}
-	if err := c.doJSON(http.MethodGet, path, nil, &result); err != nil {
+	if err := c.doJSON(ctx, http.MethodGet, path, nil, &result); err != nil {
 		return nil, err
 	}
 	return result.ArtifactRoots, nil
 }
 
 // CreateArtifact sends a POST /v1/artifacts request.
-func (c *Client) CreateArtifact(req core.CreateArtifactRequest) (core.Artifact, error) {
+func (c *Client) CreateArtifact(ctx context.Context, req core.CreateArtifactRequest) (core.Artifact, error) {
 	var result struct {
 		Artifact core.Artifact `json:"artifact"`
 	}
-	if err := c.doJSON(http.MethodPost, "/v1/artifacts", req, &result); err != nil {
+	if err := c.doJSON(ctx, http.MethodPost, "/v1/artifacts", req, &result); err != nil {
 		return core.Artifact{}, err
 	}
 	return result.Artifact, nil
 }
 
 // ListArtifacts sends a GET /v1/artifacts request with an optional repo filter.
-func (c *Client) ListArtifacts(repo string) ([]core.Artifact, error) {
+func (c *Client) ListArtifacts(ctx context.Context, repo string) ([]core.Artifact, error) {
 	path := "/v1/artifacts"
 	if repo != "" {
 		path += "?repo=" + repo
@@ -186,37 +186,37 @@ func (c *Client) ListArtifacts(repo string) ([]core.Artifact, error) {
 	var result struct {
 		Artifacts []core.Artifact `json:"artifacts"`
 	}
-	if err := c.doJSON(http.MethodGet, path, nil, &result); err != nil {
+	if err := c.doJSON(ctx, http.MethodGet, path, nil, &result); err != nil {
 		return nil, err
 	}
 	return result.Artifacts, nil
 }
 
 // CreateIssue sends a POST /v1/issues request.
-func (c *Client) CreateIssue(req core.CreateIssueRequest) (core.Issue, error) {
+func (c *Client) CreateIssue(ctx context.Context, req core.CreateIssueRequest) (core.Issue, error) {
 	var result struct {
 		Issue core.Issue `json:"issue"`
 	}
-	if err := c.doJSON(http.MethodPost, "/v1/issues", req, &result); err != nil {
+	if err := c.doJSON(ctx, http.MethodPost, "/v1/issues", req, &result); err != nil {
 		return core.Issue{}, err
 	}
 	return result.Issue, nil
 }
 
 // GetIssue sends a GET /v1/issues/{issueID} request.
-func (c *Client) GetIssue(issueID string) (core.Issue, *core.IssueLease, error) {
+func (c *Client) GetIssue(ctx context.Context, issueID string) (core.Issue, *core.IssueLease, error) {
 	var result struct {
 		Issue core.Issue       `json:"issue"`
 		Lease *core.IssueLease `json:"lease,omitempty"`
 	}
-	if err := c.doJSON(http.MethodGet, "/v1/issues/"+issueID, nil, &result); err != nil {
+	if err := c.doJSON(ctx, http.MethodGet, "/v1/issues/"+issueID, nil, &result); err != nil {
 		return core.Issue{}, nil, err
 	}
 	return result.Issue, result.Lease, nil
 }
 
 // ListIssues sends a GET /v1/issues request with optional query params.
-func (c *Client) ListIssues(project, repo, worktree, status, assignee string) ([]core.Issue, error) {
+func (c *Client) ListIssues(ctx context.Context, project, repo, worktree, status, assignee string) ([]core.Issue, error) {
 	path := "/v1/issues"
 	sep := "?"
 	appendParam := func(key, val string) {
@@ -234,111 +234,111 @@ func (c *Client) ListIssues(project, repo, worktree, status, assignee string) ([
 	var result struct {
 		Issues []core.Issue `json:"issues"`
 	}
-	if err := c.doJSON(http.MethodGet, path, nil, &result); err != nil {
+	if err := c.doJSON(ctx, http.MethodGet, path, nil, &result); err != nil {
 		return nil, err
 	}
 	return result.Issues, nil
 }
 
 // ClaimIssue sends a POST /v1/issues/{issueID}/claim request.
-func (c *Client) ClaimIssue(issueID, holder string, ttlSeconds int) (core.ClaimResponse, error) {
+func (c *Client) ClaimIssue(ctx context.Context, issueID, holder string, ttlSeconds int) (core.ClaimResponse, error) {
 	body := core.ClaimRequest{Holder: holder, TTLSeconds: ttlSeconds}
 	var result core.ClaimResponse
-	if err := c.doJSON(http.MethodPost, "/v1/issues/"+issueID+"/claim", body, &result); err != nil {
+	if err := c.doJSON(ctx, http.MethodPost, "/v1/issues/"+issueID+"/claim", body, &result); err != nil {
 		return core.ClaimResponse{}, err
 	}
 	return result, nil
 }
 
 // HeartbeatLease sends a POST /v1/issues/{issueID}/heartbeat request.
-func (c *Client) HeartbeatLease(issueID, leaseToken string, ttlSeconds int) (string, error) {
+func (c *Client) HeartbeatLease(ctx context.Context, issueID, leaseToken string, ttlSeconds int) (string, error) {
 	body := core.HeartbeatRequest{LeaseToken: leaseToken, TTLSeconds: ttlSeconds}
 	var result struct {
 		ExpiresAt string `json:"expires_at"`
 	}
-	if err := c.doJSON(http.MethodPost, "/v1/issues/"+issueID+"/heartbeat", body, &result); err != nil {
+	if err := c.doJSON(ctx, http.MethodPost, "/v1/issues/"+issueID+"/heartbeat", body, &result); err != nil {
 		return "", err
 	}
 	return result.ExpiresAt, nil
 }
 
 // ReleaseLease sends a POST /v1/issues/{issueID}/release request.
-func (c *Client) ReleaseLease(issueID, leaseToken string) error {
+func (c *Client) ReleaseLease(ctx context.Context, issueID, leaseToken string) error {
 	body := core.ReleaseRequest{LeaseToken: leaseToken}
-	return c.doJSON(http.MethodPost, "/v1/issues/"+issueID+"/release", body, nil)
+	return c.doJSON(ctx, http.MethodPost, "/v1/issues/"+issueID+"/release", body, nil)
 }
 
 // UpdateIssue sends a PATCH /v1/issues/{issueID} request.
-func (c *Client) UpdateIssue(issueID string, req core.UpdateIssueRequest) (core.Issue, error) {
+func (c *Client) UpdateIssue(ctx context.Context, issueID string, req core.UpdateIssueRequest) (core.Issue, error) {
 	var result struct {
 		Issue core.Issue `json:"issue"`
 	}
-	if err := c.doJSON(http.MethodPatch, "/v1/issues/"+issueID, req, &result); err != nil {
+	if err := c.doJSON(ctx, http.MethodPatch, "/v1/issues/"+issueID, req, &result); err != nil {
 		return core.Issue{}, err
 	}
 	return result.Issue, nil
 }
 
 // CloseIssue sends a POST /v1/issues/{issueID}/close request.
-func (c *Client) CloseIssue(issueID string, req core.CloseIssueRequest) error {
-	return c.doJSON(http.MethodPost, "/v1/issues/"+issueID+"/close", req, nil)
+func (c *Client) CloseIssue(ctx context.Context, issueID string, req core.CloseIssueRequest) error {
+	return c.doJSON(ctx, http.MethodPost, "/v1/issues/"+issueID+"/close", req, nil)
 }
 
 // LinkArtifact sends a POST /v1/issues/{issueID}/links request.
-func (c *Client) LinkArtifact(issueID string, req core.LinkArtifactRequest) error {
-	return c.doJSON(http.MethodPost, "/v1/issues/"+issueID+"/links", req, nil)
+func (c *Client) LinkArtifact(ctx context.Context, issueID string, req core.LinkArtifactRequest) error {
+	return c.doJSON(ctx, http.MethodPost, "/v1/issues/"+issueID+"/links", req, nil)
 }
 
 // AddDependency sends a POST /v1/issues/{issueID}/dependencies request.
-func (c *Client) AddDependency(issueID string, req core.AddDependencyRequest) error {
-	return c.doJSON(http.MethodPost, "/v1/issues/"+issueID+"/dependencies", req, nil)
+func (c *Client) AddDependency(ctx context.Context, issueID string, req core.AddDependencyRequest) error {
+	return c.doJSON(ctx, http.MethodPost, "/v1/issues/"+issueID+"/dependencies", req, nil)
 }
 
 // RemoveDependency sends a DELETE /v1/issues/{issueID}/dependencies/{dependsOn} request.
-func (c *Client) RemoveDependency(issueID, dependsOn, kind string) error {
+func (c *Client) RemoveDependency(ctx context.Context, issueID, dependsOn, kind string) error {
 	path := "/v1/issues/" + issueID + "/dependencies/" + dependsOn
 	if kind != "" {
 		path += "?kind=" + kind
 	}
-	return c.doJSON(http.MethodDelete, path, nil, nil)
+	return c.doJSON(ctx, http.MethodDelete, path, nil, nil)
 }
 
 // CreateNote sends a POST /v1/issues/{issueID}/notes request.
-func (c *Client) CreateNote(issueID, author, body string) (core.Note, error) {
+func (c *Client) CreateNote(ctx context.Context, issueID, author, body string) (core.Note, error) {
 	req := core.CreateNoteRequest{Author: author, Body: body}
 	var result struct {
 		Note core.Note `json:"note"`
 	}
-	if err := c.doJSON(http.MethodPost, "/v1/issues/"+issueID+"/notes", req, &result); err != nil {
+	if err := c.doJSON(ctx, http.MethodPost, "/v1/issues/"+issueID+"/notes", req, &result); err != nil {
 		return core.Note{}, err
 	}
 	return result.Note, nil
 }
 
 // ListNotes sends a GET /v1/issues/{issueID}/notes request.
-func (c *Client) ListNotes(issueID string) ([]core.Note, error) {
+func (c *Client) ListNotes(ctx context.Context, issueID string) ([]core.Note, error) {
 	var result struct {
 		Notes []core.Note `json:"notes"`
 	}
-	if err := c.doJSON(http.MethodGet, "/v1/issues/"+issueID+"/notes", nil, &result); err != nil {
+	if err := c.doJSON(ctx, http.MethodGet, "/v1/issues/"+issueID+"/notes", nil, &result); err != nil {
 		return nil, err
 	}
 	return result.Notes, nil
 }
 
 // ListEvents sends a GET /v1/issues/{issueID}/events request.
-func (c *Client) ListEvents(issueID string) ([]core.Event, error) {
+func (c *Client) ListEvents(ctx context.Context, issueID string) ([]core.Event, error) {
 	var result struct {
 		Events []core.Event `json:"events"`
 	}
-	if err := c.doJSON(http.MethodGet, "/v1/issues/"+issueID+"/events", nil, &result); err != nil {
+	if err := c.doJSON(ctx, http.MethodGet, "/v1/issues/"+issueID+"/events", nil, &result); err != nil {
 		return nil, err
 	}
 	return result.Events, nil
 }
 
 // ListReadyIssues sends a GET /v1/issues/ready request with an optional project filter.
-func (c *Client) ListReadyIssues(project string) ([]core.Issue, error) {
+func (c *Client) ListReadyIssues(ctx context.Context, project string) ([]core.Issue, error) {
 	path := "/v1/issues/ready"
 	if project != "" {
 		path += "?project=" + project
@@ -347,14 +347,14 @@ func (c *Client) ListReadyIssues(project string) ([]core.Issue, error) {
 	var result struct {
 		Issues []core.Issue `json:"issues"`
 	}
-	if err := c.doJSON(http.MethodGet, path, nil, &result); err != nil {
+	if err := c.doJSON(ctx, http.MethodGet, path, nil, &result); err != nil {
 		return nil, err
 	}
 	return result.Issues, nil
 }
 
 // doJSON performs an HTTP request and decodes the JSON response.
-func (c *Client) doJSON(method, path string, body any, target any) error {
+func (c *Client) doJSON(ctx context.Context, method, path string, body any, target any) error {
 	var reqBody []byte
 	if body != nil {
 		var err error
@@ -364,7 +364,7 @@ func (c *Client) doJSON(method, path string, body any, target any) error {
 		}
 	}
 
-	req, err := http.NewRequest(method, "http://af-coordinator"+path, bytes.NewReader(reqBody))
+	req, err := http.NewRequestWithContext(ctx, method, "http://af-coordinator"+path, bytes.NewReader(reqBody))
 	if err != nil {
 		return fmt.Errorf("build request: %w", err)
 	}

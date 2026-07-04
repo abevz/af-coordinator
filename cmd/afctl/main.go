@@ -1,10 +1,13 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/abevz/af-coordinator/internal/client"
@@ -45,30 +48,32 @@ func main() {
 	}
 
 	c := client.New(cfg.SocketPath)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
 	switch filtered[0] {
 	case "health":
-		runHealth(c)
+		runHealth(ctx, c)
 	case "protocol":
 		runProtocol()
 	case "init":
 		runInit(filtered[1:])
 	case "project":
-		runProject(c, filtered[1:])
+		runProject(ctx, c, filtered[1:])
 	case "repo":
-		runRepo(c, filtered[1:])
+		runRepo(ctx, c, filtered[1:])
 	case "worktree":
-		runWorktree(c, filtered[1:])
+		runWorktree(ctx, c, filtered[1:])
 	case "artifact-root":
-		runArtifactRoot(c, filtered[1:])
+		runArtifactRoot(ctx, c, filtered[1:])
 	case "artifact":
-		runArtifact(c, filtered[1:])
+		runArtifact(ctx, c, filtered[1:])
 	case "issue":
-		runIssue(c, filtered[1:])
+		runIssue(ctx, c, filtered[1:])
 	case "ls":
-		runLs(c, filtered[1:])
+		runLs(ctx, c, filtered[1:])
 	case "show":
-		runShow(c, filtered[1:])
+		runShow(ctx, c, filtered[1:])
 	default:
 		printUsage()
 		os.Exit(1)
@@ -189,8 +194,8 @@ func resolveActor(flagVal string) (string, error) {
 
 // ─── Health ──────────────────────────────────────────────────────────────────
 
-func runHealth(c *client.Client) {
-	health, err := c.Health()
+func runHealth(ctx context.Context, c *client.Client) {
+	health, err := c.Health(ctx)
 	if err != nil {
 		fail(err)
 	}
@@ -207,7 +212,7 @@ func runHealth(c *client.Client) {
 
 // ─── Project ────────────────────────────────────────────────────────────────
 
-func runProject(c *client.Client, args []string) {
+func runProject(ctx context.Context, c *client.Client, args []string) {
 	if len(args) < 1 {
 		fmt.Fprintln(os.Stderr, "Usage: afctl project <add|list>")
 		os.Exit(1)
@@ -215,16 +220,16 @@ func runProject(c *client.Client, args []string) {
 
 	switch args[0] {
 	case "add":
-		runProjectAdd(c, args[1:])
+		runProjectAdd(ctx, c, args[1:])
 	case "list":
-		runProjectList(c)
+		runProjectList(ctx, c)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown project subcommand: %s\n", args[0])
 		os.Exit(1)
 	}
 }
 
-func runProjectAdd(c *client.Client, args []string) {
+func runProjectAdd(ctx context.Context, c *client.Client, args []string) {
 	if len(args) < 2 {
 		fmt.Fprintln(os.Stderr, "Usage: afctl project add --key <key> --name <name> [--description <desc>]")
 		os.Exit(1)
@@ -251,7 +256,7 @@ func runProjectAdd(c *client.Client, args []string) {
 		}
 	}
 
-	project, err := c.CreateProject(key, name, description)
+	project, err := c.CreateProject(ctx, key, name, description)
 	if err != nil {
 		fail(err)
 	}
@@ -262,8 +267,8 @@ func runProjectAdd(c *client.Client, args []string) {
 	printProject(project)
 }
 
-func runProjectList(c *client.Client) {
-	projects, err := c.ListProjects()
+func runProjectList(ctx context.Context, c *client.Client) {
+	projects, err := c.ListProjects(ctx)
 	if err != nil {
 		fail(err)
 	}
@@ -291,7 +296,7 @@ func printProject(p core.Project) {
 
 // ─── Repo ───────────────────────────────────────────────────────────────────
 
-func runRepo(c *client.Client, args []string) {
+func runRepo(ctx context.Context, c *client.Client, args []string) {
 	if len(args) < 1 {
 		fmt.Fprintln(os.Stderr, "Usage: afctl repo <add|list>")
 		os.Exit(1)
@@ -299,16 +304,16 @@ func runRepo(c *client.Client, args []string) {
 
 	switch args[0] {
 	case "add":
-		runRepoAdd(c, args[1:])
+		runRepoAdd(ctx, c, args[1:])
 	case "list":
-		runRepoList(c, args[1:])
+		runRepoList(ctx, c, args[1:])
 	default:
 		fmt.Fprintf(os.Stderr, "unknown repo subcommand: %s\n", args[0])
 		os.Exit(1)
 	}
 }
 
-func runRepoAdd(c *client.Client, args []string) {
+func runRepoAdd(ctx context.Context, c *client.Client, args []string) {
 	if len(args) < 4 {
 		fmt.Fprintln(os.Stderr, "Usage: afctl repo add --project <key> --logical-name <name> --canonical-git-dir <path> [--default-branch <branch>] [--remotes '<json>']")
 		os.Exit(1)
@@ -350,7 +355,7 @@ func runRepoAdd(c *client.Client, args []string) {
 		}
 	}
 
-	repo, remotes, err := c.CreateRepo(req)
+	repo, remotes, err := c.CreateRepo(ctx, req)
 	if err != nil {
 		fail(err)
 	}
@@ -379,7 +384,7 @@ func runRepoAdd(c *client.Client, args []string) {
 	fmt.Println()
 }
 
-func runRepoList(c *client.Client, args []string) {
+func runRepoList(ctx context.Context, c *client.Client, args []string) {
 	project := ""
 	for i := 0; i < len(args); i++ {
 		if args[i] == "--project" && i+1 < len(args) {
@@ -387,7 +392,7 @@ func runRepoList(c *client.Client, args []string) {
 		}
 	}
 
-	repos, err := c.ListRepos(project)
+	repos, err := c.ListRepos(ctx, project)
 	if err != nil {
 		fail(err)
 	}
@@ -411,7 +416,7 @@ func runRepoList(c *client.Client, args []string) {
 
 // ─── Worktree ───────────────────────────────────────────────────────────────
 
-func runWorktree(c *client.Client, args []string) {
+func runWorktree(ctx context.Context, c *client.Client, args []string) {
 	if len(args) < 1 {
 		fmt.Fprintln(os.Stderr, "Usage: afctl worktree <register|list>")
 		os.Exit(1)
@@ -419,16 +424,16 @@ func runWorktree(c *client.Client, args []string) {
 
 	switch args[0] {
 	case "register":
-		runWorktreeRegister(c, args[1:])
+		runWorktreeRegister(ctx, c, args[1:])
 	case "list":
-		runWorktreeList(c, args[1:])
+		runWorktreeList(ctx, c, args[1:])
 	default:
 		fmt.Fprintf(os.Stderr, "unknown worktree subcommand: %s\n", args[0])
 		os.Exit(1)
 	}
 }
 
-func runWorktreeRegister(c *client.Client, args []string) {
+func runWorktreeRegister(ctx context.Context, c *client.Client, args []string) {
 	if len(args) < 4 {
 		fmt.Fprintln(os.Stderr, "Usage: afctl worktree register --repo <repo-id> --absolute-path <path> [--branch <branch>] [--head-commit <sha>] [--remote-name <name>] [--remote-branch <branch>] [--main] [--ephemeral]")
 		os.Exit(1)
@@ -474,7 +479,7 @@ func runWorktreeRegister(c *client.Client, args []string) {
 		}
 	}
 
-	wt, err := c.RegisterWorktree(req)
+	wt, err := c.RegisterWorktree(ctx, req)
 	if err != nil {
 		fail(err)
 	}
@@ -485,7 +490,7 @@ func runWorktreeRegister(c *client.Client, args []string) {
 	printWorktree(wt)
 }
 
-func runWorktreeList(c *client.Client, args []string) {
+func runWorktreeList(ctx context.Context, c *client.Client, args []string) {
 	repo := ""
 	for i := 0; i < len(args); i++ {
 		if args[i] == "--repo" && i+1 < len(args) {
@@ -493,7 +498,7 @@ func runWorktreeList(c *client.Client, args []string) {
 		}
 	}
 
-	worktrees, err := c.ListWorktrees(repo)
+	worktrees, err := c.ListWorktrees(ctx, repo)
 	if err != nil {
 		fail(err)
 	}
@@ -512,7 +517,7 @@ func runWorktreeList(c *client.Client, args []string) {
 
 // ─── Artifact Root ──────────────────────────────────────────────────────────
 
-func runArtifactRoot(c *client.Client, args []string) {
+func runArtifactRoot(ctx context.Context, c *client.Client, args []string) {
 	if len(args) < 1 {
 		fmt.Fprintln(os.Stderr, "Usage: afctl artifact-root <add|list>")
 		os.Exit(1)
@@ -520,16 +525,16 @@ func runArtifactRoot(c *client.Client, args []string) {
 
 	switch args[0] {
 	case "add":
-		runArtifactRootAdd(c, args[1:])
+		runArtifactRootAdd(ctx, c, args[1:])
 	case "list":
-		runArtifactRootList(c, args[1:])
+		runArtifactRootList(ctx, c, args[1:])
 	default:
 		fmt.Fprintf(os.Stderr, "unknown artifact-root subcommand: %s\n", args[0])
 		os.Exit(1)
 	}
 }
 
-func runArtifactRootAdd(c *client.Client, args []string) {
+func runArtifactRootAdd(ctx context.Context, c *client.Client, args []string) {
 	if len(args) < 4 {
 		fmt.Fprintln(os.Stderr, "Usage: afctl artifact-root add --repo <repo-id> --root-path <path> [--kind <kind>] [--primary]")
 		os.Exit(1)
@@ -560,7 +565,7 @@ func runArtifactRootAdd(c *client.Client, args []string) {
 		}
 	}
 
-	root, err := c.CreateArtifactRoot(req)
+	root, err := c.CreateArtifactRoot(ctx, req)
 	if err != nil {
 		fail(err)
 	}
@@ -571,7 +576,7 @@ func runArtifactRootAdd(c *client.Client, args []string) {
 	printArtifactRoot(root)
 }
 
-func runArtifactRootList(c *client.Client, args []string) {
+func runArtifactRootList(ctx context.Context, c *client.Client, args []string) {
 	repo := ""
 	for i := 0; i < len(args); i++ {
 		if args[i] == "--repo" && i+1 < len(args) {
@@ -579,7 +584,7 @@ func runArtifactRootList(c *client.Client, args []string) {
 		}
 	}
 
-	roots, err := c.ListArtifactRoots(repo)
+	roots, err := c.ListArtifactRoots(ctx, repo)
 	if err != nil {
 		fail(err)
 	}
@@ -611,7 +616,7 @@ func printArtifactRoot(r core.ArtifactRoot) {
 
 // ─── Artifact ───────────────────────────────────────────────────────────────
 
-func runArtifact(c *client.Client, args []string) {
+func runArtifact(ctx context.Context, c *client.Client, args []string) {
 	if len(args) < 1 {
 		fmt.Fprintln(os.Stderr, "Usage: afctl artifact <register|list>")
 		os.Exit(1)
@@ -619,16 +624,16 @@ func runArtifact(c *client.Client, args []string) {
 
 	switch args[0] {
 	case "register":
-		runArtifactRegister(c, args[1:])
+		runArtifactRegister(ctx, c, args[1:])
 	case "list":
-		runArtifactList(c, args[1:])
+		runArtifactList(ctx, c, args[1:])
 	default:
 		fmt.Fprintf(os.Stderr, "unknown artifact subcommand: %s\n", args[0])
 		os.Exit(1)
 	}
 }
 
-func runArtifactRegister(c *client.Client, args []string) {
+func runArtifactRegister(ctx context.Context, c *client.Client, args []string) {
 	if len(args) < 6 {
 		fmt.Fprintln(os.Stderr, "Usage: afctl artifact register --repo <repo-id> --relative-path <path> --kind <kind> [--worktree <worktree-id>] [--artifact-root <root-id>] [--title <title>] [--external-key <key>] [--status <status>]")
 		os.Exit(1)
@@ -680,7 +685,7 @@ func runArtifactRegister(c *client.Client, args []string) {
 		}
 	}
 
-	artifact, err := c.CreateArtifact(req)
+	artifact, err := c.CreateArtifact(ctx, req)
 	if err != nil {
 		fail(err)
 	}
@@ -691,7 +696,7 @@ func runArtifactRegister(c *client.Client, args []string) {
 	printArtifact(artifact)
 }
 
-func runArtifactList(c *client.Client, args []string) {
+func runArtifactList(ctx context.Context, c *client.Client, args []string) {
 	repo := ""
 	for i := 0; i < len(args); i++ {
 		if args[i] == "--repo" && i+1 < len(args) {
@@ -699,7 +704,7 @@ func runArtifactList(c *client.Client, args []string) {
 		}
 	}
 
-	artifacts, err := c.ListArtifacts(repo)
+	artifacts, err := c.ListArtifacts(ctx, repo)
 	if err != nil {
 		fail(err)
 	}
@@ -742,7 +747,7 @@ func printArtifact(a core.Artifact) {
 
 // ─── Issue ───────────────────────────────────────────────────────────────────
 
-func runIssue(c *client.Client, args []string) {
+func runIssue(ctx context.Context, c *client.Client, args []string) {
 	if len(args) < 1 {
 		fmt.Fprintln(os.Stderr, "Usage: afctl issue <create|get|list|ready|claim|heartbeat|release>")
 		os.Exit(1)
@@ -750,31 +755,31 @@ func runIssue(c *client.Client, args []string) {
 
 	switch args[0] {
 	case "create":
-		runIssueCreate(c, args[1:])
+		runIssueCreate(ctx, c, args[1:])
 	case "get":
-		runIssueGet(c, args[1:])
+		runIssueGet(ctx, c, args[1:])
 	case "list":
-		runIssueList(c, args[1:])
+		runIssueList(ctx, c, args[1:])
 	case "ready":
-		runIssueReady(c, args[1:])
+		runIssueReady(ctx, c, args[1:])
 	case "claim":
-		runIssueClaim(c, args[1:])
+		runIssueClaim(ctx, c, args[1:])
 	case "heartbeat":
-		runIssueHeartbeat(c, args[1:])
+		runIssueHeartbeat(ctx, c, args[1:])
 	case "release":
-		runIssueRelease(c, args[1:])
+		runIssueRelease(ctx, c, args[1:])
 	case "update":
-		runIssueUpdate(c, args[1:])
+		runIssueUpdate(ctx, c, args[1:])
 	case "close":
-		runIssueClose(c, args[1:])
+		runIssueClose(ctx, c, args[1:])
 	case "link":
-		runIssueLink(c, args[1:])
+		runIssueLink(ctx, c, args[1:])
 	case "dependency":
-		runIssueDependency(c, args[1:])
+		runIssueDependency(ctx, c, args[1:])
 	case "note":
-		runIssueNote(c, args[1:])
+		runIssueNote(ctx, c, args[1:])
 	case "events":
-		runIssueEvents(c, args[1:])
+		runIssueEvents(ctx, c, args[1:])
 	default:
 		fmt.Fprintf(os.Stderr, "unknown issue subcommand: %s\n", args[0])
 		os.Exit(1)
@@ -782,20 +787,20 @@ func runIssue(c *client.Client, args []string) {
 }
 
 // runLs is a top-level shortcut for `afctl issue list`.
-func runLs(c *client.Client, args []string) {
-	runIssueList(c, args)
+func runLs(ctx context.Context, c *client.Client, args []string) {
+	runIssueList(ctx, c, args)
 }
 
 // runShow is a top-level shortcut for `afctl issue get`.
-func runShow(c *client.Client, args []string) {
+func runShow(ctx context.Context, c *client.Client, args []string) {
 	if len(args) < 1 {
 		fmt.Fprintln(os.Stderr, "Usage: afctl show <issue-id-or-short-id>")
 		os.Exit(1)
 	}
-	runIssueGet(c, args)
+	runIssueGet(ctx, c, args)
 }
 
-func runIssueCreate(c *client.Client, args []string) {
+func runIssueCreate(ctx context.Context, c *client.Client, args []string) {
 	if len(args) < 4 {
 		fmt.Fprintln(os.Stderr, "Usage: afctl issue create --project <key> --scope-kind <project|repository|worktree> --title <title> [--repo <repo>] [--worktree <worktree>] [--description <desc>] [--priority <n>]")
 		os.Exit(1)
@@ -849,7 +854,7 @@ func runIssueCreate(c *client.Client, args []string) {
 	}
 	req.Actor = actor
 
-	issue, err := c.CreateIssue(req)
+	issue, err := c.CreateIssue(ctx, req)
 	if err != nil {
 		fail(err)
 	}
@@ -860,14 +865,14 @@ func runIssueCreate(c *client.Client, args []string) {
 	printIssue(issue)
 }
 
-func runIssueGet(c *client.Client, args []string) {
+func runIssueGet(ctx context.Context, c *client.Client, args []string) {
 	if len(args) < 1 {
 		fmt.Fprintln(os.Stderr, "Usage: afctl issue get <issue-id-or-short-id>")
 		os.Exit(1)
 	}
 
 	issueID := args[0]
-	issue, lease, err := c.GetIssue(issueID)
+	issue, lease, err := c.GetIssue(ctx, issueID)
 	if err != nil {
 		fail(err)
 	}
@@ -884,7 +889,7 @@ func runIssueGet(c *client.Client, args []string) {
 	printIssueDetailed(issue, lease)
 }
 
-func runIssueList(c *client.Client, args []string) {
+func runIssueList(ctx context.Context, c *client.Client, args []string) {
 	project := ""
 	repo := ""
 	worktree := ""
@@ -937,7 +942,7 @@ func runIssueList(c *client.Client, args []string) {
 	_ = limit
 	_ = offset
 
-	issues, err := c.ListIssues(project, repo, worktree, status, assignee)
+	issues, err := c.ListIssues(ctx, project, repo, worktree, status, assignee)
 	if err != nil {
 		fail(err)
 	}
@@ -952,7 +957,7 @@ func runIssueList(c *client.Client, args []string) {
 	printIssuesTable(issues)
 }
 
-func runIssueReady(c *client.Client, args []string) {
+func runIssueReady(ctx context.Context, c *client.Client, args []string) {
 	project := ""
 	for i := 0; i < len(args); i++ {
 		if args[i] == "--project" && i+1 < len(args) {
@@ -960,7 +965,7 @@ func runIssueReady(c *client.Client, args []string) {
 		}
 	}
 
-	issues, err := c.ListReadyIssues(project)
+	issues, err := c.ListReadyIssues(ctx, project)
 	if err != nil {
 		fail(err)
 	}
@@ -975,7 +980,7 @@ func runIssueReady(c *client.Client, args []string) {
 	printIssuesTable(issues)
 }
 
-func runIssueClaim(c *client.Client, args []string) {
+func runIssueClaim(ctx context.Context, c *client.Client, args []string) {
 	if len(args) < 1 {
 		fmt.Fprintln(os.Stderr, "Usage: afctl issue claim <issue-id> [--holder <name>|--actor <name>] [--ttl <seconds>]")
 		os.Exit(1)
@@ -1007,7 +1012,7 @@ func runIssueClaim(c *client.Client, args []string) {
 		os.Exit(1)
 	}
 
-	resp, err := c.ClaimIssue(issueID, holder, ttl)
+	resp, err := c.ClaimIssue(ctx, issueID, holder, ttl)
 	if err != nil {
 		fail(err)
 	}
@@ -1019,7 +1024,7 @@ func runIssueClaim(c *client.Client, args []string) {
 	fmt.Printf("Expires At:  %s\n", resp.ExpiresAt)
 }
 
-func runIssueHeartbeat(c *client.Client, args []string) {
+func runIssueHeartbeat(ctx context.Context, c *client.Client, args []string) {
 	if len(args) < 1 {
 		fmt.Fprintln(os.Stderr, "Usage: afctl issue heartbeat <issue-id> --lease-token <token> [--ttl <seconds>]")
 		os.Exit(1)
@@ -1049,7 +1054,7 @@ func runIssueHeartbeat(c *client.Client, args []string) {
 		os.Exit(1)
 	}
 
-	expiresAt, err := c.HeartbeatLease(issueID, leaseToken, ttl)
+	expiresAt, err := c.HeartbeatLease(ctx, issueID, leaseToken, ttl)
 	if err != nil {
 		fail(err)
 	}
@@ -1060,7 +1065,7 @@ func runIssueHeartbeat(c *client.Client, args []string) {
 	fmt.Printf("Expires At: %s\n", expiresAt)
 }
 
-func runIssueRelease(c *client.Client, args []string) {
+func runIssueRelease(ctx context.Context, c *client.Client, args []string) {
 	if len(args) < 1 {
 		fmt.Fprintln(os.Stderr, "Usage: afctl issue release <issue-id> --lease-token <token>")
 		os.Exit(1)
@@ -1084,7 +1089,7 @@ func runIssueRelease(c *client.Client, args []string) {
 		os.Exit(1)
 	}
 
-	if err := c.ReleaseLease(issueID, leaseToken); err != nil {
+	if err := c.ReleaseLease(ctx, issueID, leaseToken); err != nil {
 		fail(err)
 	}
 	if jsonOutput {
@@ -1094,7 +1099,7 @@ func runIssueRelease(c *client.Client, args []string) {
 	fmt.Println("Lease released.")
 }
 
-func runIssueUpdate(c *client.Client, args []string) {
+func runIssueUpdate(ctx context.Context, c *client.Client, args []string) {
 	if len(args) < 1 {
 		fmt.Fprintln(os.Stderr, "Usage: afctl issue update <issue-id> [--title ...] [--description ...] [--priority N] [--assignee ...] [--status ...] --expected-version N [--lease-token ...]")
 		os.Exit(1)
@@ -1156,7 +1161,7 @@ func runIssueUpdate(c *client.Client, args []string) {
 	}
 	req.Actor = actor
 
-	issue, err := c.UpdateIssue(issueID, req)
+	issue, err := c.UpdateIssue(ctx, issueID, req)
 	if err != nil {
 		fail(err)
 	}
@@ -1167,7 +1172,7 @@ func runIssueUpdate(c *client.Client, args []string) {
 	printIssue(issue)
 }
 
-func runIssueClose(c *client.Client, args []string) {
+func runIssueClose(ctx context.Context, c *client.Client, args []string) {
 	if len(args) < 1 {
 		fmt.Fprintln(os.Stderr, "Usage: afctl issue close <issue-id> --resolution done|cancelled --expected-version N --lease-token ...")
 		os.Exit(1)
@@ -1217,7 +1222,7 @@ func runIssueClose(c *client.Client, args []string) {
 	}
 	req.Actor = actor
 
-	if err := c.CloseIssue(issueID, req); err != nil {
+	if err := c.CloseIssue(ctx, issueID, req); err != nil {
 		fail(err)
 	}
 	if jsonOutput {
@@ -1227,7 +1232,7 @@ func runIssueClose(c *client.Client, args []string) {
 	fmt.Println("Issue closed.")
 }
 
-func runIssueLink(c *client.Client, args []string) {
+func runIssueLink(ctx context.Context, c *client.Client, args []string) {
 	if len(args) < 1 {
 		fmt.Fprintln(os.Stderr, "Usage: afctl issue link <issue-id> --artifact <artifact-id> [--relation implements|...]")
 		os.Exit(1)
@@ -1256,7 +1261,7 @@ func runIssueLink(c *client.Client, args []string) {
 		os.Exit(1)
 	}
 
-	if err := c.LinkArtifact(issueID, req); err != nil {
+	if err := c.LinkArtifact(ctx, issueID, req); err != nil {
 		fail(err)
 	}
 	if jsonOutput {
@@ -1266,7 +1271,7 @@ func runIssueLink(c *client.Client, args []string) {
 	fmt.Println("Artifact linked.")
 }
 
-func runIssueDependency(c *client.Client, args []string) {
+func runIssueDependency(ctx context.Context, c *client.Client, args []string) {
 	if len(args) < 1 {
 		fmt.Fprintln(os.Stderr, "Usage: afctl issue dependency <add|remove> <issue-id> --depends-on <other-issue> [--kind blocks|parent|related|discovered-from]")
 		os.Exit(1)
@@ -1274,16 +1279,16 @@ func runIssueDependency(c *client.Client, args []string) {
 
 	switch args[0] {
 	case "add":
-		runIssueDependencyAdd(c, args[1:])
+		runIssueDependencyAdd(ctx, c, args[1:])
 	case "remove":
-		runIssueDependencyRemove(c, args[1:])
+		runIssueDependencyRemove(ctx, c, args[1:])
 	default:
 		fmt.Fprintf(os.Stderr, "unknown dependency subcommand: %s\n", args[0])
 		os.Exit(1)
 	}
 }
 
-func runIssueDependencyAdd(c *client.Client, args []string) {
+func runIssueDependencyAdd(ctx context.Context, c *client.Client, args []string) {
 	if len(args) < 1 {
 		fmt.Fprintln(os.Stderr, "Usage: afctl issue dependency add <issue-id> --depends-on <other-issue> [--kind blocks|parent|related|discovered-from]")
 		os.Exit(1)
@@ -1312,7 +1317,7 @@ func runIssueDependencyAdd(c *client.Client, args []string) {
 		os.Exit(1)
 	}
 
-	if err := c.AddDependency(issueID, req); err != nil {
+	if err := c.AddDependency(ctx, issueID, req); err != nil {
 		fail(err)
 	}
 	if jsonOutput {
@@ -1322,7 +1327,7 @@ func runIssueDependencyAdd(c *client.Client, args []string) {
 	fmt.Println("Dependency added.")
 }
 
-func runIssueDependencyRemove(c *client.Client, args []string) {
+func runIssueDependencyRemove(ctx context.Context, c *client.Client, args []string) {
 	if len(args) < 1 {
 		fmt.Fprintln(os.Stderr, "Usage: afctl issue dependency remove <issue-id> --depends-on <other-issue> [--kind blocks]")
 		os.Exit(1)
@@ -1352,7 +1357,7 @@ func runIssueDependencyRemove(c *client.Client, args []string) {
 		os.Exit(1)
 	}
 
-	if err := c.RemoveDependency(issueID, dependsOn, kind); err != nil {
+	if err := c.RemoveDependency(ctx, issueID, dependsOn, kind); err != nil {
 		fail(err)
 	}
 	if jsonOutput {
@@ -1364,7 +1369,7 @@ func runIssueDependencyRemove(c *client.Client, args []string) {
 
 // ─── Issue Notes ────────────────────────────────────────────────────────────
 
-func runIssueNote(c *client.Client, args []string) {
+func runIssueNote(ctx context.Context, c *client.Client, args []string) {
 	if len(args) < 1 {
 		fmt.Fprintln(os.Stderr, "Usage: afctl issue note <add|list> <issue-id> [--author <name> --body <text>]")
 		os.Exit(1)
@@ -1372,16 +1377,16 @@ func runIssueNote(c *client.Client, args []string) {
 
 	switch args[0] {
 	case "add":
-		runIssueNoteAdd(c, args[1:])
+		runIssueNoteAdd(ctx, c, args[1:])
 	case "list":
-		runIssueNoteList(c, args[1:])
+		runIssueNoteList(ctx, c, args[1:])
 	default:
 		fmt.Fprintf(os.Stderr, "unknown note subcommand: %s\n", args[0])
 		os.Exit(1)
 	}
 }
 
-func runIssueNoteAdd(c *client.Client, args []string) {
+func runIssueNoteAdd(ctx context.Context, c *client.Client, args []string) {
 	if len(args) < 1 {
 		fmt.Fprintln(os.Stderr, "Usage: afctl issue note add <issue-id> [--author <name>|--actor <name>] --body <text>")
 		os.Exit(1)
@@ -1417,7 +1422,7 @@ func runIssueNoteAdd(c *client.Client, args []string) {
 		os.Exit(1)
 	}
 
-	note, err := c.CreateNote(issueID, author, body)
+	note, err := c.CreateNote(ctx, issueID, author, body)
 	if err != nil {
 		fail(err)
 	}
@@ -1432,7 +1437,7 @@ func runIssueNoteAdd(c *client.Client, args []string) {
 	fmt.Printf("Created At: %s\n", note.CreatedAt)
 }
 
-func runIssueNoteList(c *client.Client, args []string) {
+func runIssueNoteList(ctx context.Context, c *client.Client, args []string) {
 	if len(args) < 1 {
 		fmt.Fprintln(os.Stderr, "Usage: afctl issue note list <issue-id>")
 		os.Exit(1)
@@ -1440,7 +1445,7 @@ func runIssueNoteList(c *client.Client, args []string) {
 
 	issueID := args[0]
 
-	notes, err := c.ListNotes(issueID)
+	notes, err := c.ListNotes(ctx, issueID)
 	if err != nil {
 		fail(err)
 	}
@@ -1462,7 +1467,7 @@ func runIssueNoteList(c *client.Client, args []string) {
 
 // ─── Issue Events ──────────────────────────────────────────────────────────
 
-func runIssueEvents(c *client.Client, args []string) {
+func runIssueEvents(ctx context.Context, c *client.Client, args []string) {
 	if len(args) < 1 {
 		fmt.Fprintln(os.Stderr, "Usage: afctl issue events list <issue-id>")
 		os.Exit(1)
@@ -1470,14 +1475,14 @@ func runIssueEvents(c *client.Client, args []string) {
 
 	switch args[0] {
 	case "list":
-		runIssueEventsList(c, args[1:])
+		runIssueEventsList(ctx, c, args[1:])
 	default:
 		fmt.Fprintf(os.Stderr, "unknown events subcommand: %s\n", args[0])
 		os.Exit(1)
 	}
 }
 
-func runIssueEventsList(c *client.Client, args []string) {
+func runIssueEventsList(ctx context.Context, c *client.Client, args []string) {
 	if len(args) < 1 {
 		fmt.Fprintln(os.Stderr, "Usage: afctl issue events list <issue-id>")
 		os.Exit(1)
@@ -1485,7 +1490,7 @@ func runIssueEventsList(c *client.Client, args []string) {
 
 	issueID := args[0]
 
-	events, err := c.ListEvents(issueID)
+	events, err := c.ListEvents(ctx, issueID)
 	if err != nil {
 		fail(err)
 	}

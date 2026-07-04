@@ -61,7 +61,7 @@ func TestDoJSON_Success(t *testing.T) {
 	var result struct {
 		Status string `json:"status"`
 	}
-	if err := c.doJSON("GET", "/healthz", nil, &result); err != nil {
+	if err := c.doJSON(context.Background(), "GET", "/healthz", nil, &result); err != nil {
 		t.Fatalf("doJSON() error = %v", err)
 	}
 	if result.Status != "ok" {
@@ -79,7 +79,7 @@ func TestDoJSON_APIError(t *testing.T) {
 	defer server.Close()
 
 	c := testClient(t, server)
-	err := c.doJSON("POST", "/v1/issues/x/claim", nil, nil)
+	err := c.doJSON(context.Background(), "POST", "/v1/issues/x/claim", nil, nil)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -104,7 +104,7 @@ func TestDoJSON_NonJSONError(t *testing.T) {
 	defer server.Close()
 
 	c := testClient(t, server)
-	err := c.doJSON("GET", "/test", nil, nil)
+	err := c.doJSON(context.Background(), "GET", "/test", nil, nil)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -123,7 +123,7 @@ func TestDoJSON_NilTarget(t *testing.T) {
 	defer server.Close()
 
 	c := testClient(t, server)
-	if err := c.doJSON("DELETE", "/v1/issues/x/release", nil, nil); err != nil {
+	if err := c.doJSON(context.Background(), "DELETE", "/v1/issues/x/release", nil, nil); err != nil {
 		t.Fatalf("doJSON() error = %v", err)
 	}
 }
@@ -138,7 +138,7 @@ func TestHealth(t *testing.T) {
 	defer server.Close()
 
 	c := testClient(t, server)
-	h, err := c.Health()
+	h, err := c.Health(context.Background())
 	if err != nil {
 		t.Fatalf("Health() error = %v", err)
 	}
