@@ -53,21 +53,28 @@ func runInit(args []string) {
 	}
 
 	if jsonOutput {
-		resp := map[string]string{
+		resp := map[string]interface{}{
 			"action": []string{"created", "updated", "unchanged"}[action],
 			"path":   targetPath,
+		}
+		if dryRun {
+			resp["dry_run"] = true
 		}
 		json.NewEncoder(os.Stdout).Encode(resp)
 		return
 	}
 
+	prefix := ""
+	if dryRun {
+		prefix = "would "
+	}
 	switch action {
 	case initCreated:
-		fmt.Printf("created: %s\n", targetPath)
+		fmt.Printf("%screated: %s\n", prefix, targetPath)
 	case initUpdated:
-		fmt.Printf("updated: %s\n", targetPath)
+		fmt.Printf("%supdated: %s\n", prefix, targetPath)
 	case initUnchanged:
-		fmt.Printf("unchanged: %s\n", targetPath)
+		fmt.Printf("%sunchanged: %s\n", prefix, targetPath)
 	}
 }
 
