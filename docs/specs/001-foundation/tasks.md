@@ -146,6 +146,30 @@ Mechanical quality work, no behavior changes.
     steps, verification, drill date); add a deprecation pointer at the
     top of `BASE/Beads-Dolt-Sync-Troubleshooting.md` (beads-dolt
     decommissioned 2026-07-04 → link to the new runbook)
+- [ ] AFC-SDD-0054 SECURITY: `GET /v1/issues/{id}` leaks the lease_token
+  - found live: `afctl --json show afc-2` returned another session's
+    full `lease_token`. The protocol declares the token secret ("proves
+    your right to mutate"); if any client can read it via GET, any agent
+    can hijack any claim — the 0022 concurrency guarantee (B cannot act
+    on A's lease) is void
+  - fix: issue GET/list responses expose `holder` and `expires_at`
+    only; the token appears exactly once, in the claim response.
+    Audit every response struct for the field (issue get, list, ready,
+    heartbeat response)
+  - tests: show/list a claimed issue → token absent, holder present;
+    claim response still carries it
+- [ ] AFC-SDD-0055 Detect client/daemon version skew
+  - found live: agy shipped 0053, installed the new afctl, did not
+    restart the daemon — `close --note` silently dropped notes for an
+    hour (old server ignored the unknown JSON field). Silent partial
+    upgrade is a standing failure mode with several clients and one
+    daemon
+  - embed a build/schema version in both binaries; `/v1/health` returns
+    the daemon's; afctl compares on every invocation (cheap — it
+    already opens the socket) and prints one warning line to stderr on
+    mismatch: "afctl <v> != daemon <v>; restart af-coordinatord"
+  - tests: mismatch → warning on stderr, exit code unaffected;
+    match → silent
 
 Deferred from the audit, deliberately: CI pipeline (GitHub Actions) —
 worth doing before the repo is shared, not before Monday's soak
