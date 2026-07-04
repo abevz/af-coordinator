@@ -51,3 +51,21 @@ Shipped.
   the wrong one. This is acceptable for the pilot (single project `utils`),
   but before multi-project use a scoped lookup (project_key + logical_name)
   should replace the bare name resolve. Tracked in the 0031 commit message.
+
+## AFC-SDD-0027 — Parallel soak (in progress)
+
+Soak clock started 2026-07-04 ~09:15 CEST: `chore/afctl-protocol`
+merged into utils main (99dbeb5), daemon serving.
+
+Baseline:
+
+- `af-coordinatord` NRestarts=0 (ActiveEnterTimestamp 09:10:56 CEST,
+  restart at that time was the binary reinstall after 0033)
+- Comparison target: beads-dolt.service reached restart counter 914
+- Check due: 2026-07-06 (Monday) morning —
+  `systemctl --user show af-coordinatord -p NRestarts` plus journal scan
+
+Sequencing note for 0028: `daily-check` still reads Beads. It must be
+switched to the coordinator (or its Beads section disabled) BEFORE
+beads-dolt is decommissioned, or the soak "succeeds" by breaking a
+consumer.
