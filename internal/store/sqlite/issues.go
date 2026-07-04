@@ -303,6 +303,12 @@ func ClaimIssue(db *sql.DB, issueID, holder string, ttlSeconds int) (core.ClaimR
 		issueID, holder, leaseToken, expiresAt, now.Format(time.RFC3339), now.Format(time.RFC3339),
 	)
 	if err != nil {
+		// Constraint violation (PK on issue_id) means another claim won while
+		// both deferred transactions were reading the same "open" state.
+		if isSQLiteConstraintError(err) {
+			return core.ClaimResponse{}, core.NewAPIError(core.ErrLeaseHeld,
+				"issue is already claimed: "+issueID)
+		}
 		return core.ClaimResponse{}, fmt.Errorf("insert lease: %w", err)
 	}
 

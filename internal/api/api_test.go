@@ -262,7 +262,14 @@ func newTestServer(t *testing.T) (*httptest.Server, *sql.DB) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { db.Close() })
+
+	// Single connection to keep the in-memory database shared.
 	db.SetMaxOpenConns(1)
+	// Busy timeout so concurrent readers on the single connection
+	// block and retry instead of returning SQLITE_BUSY.
+	if _, err := db.Exec("PRAGMA busy_timeout=5000"); err != nil {
+		t.Fatal(err)
+	}
 
 	if _, err := db.Exec(schema); err != nil {
 		t.Fatal(err)
@@ -1467,11 +1474,7 @@ func TestConcurrentClaimSameIssue(t *testing.T) {
 				results <- 0
 				return
 			}
-			bodyBytes, _ := io.ReadAll(resp.Body)
 			resp.Body.Close()
-			if resp.StatusCode != http.StatusOK {
-				t.Logf("goroutine %d: status=%d body=%s", id, resp.StatusCode, string(bodyBytes))
-			}
 			results <- resp.StatusCode
 		}(i)
 	}
