@@ -1,6 +1,6 @@
 # Review
 
-Status: in progress
+Status: completed
 
 ## AFC-SDD-0004 — Project, repository, and worktree registration APIs
 

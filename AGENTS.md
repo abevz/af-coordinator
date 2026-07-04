@@ -33,10 +33,10 @@ Active packet selection:
 
 - treat the active SDD packet as the lowest-numbered `docs/specs/NNN-*` packet
   that is not explicitly declared complete by its packet-local artifacts
-- today that is the bootstrap packet:
+- today that is the beads-migration packet:
 
 ```text
-docs/specs/001-foundation/
+docs/specs/003-beads-migration/
 ```
 
 Packet shape:
