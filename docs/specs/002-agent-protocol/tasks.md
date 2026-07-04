@@ -40,7 +40,7 @@ Numbering continues the global AFC-SDD sequence.
   - tests (per AGENTS.md testing policy): table-driven over the four
     states — missing file, file without block, stale block, current
     block (must be a no-op)
-- [ ] AFC-SDD-0034 `afctl init --dry-run` output must be distinguishable
+- [x] AFC-SDD-0034 `afctl init --dry-run` output must be distinguishable
       from a real run
   - found by operator: `--dry-run` prints `updated: AGENTS.md` — byte-identical
     to the real run; `runInit` ignores `dryRun` in both text and `--json` output
