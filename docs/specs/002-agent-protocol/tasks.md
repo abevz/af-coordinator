@@ -18,7 +18,7 @@ Numbering continues the global AFC-SDD sequence.
   - same check script, Codex registration format
 - [x] AFC-SDD-0021 Per-repo adapter snippet (`contrib/agents/AGENTS-snippet.md`)
   - ≤15 lines, references the protocol doc, never restates it
-- [ ] AFC-SDD-0022 End-to-end concurrency test
+- [x] AFC-SDD-0022 End-to-end concurrency test
   - two concurrent claims on one issue: exactly one success, one
     `lease_held` (exit 3 via CLI path or 409 via API path)
 
