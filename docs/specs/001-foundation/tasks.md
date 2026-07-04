@@ -158,7 +158,7 @@ Mechanical quality work, no behavior changes.
     heartbeat response)
   - tests: show/list a claimed issue → token absent, holder present;
     claim response still carries it
-- [ ] AFC-SDD-0055 Detect client/daemon version skew
+- [x] AFC-SDD-0055 Detect client/daemon version skew
   - found live: agy shipped 0053, installed the new afctl, did not
     restart the daemon — `close --note` silently dropped notes for an
     hour (old server ignored the unknown JSON field). Silent partial

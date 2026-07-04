@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/abevz/af-coordinator/internal/build"
 	"github.com/abevz/af-coordinator/internal/client"
 	"github.com/abevz/af-coordinator/internal/config"
 	"github.com/abevz/af-coordinator/internal/core"
@@ -50,6 +51,14 @@ func main() {
 	c := client.New(cfg.SocketPath)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	if filtered[0] != "init" && filtered[0] != "protocol" {
+		if h, err := c.Health(ctx); err == nil {
+			if h.Version != "" && h.Version != build.Version {
+				fmt.Fprintf(os.Stderr, "afctl %s != daemon %s; restart af-coordinatord\n", build.Version, h.Version)
+			}
+		}
+	}
 
 	var err error
 	switch filtered[0] {
@@ -209,6 +218,7 @@ func runHealth(ctx context.Context, c *client.Client) error {
 	}
 	fmt.Printf("Name:       %s\n", health.Name)
 	fmt.Printf("Status:     %s\n", health.Status)
+	fmt.Printf("Version:    %s\n", health.Version)
 	fmt.Printf("DBPath:     %s\n", health.DBPath)
 	fmt.Printf("SocketPath: %s\n", health.SocketPath)
 	fmt.Printf("Time:       %s\n", health.Time.UTC().Format(time.RFC3339))
@@ -358,7 +368,7 @@ func printIssueFull(i core.Issue, l *core.IssueLease, events []core.Event, notes
 		fmt.Printf("\nHistory:\n")
 		for _, e := range events {
 			fmt.Printf("  [%s] %s by %s\n", e.CreatedAt, e.EventType, e.Actor)
-			
+
 			// If it's a note_added event, try to find and print the note body.
 			if e.EventType == "note_added" {
 				var noteBody string

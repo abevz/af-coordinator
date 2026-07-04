@@ -159,7 +159,7 @@ func runIssueGet(ctx context.Context, c *client.Client, args []string) error {
 		}
 		if fullView {
 			resp["events"] = events
-			resp["notes"]  = notes
+			resp["notes"] = notes
 		}
 		if lease != nil {
 			resp["lease"] = lease
@@ -167,7 +167,7 @@ func runIssueGet(ctx context.Context, c *client.Client, args []string) error {
 		json.NewEncoder(os.Stdout).Encode(resp)
 		return nil
 	}
-	
+
 	if fullView {
 		printIssueFull(issue, lease, events, notes)
 	} else {

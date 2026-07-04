@@ -8,4 +8,5 @@ type Health struct {
 	DBPath     string    `json:"db_path"`
 	SocketPath string    `json:"socket_path"`
 	Time       time.Time `json:"time"`
+	Version    string    `json:"version"`
 }

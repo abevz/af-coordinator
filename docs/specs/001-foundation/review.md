@@ -360,3 +360,20 @@ Use this file to capture:
   - Ran `afctl health` using the temp socket and it returned `Status: ok` with correct paths.
   - Ran `afctl issue list --project utils` using the temp socket and it returned the actual database issues (7 issues).
   - Drill date: 2026-07-04.
+
+## AFC-SDD-0055 — Detect client/daemon version skew
+
+### What shipped
+
+- Embedded `build.Version` constant in both daemon and client.
+- `GET /v1/health` now returns the daemon's version in its JSON body.
+- `afctl` compares its embedded version with the daemon's version on invocation and warns on stderr if they differ.
+- Added integration test verifying version skew warnings without breaking exit codes.
+
+### Discrepancies vs design
+
+- None.
+
+### Open issues
+
+- None.

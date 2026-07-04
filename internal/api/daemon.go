@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/abevz/af-coordinator/internal/build"
 	"github.com/abevz/af-coordinator/internal/config"
 	"github.com/abevz/af-coordinator/internal/core"
 )
@@ -53,6 +54,7 @@ func RunDaemon(ctx context.Context, logger *slog.Logger, cfg config.Config, db *
 			DBPath:     cfg.DBPath,
 			SocketPath: cfg.SocketPath,
 			Time:       time.Now().UTC(),
+			Version:    build.Version,
 		}
 
 		if err := db.PingContext(r.Context()); err != nil {
