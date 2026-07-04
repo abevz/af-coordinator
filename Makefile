@@ -2,10 +2,13 @@ GO ?= go
 BINDIR ?= $(HOME)/.local/bin
 BACKUPDIR ?= $(HOME)/backups/af-coordinator
 
-.PHONY: fmt build test build-install install-service uninstall-service
+.PHONY: fmt vet build test build-install install-service uninstall-service
 
 fmt:
 	gofmt -w cmd internal
+
+vet:
+	$(GO) vet ./...
 
 build:
 	$(GO) build ./...
@@ -15,7 +18,7 @@ build-install:
 	$(GO) build -o $(BINDIR)/afctl ./cmd/afctl/
 
 test:
-	$(GO) test ./...
+	$(GO) test -race ./...
 
 install-service:
 	@mkdir -p $(HOME)/.config/systemd/user

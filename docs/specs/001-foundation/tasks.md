@@ -78,6 +78,39 @@
   - tests: each mutation's event carries the submitted actor; mutation
     without actor → 400
 
+## Hardening follow-ups (external audit, 2026-07-04)
+
+Source: Go audit by Google Antigravity; full report with the operator.
+Mechanical quality work, no behavior changes.
+
+- [x] AFC-SDD-0039 Makefile: `test` runs with `-race`; add `vet` target
+- [ ] AFC-SDD-0040 Thread `context.Context` through the store and API
+  - every exported `internal/store/sqlite` function takes `ctx` first;
+    switch to `QueryContext`/`ExecContext`/`BeginTx`; handlers pass
+    `r.Context()`
+  - why: cancelled clients and graceful shutdown currently cannot
+    interrupt in-flight SQL
+  - mechanical but wide — single dedicated change, no drive-by edits
+- [ ] AFC-SDD-0041 `context.Context` in `internal/client` methods
+  - `http.NewRequestWithContext`; afctl passes a signal-aware context
+    (Ctrl+C cancels instead of waiting out the 5s timeout)
+  - depends on 0040 landing first (same signature churn)
+- [ ] AFC-SDD-0042 Split `cmd/afctl/main.go` (~1700 lines) by domain
+  - `main.go` (entry, global flags) + `cmd_issue.go`, `cmd_project.go`,
+    `cmd_repo.go`, `cmd_worktree.go`, `cmd_artifact.go`, plus existing
+    `init.go`/`protocol.go`
+  - pure file moves — no flag-parsing rewrite in this task; adopting
+    `flag.NewFlagSet` is a separate decision, not started without a task
+- [ ] AFC-SDD-0043 README "Getting started" section
+  - build (`make build`), run, test (`make test`), configuration env
+    vars (`AF_COORDINATOR_SOCKET`/`DB`/`LOG_LEVEL`), install
+    (`make build-install install-service`)
+
+Deferred from the audit, deliberately: CI pipeline (GitHub Actions) —
+worth doing before the repo is shared, not before Monday's soak
+verdict; CLI-layer tests — cmd/ stays thin and untested per AGENTS.md
+testing policy until that policy is revisited.
+
 ## Next tracks (after the punch list — nothing below starts without its own spec packet)
 
 1. `docs/specs/002-agent-protocol/` — agent working contract + ready-made
