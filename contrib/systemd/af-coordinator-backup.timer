@@ -1,0 +1,9 @@
+[Unit]
+Description=Timer for af-coordinator daily backup
+
+[Timer]
+OnCalendar=*-*-* 03:17:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

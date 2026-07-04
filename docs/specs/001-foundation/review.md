@@ -343,3 +343,20 @@ Use this file to capture:
 
 - `go build ./cmd/afctl` — builds clean
 - `go test -race ./...` — all tests pass
+
+## AFC-SDD-0052 — Backup automation and verified restore path
+
+### What shipped
+- `contrib/systemd/af-coordinator-backup.sh` script to perform `VACUUM INTO`, run `PRAGMA integrity_check`, and keep the last 14 backups.
+- Systemd oneshot service and daily timer (03:17) added to `contrib/systemd/`.
+- Makefile `install-backup` target to copy the scripts/units and reload systemd.
+- `operations.md` updated with systemd timer backup docs, and environment variables `AF_COORDINATOR_DB` and `AF_COORDINATOR_SOCKET` corrected.
+- Obsidian Vault runbook `BASE/AF-Coordinator-Backup-Restore.md` created, and `BASE/Beads-Dolt-Sync-Troubleshooting.md` updated with deprecation pointer.
+
+### What was verified
+- Executed the `af-coordinator-backup.sh` script to generate a backup file (`af-coordinator-20260704-1312.db`). Integrity check passed successfully.
+- RESTORE DRILL:
+  - Started a test daemon pointing to the new backup with `AF_COORDINATOR_DB=/home/abevz/backups/af-coordinator/af-coordinator-20260704-1312.db` and socket `/tmp/af-coord-restore-test.sock`.
+  - Ran `afctl health` using the temp socket and it returned `Status: ok` with correct paths.
+  - Ran `afctl issue list --project utils` using the temp socket and it returned the actual database issues (7 issues).
+  - Drill date: 2026-07-04.

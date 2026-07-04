@@ -117,7 +117,7 @@ Mechanical quality work, no behavior changes.
   - Remove outdated "Recommended implementation order" section
 - [x] AFC-SDD-0048 Refactor afctl error handling
   - Return `error` from handler functions instead of abruptly calling `os.Exit(1)`. This makes testing easier and the codebase more idiomatic.
-- [ ] AFC-SDD-0052 Backup automation and verified restore path
+- [x] AFC-SDD-0052 Backup automation and verified restore path
   - beads-dolt had `dolt-backup.timer` + `backup-health-check.timer`;
     they are decommissioned and the coordinator has NO automated backup —
     only a manual `VACUUM INTO` recipe in operations.md

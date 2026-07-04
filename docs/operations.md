@@ -80,13 +80,16 @@ sqlite3 ~/.local/share/af-coordinator/af-coordinator.db \
 
 This creates a consistent, compacted copy of the database while the daemon is running.
 
-### Automatic backup (cron)
+### Automatic backup (systemd timer)
 
-Add to crontab (`crontab -e`):
+An automated backup script and systemd timer are provided in `contrib/systemd/`.
+To install and enable them:
 
-```cron
-0 3 * * * sqlite3 ~/.local/share/af-coordinator/af-coordinator.db "VACUUM INTO '/path/to/backups/af-coordinator-$(date +\%Y\%m\%d).db'"
+```bash
+make install-backup
 ```
+
+This will run a `VACUUM INTO` daily at 03:17, check the integrity of the backup, and keep the last 14 backups in `~/backups/af-coordinator`.
 
 ### Restore
 
@@ -140,5 +143,5 @@ afctl issue note list <issue-id>
 
 Environment variables override defaults:
 
-- `AF_COORDINATOR_DB_PATH` — database path
-- `AF_COORDINATOR_SOCKET_PATH` — socket path
+- `AF_COORDINATOR_DB` — database path
+- `AF_COORDINATOR_SOCKET` — socket path
