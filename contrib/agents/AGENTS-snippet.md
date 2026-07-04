@@ -1,10 +1,9 @@
-# af-coordinator for coding agents
-
-This repo is coordinated by [af-coordinator](https://github.com/abevz/af-coordinator).
-
-- **Read the protocol**: `afctl protocol` (or `~/github/af-coordinator/main/docs/agent-protocol-v1.md`)
-- **Export your identity**: `export AF_COORDINATOR_ACTOR=<agent-name>`
-- **Session cycle**: `ready → claim → heartbeat → note → close`
-- **Never** edit files without an active claim.
-- **Never** touch the coordinator database.
-- **Never** restate specs in issue descriptions — link them.
+> **This file is superseded.** Run `afctl init` in your repo to install
+> the coordinator integration block into `./AGENTS.md`.
+>
+> The block is managed: it is wrapped in `<!-- BEGIN/END AF-COORDINATOR
+> INTEGRATION v:1 -->` markers. Text outside the markers is never touched.
+> Re-running `afctl init` replaces stale blocks in place, so the block
+> stays current after an `afctl` upgrade.
+>
+> For the full agent protocol: `afctl protocol`.

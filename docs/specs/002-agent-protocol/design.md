@@ -6,7 +6,7 @@
 agent behavior   docs/agent-protocol-v1.md   (what to do)
 machine surface  afctl --json + exit codes   (how to do it programmatically)
 enforcement      contrib/hooks/*             (what happens if you don't)
-per-repo glue    contrib/agents/* snippet    (one pointer, no restating)
+per-repo glue    afctl init                   (managed AGENTS.md block)
 ```
 
 ## CLI: --json and exit codes
@@ -69,10 +69,11 @@ format.
 
 ## Per-repo adapter
 
-`contrib/agents/AGENTS-snippet.md` — ≤15 lines, to paste into a repo's
-`AGENTS.md`/`CLAUDE.md`:
+Managed by `afctl init`: wraps the `<!-- BEGIN/END AF-COORDINATOR
+INTEGRATION v:1 -->` block into a repo's `AGENTS.md`. Outside text is
+never touched. Re-run `afctl init` to refresh the block after an upgrade.
 
-- this repo is coordinated by af-coordinator
+The block tells deployed agents to:
 - export `AF_COORDINATOR_ACTOR`
 - follow `docs/agent-protocol-v1.md` (link), summary: ready → claim →
   heartbeat → note → close/release

@@ -53,3 +53,45 @@ Shipped.
 ### Open
 
 - Manual end-to-end test of the protocol through actual agent interaction
+
+## AFC-SDD-0032 — afctl protocol subcommand (go:embed)
+
+Shipped.
+
+### What shipped
+
+- `cmd/afctl/protocol.go` — embeds agent-protocol-v1.md with go:embed
+- `cmd/afctl/protocol_test.go` — byte-equality test against canonical doc
+- `afctl protocol` prints the full contract from the binary
+
+### What was verified
+
+- Byte-equality with canonical docs/agent-protocol-v1.md (tested)
+- Binary installed at ~/.local/bin/afctl
+
+## AFC-SDD-0033 — afctl init (managed AGENTS.md block)
+
+Shipped.
+
+### What shipped
+
+- `cmd/afctl/init.go` — managed block with BEGIN/END markers
+- `cmd/afctl/init_test.go` — table-driven tests over 4 states + dry-run
+- Four states: missing → create, no block → append, stale → replace, current → no-op
+- Text outside markers is never touched
+- Supports `--path`, `--dry-run`, `--json`, standard exit codes
+
+### What was verified
+
+- Live test: create, append, replace, unchanged all work correctly
+- Text outside markers preserved on replace
+- Dry-run does not write
+
+### Open
+
+- contrib/agents/AGENTS-snippet.md superseded by `afctl init`
+- Snippet source of truth is cmd/afctl/init-snippet.md (embedded by init.go)
+
+## Closing — packet 002
+
+All 9 tasks (AFC-SDD-0017 through 0033) are shipped and verified.

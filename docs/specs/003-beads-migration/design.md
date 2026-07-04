@@ -32,8 +32,7 @@ Replace `~/github/utils/AGENTS.md` content:
 
 - Remove the Beads workflow section (including the BEADS INTEGRATION
   block)
-- Add the coordinator adapter snippet from
-  `contrib/agents/AGENTS-snippet.md`
+- Run `afctl init` to install the managed coordinator block
 - Reference `docs/agent-protocol-v1.md` for the full session loop
 
 The AGENTS.md changes are committed to the utils repo on a branch,
