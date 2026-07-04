@@ -57,7 +57,7 @@ Commands with `--json` succeed or fail with typed exit codes so the caller can r
 - Claim an issue before mutating files that belong to it.
 - One claim per agent at a time, unless the tasks are trivially coupled (same repo, same session).
 - Set `AF_COORDINATOR_ACTOR=<name>` for all commands. Stable names: `claude-code`, `codex`, `codewhale-<n>`.
-- Concurrent instances of the same tool MUST use distinct names (`antigravity-1`, `antigravity-2`): identical holders make the audit trail ambiguous and the one-claim rule unverifiable.
+- Concurrent instances of the same tool MUST use distinct names: identical holders make the audit trail ambiguous and the one-claim rule unverifiable. Easiest: derive the suffix from the session PID once, in the launcher — `export AF_COORDINATOR_ACTOR="antigravity-$$"` (never per-command: that fragments the trail; and PIDs recycle across reboots, so read old events with their timestamps).
 - Resolve actor from: `--actor` flag > `AF_COORDINATOR_ACTOR` env variable > error.
 
 ## Prohibitions
