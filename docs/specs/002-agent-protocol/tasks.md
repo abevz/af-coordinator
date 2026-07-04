@@ -48,6 +48,19 @@ Numbering continues the global AFC-SDD sequence.
     json mode: add `"dry_run": true`
   - regression test: dry-run output differs from real output AND leaves
     the file untouched (assert file bytes unchanged)
+- [ ] AFC-SDD-0035 Show active lease holder in issue lists
+  - found by operator: `afctl issue list` renders an ASSIGNEE column
+    (advisory, almost always empty) but not the lease holder — the one
+    thing you actually want to know about an in_progress issue
+  - store: list queries LEFT JOIN unexpired leases, expose
+    `holder`/`lease_expires_at` on list items (lazy-expiry rule applies:
+    expired lease = absent)
+  - API: include the fields in `GET /v1/issues` and `/v1/issues/ready`
+    items; update docs/api-v1.md
+  - CLI: `issue list`/`ls`/`issue ready` print a CLAIMED column
+    (`codex` or empty); keep ASSIGNEE
+  - tests: listed issue with active lease shows holder; with expired
+    lease shows empty (regression for the lazy-expiry contract)
 
 Ordering: 0017 blocks everything else (hooks and the protocol doc quote
 `--json` commands). 0018 before 0019-0021 so snippets can link to it.
