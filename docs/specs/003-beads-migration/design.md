@@ -5,9 +5,9 @@
 ### Phase 1: registration
 
 ```text
-afctl project create utils utils "Utils repo"
-afctl repo create utils ~/github/utils
-afctl worktree register --repo utils --path ~/github/utils
+afctl project add --key utils --name "Utils repo"
+afctl repo add --project utils --logical-name utils --canonical-git-dir /home/abevz/github/utils
+afctl worktree register --repo utils --absolute-path /home/abevz/github/utils --main
 ```
 
 The project key is `utils`. The repo is registered with its on-disk path.
@@ -33,7 +33,7 @@ Replace `~/github/utils/AGENTS.md` content:
 - Remove the Beads workflow section (including the BEADS INTEGRATION
   block)
 - Add the coordinator adapter snippet from
-  `contrib/hooks/AGENTS-snippet.md`
+  `contrib/agents/AGENTS-snippet.md`
 - Reference `docs/agent-protocol-v1.md` for the full session loop
 
 The AGENTS.md changes are committed to the utils repo on a branch,
@@ -42,9 +42,8 @@ by the operator.
 
 ### Phase 4: parallel soak
 
-Both systems stay writable for >= 48 hours. The coordinator daemon
-(`af-coordinatord`) runs alongside beads-dolt via its systemd unit.
-Agents may use either system.
+Only the coordinator accepts mutations. beads-dolt stays running
+untouched as a rollback safety net for >= 48 hours.
 
 Monitor:
 

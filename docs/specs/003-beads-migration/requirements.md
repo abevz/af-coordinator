@@ -22,9 +22,10 @@ for `af-coordinator`.
    state is snapshotted in `inputs/beads-snapshot-2026-07-04.json`. The
    coordinator project starts empty; the snapshot IS the archive.
 
-5. **Parallel soak.** For at least 48 hours after switchover, both
-   systems accept mutations. Utils agents may use either system. After
-   soak, beads-dolt is stopped and decommissioned.
+5. **Parallel soak.** For at least 48 hours after switchover, only
+   the coordinator accepts mutations. beads-dolt remains running but
+   untouched as a rollback safety net. After soak passes, it is
+   decommissioned.
 
 6. **No Beads dependency for the coordinator.** The af-coordinator must
    never read, write, or depend on the Beads Dolt database.
