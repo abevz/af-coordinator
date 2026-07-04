@@ -53,6 +53,30 @@
   - document in schema-v1.md and api-v1.md; table-driven tests incl. the
     51-char and `saa-` cases
   - existing keys are unaffected (validation is create-time only)
+- [ ] AFC-SDD-0037 Resolve short_id in every issue endpoint, not only GetIssue
+  - api-v1.md promises "issues are addressable by short_id everywhere an
+    {issue_id} appears"; today only `GetIssue` has the short_id fallback.
+    Claim/heartbeat/release/close/update/notes/links/dependencies/events
+    query the raw UUID — hit live: codex's claim of `utils-1` returned
+    not_found and it fell back to the UUID (see utils-1 note)
+  - fix once: `ResolveIssueID(db, idOrShortID) (uuid, error)` in the
+    store, called at the top of every handler with an `{issue_id}`;
+    remove the ad-hoc fallback inside GetIssue
+  - also: `ListNotes`/`ListEvents` on an unknown issue must return
+    not_found, not a silent empty list
+  - tests: table-driven across every endpoint — short_id accepted,
+    unknown id → not_found
+- [ ] AFC-SDD-0038 Record the real actor in events (audit trail is lying)
+  - `issue_created`, `issue_updated`, `issue_closed` events hardcode
+    actor `"unknown"` (issues.go lines ~87/~595/~683); only
+    `issue_claimed` records the real holder. The event log currently
+    cannot answer "who did what" — its entire purpose
+  - afctl already resolves and sends actor (0017); thread `req.Actor`
+    from the handlers through the store insert paths into the events
+  - reject mutations with empty actor at the API layer
+    (validation_failed), matching the protocol's actor requirement
+  - tests: each mutation's event carries the submitted actor; mutation
+    without actor → 400
 
 ## Next tracks (after the punch list — nothing below starts without its own spec packet)
 
