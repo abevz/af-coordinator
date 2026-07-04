@@ -3,8 +3,12 @@
 Numbering continues the global AFC-SDD sequence.
 
 - [x] AFC-SDD-0023 Scout completed — data in `inputs/` (commit b15288a)
-- [ ] AFC-SDD-0024 Start af-coordinatord, verify daemon stays up
+- [x] AFC-SDD-0024 Start af-coordinatord, verify daemon stays up
       (via contrib/systemd/af-coordinatord.service)
+- [x] AFC-SDD-0031 Fix `worktree register --repo` to accept logical name
+      (`utils`) in addition to UUID — `GetRepo` now queries both `id`
+      and `logical_name`
+      Files: internal/store/sqlite/repos.go
 - [ ] AFC-SDD-0025 Register utils project, repository, and worktree in
       af-coordinator
   - `afctl project add --key utils --name "Utils repo"`
@@ -19,4 +23,4 @@ Numbering continues the global AFC-SDD sequence.
 - [ ] AFC-SDD-0029 Write review.md with migration outcome and acceptance
       verdict
 
-Ordering: 0024 (daemon) → 0025 (register) → 0026 (AGENTS.md) → 0027 (soak) → 0028 → 0029.
+Ordering: 0024 → 0031 → 0025 → 0026 → 0027 → 0028 → 0029.

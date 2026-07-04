@@ -113,6 +113,36 @@ func TestGetRepo(t *testing.T) {
 	}
 }
 
+func TestGetRepoByLogicalName(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	created, _, err := CreateRepo(db, "test", core.CreateRepoRequest{
+		Project:         "test",
+		LogicalName:     "utils",
+		CanonicalGitDir: "/home/utils",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := GetRepo(db, "utils")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ID != created.ID {
+		t.Errorf("expected ID %q, got %q", created.ID, got.ID)
+	}
+	if got.LogicalName != "utils" {
+		t.Errorf("expected logical_name 'utils', got %q", got.LogicalName)
+	}
+}
+
 func TestGetRepoNotFound(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
