@@ -115,6 +115,8 @@ Mechanical quality work, no behavior changes.
 - [x] AFC-SDD-0047 Update README.md
   - Add "How to release" and "Known limitations" sections
   - Remove outdated "Recommended implementation order" section
+- [x] AFC-SDD-0048 Refactor afctl error handling
+  - Return `error` from handler functions instead of abruptly calling `os.Exit(1)`. This makes testing easier and the codebase more idiomatic.
 
 Deferred from the audit, deliberately: CI pipeline (GitHub Actions) —
 worth doing before the repo is shared, not before Monday's soak

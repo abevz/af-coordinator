@@ -12,27 +12,25 @@ import (
 
 // ─── Worktree ───────────────────────────────────────────────────────────────
 
-func runWorktree(ctx context.Context, c *client.Client, args []string) {
+func runWorktree(ctx context.Context, c *client.Client, args []string) error {
 	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "Usage: afctl worktree <register|list>")
-		os.Exit(1)
+		return fmt.Errorf("%s", "Usage: afctl worktree <register|list>")
 	}
 
 	switch args[0] {
 	case "register":
-		runWorktreeRegister(ctx, c, args[1:])
+		return runWorktreeRegister(ctx, c, args[1:])
 	case "list":
-		runWorktreeList(ctx, c, args[1:])
+		return runWorktreeList(ctx, c, args[1:])
 	default:
-		fmt.Fprintf(os.Stderr, "unknown worktree subcommand: %s\n", args[0])
-		os.Exit(1)
+		return fmt.Errorf("unknown worktree subcommand: %s\n", args[0])
 	}
+	return nil
 }
 
-func runWorktreeRegister(ctx context.Context, c *client.Client, args []string) {
+func runWorktreeRegister(ctx context.Context, c *client.Client, args []string) error {
 	if len(args) < 4 {
-		fmt.Fprintln(os.Stderr, "Usage: afctl worktree register --repo <repo-id> --absolute-path <path> [--branch <branch>] [--head-commit <sha>] [--remote-name <name>] [--remote-branch <branch>] [--main] [--ephemeral]")
-		os.Exit(1)
+		return fmt.Errorf("%s", "Usage: afctl worktree register --repo <repo-id> --absolute-path <path> [--branch <branch>] [--head-commit <sha>] [--remote-name <name>] [--remote-branch <branch>] [--main] [--ephemeral]")
 	}
 
 	var req core.CreateWorktreeRequest
@@ -81,12 +79,13 @@ func runWorktreeRegister(ctx context.Context, c *client.Client, args []string) {
 	}
 	if jsonOutput {
 		json.NewEncoder(os.Stdout).Encode(wt)
-		return
+		return nil
 	}
 	printWorktree(wt)
+	return nil
 }
 
-func runWorktreeList(ctx context.Context, c *client.Client, args []string) {
+func runWorktreeList(ctx context.Context, c *client.Client, args []string) error {
 	repo := ""
 	for i := 0; i < len(args); i++ {
 		if args[i] == "--repo" && i+1 < len(args) {
@@ -100,13 +99,14 @@ func runWorktreeList(ctx context.Context, c *client.Client, args []string) {
 	}
 	if jsonOutput {
 		json.NewEncoder(os.Stdout).Encode(worktrees)
-		return
+		return nil
 	}
 	if len(worktrees) == 0 {
 		fmt.Println("No worktrees found.")
-		return
+		return nil
 	}
 	for _, wt := range worktrees {
 		printWorktree(wt)
 	}
+	return nil
 }

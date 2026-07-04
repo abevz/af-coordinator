@@ -12,27 +12,25 @@ import (
 
 // ─── Repo ───────────────────────────────────────────────────────────────────
 
-func runRepo(ctx context.Context, c *client.Client, args []string) {
+func runRepo(ctx context.Context, c *client.Client, args []string) error {
 	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "Usage: afctl repo <add|list>")
-		os.Exit(1)
+		return fmt.Errorf("%s", "Usage: afctl repo <add|list>")
 	}
 
 	switch args[0] {
 	case "add":
-		runRepoAdd(ctx, c, args[1:])
+		return runRepoAdd(ctx, c, args[1:])
 	case "list":
-		runRepoList(ctx, c, args[1:])
+		return runRepoList(ctx, c, args[1:])
 	default:
-		fmt.Fprintf(os.Stderr, "unknown repo subcommand: %s\n", args[0])
-		os.Exit(1)
+		return fmt.Errorf("unknown repo subcommand: %s\n", args[0])
 	}
+	return nil
 }
 
-func runRepoAdd(ctx context.Context, c *client.Client, args []string) {
+func runRepoAdd(ctx context.Context, c *client.Client, args []string) error {
 	if len(args) < 4 {
-		fmt.Fprintln(os.Stderr, "Usage: afctl repo add --project <key> --logical-name <name> --canonical-git-dir <path> [--default-branch <branch>] [--remotes '<json>']")
-		os.Exit(1)
+		return fmt.Errorf("%s", "Usage: afctl repo add --project <key> --logical-name <name> --canonical-git-dir <path> [--default-branch <branch>] [--remotes '<json>']")
 	}
 
 	var req core.CreateRepoRequest
@@ -63,8 +61,7 @@ func runRepoAdd(ctx context.Context, c *client.Client, args []string) {
 		case "--remotes":
 			if i+1 < len(args) {
 				if err := json.Unmarshal([]byte(args[i+1]), &req.Remotes); err != nil {
-					fmt.Fprintf(os.Stderr, "error: invalid --remotes JSON: %v\n", err)
-					os.Exit(1)
+					return fmt.Errorf("error: invalid --remotes JSON: %v\n", err)
 				}
 				i++
 			}
@@ -80,7 +77,7 @@ func runRepoAdd(ctx context.Context, c *client.Client, args []string) {
 			"repository": repo,
 			"remotes":    remotes,
 		})
-		return
+		return nil
 	}
 	fmt.Printf("Repository ID: %s\n", repo.ID)
 	fmt.Printf("Project ID:    %s\n", repo.ProjectID)
@@ -98,9 +95,10 @@ func runRepoAdd(ctx context.Context, c *client.Client, args []string) {
 		}
 	}
 	fmt.Println()
+	return nil
 }
 
-func runRepoList(ctx context.Context, c *client.Client, args []string) {
+func runRepoList(ctx context.Context, c *client.Client, args []string) error {
 	project := ""
 	for i := 0; i < len(args); i++ {
 		if args[i] == "--project" && i+1 < len(args) {
@@ -114,11 +112,11 @@ func runRepoList(ctx context.Context, c *client.Client, args []string) {
 	}
 	if jsonOutput {
 		json.NewEncoder(os.Stdout).Encode(repos)
-		return
+		return nil
 	}
 	if len(repos) == 0 {
 		fmt.Println("No repositories found.")
-		return
+		return nil
 	}
 	for _, r := range repos {
 		fmt.Printf("ID:           %s\n", r.ID)
@@ -128,4 +126,5 @@ func runRepoList(ctx context.Context, c *client.Client, args []string) {
 		fmt.Printf("Branch:       %s\n", r.DefaultBranch)
 		fmt.Printf("Created:      %s\n\n", r.CreatedAt)
 	}
+	return nil
 }

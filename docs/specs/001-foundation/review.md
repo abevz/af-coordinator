@@ -327,7 +327,19 @@ Use this file to capture:
 
 - Removed the outdated "Recommended implementation order" section.
 - Added "How to release" and "Known limitations" sections.
-
 ### What was verified
 
 - Visual inspection of `README.md`.
+
+## AFC-SDD-0048 — Refactor afctl error handling
+
+### What shipped
+
+- Refactored `cmd/afctl/` command functions (`runProject`, `runIssue`, etc.) to return `error` instead of calling `os.Exit(1)` inside the business logic.
+- Updated `main.go` to handle these errors, printing them to `os.Stderr` and calling `os.Exit(1)` centrally.
+- Makes the code more idiomatic, testable, and robust.
+
+### What was verified
+
+- `go build ./cmd/afctl` — builds clean
+- `go test -race ./...` — all tests pass

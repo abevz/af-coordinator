@@ -12,27 +12,25 @@ import (
 
 // ─── Artifact Root ──────────────────────────────────────────────────────────
 
-func runArtifactRoot(ctx context.Context, c *client.Client, args []string) {
+func runArtifactRoot(ctx context.Context, c *client.Client, args []string) error {
 	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "Usage: afctl artifact-root <add|list>")
-		os.Exit(1)
+		return fmt.Errorf("%s", "Usage: afctl artifact-root <add|list>")
 	}
 
 	switch args[0] {
 	case "add":
-		runArtifactRootAdd(ctx, c, args[1:])
+		return runArtifactRootAdd(ctx, c, args[1:])
 	case "list":
-		runArtifactRootList(ctx, c, args[1:])
+		return runArtifactRootList(ctx, c, args[1:])
 	default:
-		fmt.Fprintf(os.Stderr, "unknown artifact-root subcommand: %s\n", args[0])
-		os.Exit(1)
+		return fmt.Errorf("unknown artifact-root subcommand: %s\n", args[0])
 	}
+	return nil
 }
 
-func runArtifactRootAdd(ctx context.Context, c *client.Client, args []string) {
+func runArtifactRootAdd(ctx context.Context, c *client.Client, args []string) error {
 	if len(args) < 4 {
-		fmt.Fprintln(os.Stderr, "Usage: afctl artifact-root add --repo <repo-id> --root-path <path> [--kind <kind>] [--primary]")
-		os.Exit(1)
+		return fmt.Errorf("%s", "Usage: afctl artifact-root add --repo <repo-id> --root-path <path> [--kind <kind>] [--primary]")
 	}
 
 	var req core.CreateArtifactRootRequest
@@ -66,12 +64,13 @@ func runArtifactRootAdd(ctx context.Context, c *client.Client, args []string) {
 	}
 	if jsonOutput {
 		json.NewEncoder(os.Stdout).Encode(root)
-		return
+		return nil
 	}
 	printArtifactRoot(root)
+	return nil
 }
 
-func runArtifactRootList(ctx context.Context, c *client.Client, args []string) {
+func runArtifactRootList(ctx context.Context, c *client.Client, args []string) error {
 	repo := ""
 	for i := 0; i < len(args); i++ {
 		if args[i] == "--repo" && i+1 < len(args) {
@@ -85,15 +84,16 @@ func runArtifactRootList(ctx context.Context, c *client.Client, args []string) {
 	}
 	if jsonOutput {
 		json.NewEncoder(os.Stdout).Encode(roots)
-		return
+		return nil
 	}
 	if len(roots) == 0 {
 		fmt.Println("No artifact roots found.")
-		return
+		return nil
 	}
 	for _, r := range roots {
 		printArtifactRoot(r)
 	}
+	return nil
 }
 
 func printArtifactRoot(r core.ArtifactRoot) {
@@ -111,27 +111,25 @@ func printArtifactRoot(r core.ArtifactRoot) {
 
 // ─── Artifact ───────────────────────────────────────────────────────────────
 
-func runArtifact(ctx context.Context, c *client.Client, args []string) {
+func runArtifact(ctx context.Context, c *client.Client, args []string) error {
 	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "Usage: afctl artifact <register|list>")
-		os.Exit(1)
+		return fmt.Errorf("%s", "Usage: afctl artifact <register|list>")
 	}
 
 	switch args[0] {
 	case "register":
-		runArtifactRegister(ctx, c, args[1:])
+		return runArtifactRegister(ctx, c, args[1:])
 	case "list":
-		runArtifactList(ctx, c, args[1:])
+		return runArtifactList(ctx, c, args[1:])
 	default:
-		fmt.Fprintf(os.Stderr, "unknown artifact subcommand: %s\n", args[0])
-		os.Exit(1)
+		return fmt.Errorf("unknown artifact subcommand: %s\n", args[0])
 	}
+	return nil
 }
 
-func runArtifactRegister(ctx context.Context, c *client.Client, args []string) {
+func runArtifactRegister(ctx context.Context, c *client.Client, args []string) error {
 	if len(args) < 6 {
-		fmt.Fprintln(os.Stderr, "Usage: afctl artifact register --repo <repo-id> --relative-path <path> --kind <kind> [--worktree <worktree-id>] [--artifact-root <root-id>] [--title <title>] [--external-key <key>] [--status <status>]")
-		os.Exit(1)
+		return fmt.Errorf("%s", "Usage: afctl artifact register --repo <repo-id> --relative-path <path> --kind <kind> [--worktree <worktree-id>] [--artifact-root <root-id>] [--title <title>] [--external-key <key>] [--status <status>]")
 	}
 
 	var req core.CreateArtifactRequest
@@ -186,12 +184,13 @@ func runArtifactRegister(ctx context.Context, c *client.Client, args []string) {
 	}
 	if jsonOutput {
 		json.NewEncoder(os.Stdout).Encode(artifact)
-		return
+		return nil
 	}
 	printArtifact(artifact)
+	return nil
 }
 
-func runArtifactList(ctx context.Context, c *client.Client, args []string) {
+func runArtifactList(ctx context.Context, c *client.Client, args []string) error {
 	repo := ""
 	for i := 0; i < len(args); i++ {
 		if args[i] == "--repo" && i+1 < len(args) {
@@ -205,15 +204,16 @@ func runArtifactList(ctx context.Context, c *client.Client, args []string) {
 	}
 	if jsonOutput {
 		json.NewEncoder(os.Stdout).Encode(artifacts)
-		return
+		return nil
 	}
 	if len(artifacts) == 0 {
 		fmt.Println("No artifacts found.")
-		return
+		return nil
 	}
 	for _, a := range artifacts {
 		printArtifact(a)
 	}
+	return nil
 }
 
 func printArtifact(a core.Artifact) {

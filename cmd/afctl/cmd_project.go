@@ -12,27 +12,25 @@ import (
 
 // ─── Project ────────────────────────────────────────────────────────────────
 
-func runProject(ctx context.Context, c *client.Client, args []string) {
+func runProject(ctx context.Context, c *client.Client, args []string) error {
 	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "Usage: afctl project <add|list>")
-		os.Exit(1)
+		return fmt.Errorf("%s", "Usage: afctl project <add|list>")
 	}
 
 	switch args[0] {
 	case "add":
-		runProjectAdd(ctx, c, args[1:])
+		return runProjectAdd(ctx, c, args[1:])
 	case "list":
-		runProjectList(ctx, c)
+		return runProjectList(ctx, c)
 	default:
-		fmt.Fprintf(os.Stderr, "unknown project subcommand: %s\n", args[0])
-		os.Exit(1)
+		return fmt.Errorf("unknown project subcommand: %s\n", args[0])
 	}
+	return nil
 }
 
-func runProjectAdd(ctx context.Context, c *client.Client, args []string) {
+func runProjectAdd(ctx context.Context, c *client.Client, args []string) error {
 	if len(args) < 2 {
-		fmt.Fprintln(os.Stderr, "Usage: afctl project add --key <key> --name <name> [--description <desc>]")
-		os.Exit(1)
+		return fmt.Errorf("%s", "Usage: afctl project add --key <key> --name <name> [--description <desc>]")
 	}
 
 	var key, name, description string
@@ -62,27 +60,29 @@ func runProjectAdd(ctx context.Context, c *client.Client, args []string) {
 	}
 	if jsonOutput {
 		json.NewEncoder(os.Stdout).Encode(project)
-		return
+		return nil
 	}
 	printProject(project)
+	return nil
 }
 
-func runProjectList(ctx context.Context, c *client.Client) {
+func runProjectList(ctx context.Context, c *client.Client) error {
 	projects, err := c.ListProjects(ctx)
 	if err != nil {
 		fail(err)
 	}
 	if jsonOutput {
 		json.NewEncoder(os.Stdout).Encode(projects)
-		return
+		return nil
 	}
 	if len(projects) == 0 {
 		fmt.Println("No projects found.")
-		return
+		return nil
 	}
 	for _, p := range projects {
 		printProject(p)
 	}
+	return nil
 }
 
 func printProject(p core.Project) {

@@ -25,7 +25,7 @@ const (
 	initUnchanged
 )
 
-func runInit(args []string) {
+func runInit(args []string) error {
 	targetPath := "AGENTS.md"
 	flags := make(map[string]string)
 	dryRun := false
@@ -42,8 +42,7 @@ func runInit(args []string) {
 		case "--json":
 			// Already parsed globally, ignore
 		default:
-			fmt.Fprintf(os.Stderr, "error: unknown flag: %s\n", args[i])
-			os.Exit(1)
+			return fmt.Errorf("error: unknown flag: %s\n", args[i])
 		}
 	}
 
@@ -61,7 +60,7 @@ func runInit(args []string) {
 			resp["dry_run"] = true
 		}
 		json.NewEncoder(os.Stdout).Encode(resp)
-		return
+		return nil
 	}
 
 	prefix := ""
@@ -76,6 +75,7 @@ func runInit(args []string) {
 	case initUnchanged:
 		fmt.Printf("%sunchanged: %s\n", prefix, targetPath)
 	}
+	return nil
 }
 
 func formatBlock(content string) string {
