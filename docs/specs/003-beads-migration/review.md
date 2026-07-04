@@ -76,3 +76,9 @@ count; crash-free streak unaffected. daily-check migrated off bd on
 branch codex/daily-check-afctl (01bcb1f), verified: 99 tests, zero
 bd/beads references, -894 lines. Merge pending operator review
 (tracked as utils-4).
+
+0028 decommission checklist addition: besides beads-dolt.service,
+account for the surrounding automation — `dolt-backup.timer` and
+`backup-health-check.timer` (daily Dolt backup + health check). Decide
+per-unit: disable with the server, or repoint at the coordinator's
+`VACUUM INTO` backups (docs/operations.md).
