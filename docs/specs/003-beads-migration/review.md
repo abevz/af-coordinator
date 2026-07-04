@@ -1,4 +1,6 @@
+# Review
 
+Status: completed
 ## AFC-SDD-0025 — Register utils project, repo, worktree
 
 Shipped.
@@ -105,3 +107,9 @@ mutations, but afctl issue create/update/close never sent one — every
 CLI create failed against the upgraded daemon (fix f50f962). Lesson for
 review: an API-side validation change is not done until the shipped
 clients are exercised against it.
+
+## Final Migration Conclusion
+
+The parallel soak period (AFC-SDD-0027) successfully proved the stability of `af-coordinatord`. The daemon is functioning reliably.
+The legacy `beads-dolt` service was stopped and disabled (AFC-SDD-0028).
+The migration is fully accepted and completed. The `af-coordinator` local-first setup is now the single source of truth for execution state.

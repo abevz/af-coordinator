@@ -18,9 +18,9 @@ Numbering continues the global AFC-SDD sequence.
 - [x] AFC-SDD-0026 Replace utils AGENTS.md with afctl protocol adapter
   - commit on a branch in the utils repo
   - let operator review and apply
-- [ ] AFC-SDD-0027 Parallel soak: monitor daemon stability for >= 48h
-- [ ] AFC-SDD-0028 Decommission beads-dolt (conditional on soak success)
-- [ ] AFC-SDD-0029 Write review.md with migration outcome and acceptance
+- [x] AFC-SDD-0027 Parallel soak: monitor daemon stability for >= 48h
+- [x] AFC-SDD-0028 Decommission beads-dolt (conditional on soak success)
+- [x] AFC-SDD-0029 Write review.md with migration outcome and acceptance
       verdict
 
 - [x] AFC-SDD-0049 Improve API and Client test coverage
