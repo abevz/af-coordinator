@@ -15,6 +15,53 @@ The core design choice is simple:
 - one daemon owns all writes
 - clients talk to the daemon over a local API
 
+## Getting started
+
+### Prerequisites
+
+- Go 1.22 or later
+
+### Build
+
+```bash
+make build
+```
+
+### Test
+
+```bash
+make test
+```
+
+### Run the daemon
+
+```bash
+# Start in the foreground (for testing):
+af-coordinatord
+
+# Or install as a systemd user service:
+make install-service
+systemctl --user enable --now af-coordinatord
+```
+
+### Configure
+
+The daemon reads these environment variables:
+
+| Variable | Default | Description |
+|---|---|---|
+| `AF_COORDINATOR_SOCKET` | `~/.local/state/af-coordinator/af-coordinator.sock` | Unix socket path |
+| `AF_COORDINATOR_DB` | `~/.local/share/af-coordinator/af-coordinator.db` | SQLite database path |
+| `AF_COORDINATOR_LOG_LEVEL` | `info` | Log level: `debug`, `info`, `warn`, `error` |
+
+### Install binaries
+
+```bash
+make build-install
+```
+
+This builds `af-coordinatord` and `afctl` into `~/.local/bin/`.
+
 ## Goals
 
 - reliable local-first coordination without internet dependency
