@@ -82,3 +82,26 @@ account for the surrounding automation — `dolt-backup.timer` and
 `backup-health-check.timer` (daily Dolt backup + health check). Decide
 per-unit: disable with the server, or repoint at the coordinator's
 `VACUUM INTO` backups (docs/operations.md).
+
+## Scope extension: job-scout-bot migrated (2026-07-04)
+
+The daily-check board covered 5 Beads projects, not just utils; only
+job-scout-bot had live issues (5 open incl. one P0, 1 deferred). To keep
+the operator's board whole and unblock full beads-dolt decommission:
+
+- project `jsb` registered (repo + main worktree)
+- 6 live issues imported as jsb-3..jsb-8 with provenance notes
+  (original Beads ids + timestamps), deferred status preserved;
+  9 closed issues stay archived in
+  `inputs/beads-snapshot-jsb-2026-07-04.json`
+- remaining Beads projects: platform-iac and englishdrills are empty
+  (0 open); aion-forge's Beads was already broken before migration
+  (its bd points at an orphan Dolt on port 35437 that lacks the
+  database) — nothing live to migrate, snapshot impossible until/unless
+  the data dir is recovered
+
+Found and fixed during import: 0038 made the API require an actor on
+mutations, but afctl issue create/update/close never sent one — every
+CLI create failed against the upgraded daemon (fix f50f962). Lesson for
+review: an API-side validation change is not done until the shipped
+clients are exercised against it.
