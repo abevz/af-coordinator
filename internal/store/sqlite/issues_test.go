@@ -122,7 +122,11 @@ func TestGetIssueByShortID(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, _, err := GetIssue(db, created.ShortID)
+	resolvedID, err := ResolveIssueID(db, created.ShortID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _, err := GetIssue(db, resolvedID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1536,7 +1540,7 @@ func TestRemoveDependencyAppendsEvent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = RemoveDependency(db, i1.ID, i2.ID, "blocks")
+	err = RemoveDependency(db, i1.ID, i2.ID, "blocks", "test")
 	if err != nil {
 		t.Fatal(err)
 	}

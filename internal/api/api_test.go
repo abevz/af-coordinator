@@ -531,7 +531,7 @@ func TestCreateIssue(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	body := `{"project":"test","scope_kind":"project","title":"My issue"}`
+	body := `{"project":"test","scope_kind":"project","title":"My issue","actor":"test"}`
 	resp, err := http.Post(server.URL+"/v1/issues", "application/json", strings.NewReader(body))
 	if err != nil {
 		t.Fatal(err)
@@ -599,7 +599,7 @@ func TestCreateIssueMissingTitle(t *testing.T) {
 func TestCreateIssueProjectNotFound(t *testing.T) {
 	server, _ := newTestServer(t)
 
-	body := `{"project":"nonexistent","scope_kind":"project","title":"My issue"}`
+	body := `{"project":"nonexistent","scope_kind":"project","title":"My issue","actor":"test"}`
 	resp, err := http.Post(server.URL+"/v1/issues", "application/json", strings.NewReader(body))
 	if err != nil {
 		t.Fatal(err)
@@ -1101,7 +1101,7 @@ func TestUpdateIssue(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	body := `{"title":"Updated","expected_version":1}`
+	body := `{"title":"Updated","expected_version":1,"actor":"test"}`
 	req, err := http.NewRequest("PATCH", server.URL+"/v1/issues/"+issueID, strings.NewReader(body))
 	if err != nil {
 		t.Fatal(err)
@@ -1160,7 +1160,7 @@ func TestCloseIssue(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	body := `{"resolution":"done","expected_version":1}`
+	body := `{"resolution":"done","expected_version":1,"actor":"test"}`
 	req, err := http.NewRequest("POST", server.URL+"/v1/issues/"+issueID+"/close", strings.NewReader(body))
 	if err != nil {
 		t.Fatal(err)
@@ -1350,7 +1350,7 @@ func TestAddRemoveDependency(t *testing.T) {
 	}
 
 	// Add dependency
-	depBody := `{"depends_on":"issue-2","kind":"blocks"}`
+	depBody := `{"depends_on":"issue-2","kind":"blocks","actor":"test"}`
 	req, err := http.NewRequest("POST", server.URL+"/v1/issues/issue-1/dependencies", strings.NewReader(depBody))
 	if err != nil {
 		t.Fatal(err)
