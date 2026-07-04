@@ -210,16 +210,6 @@ func runHealth(ctx context.Context, c *client.Client) {
 	fmt.Printf("Time:       %s\n", health.Time.UTC().Format(time.RFC3339))
 }
 
-
-
-
-
-
-
-
-
-
-
 // runLs is a top-level shortcut for `afctl issue list`.
 func runLs(ctx context.Context, c *client.Client, args []string) {
 	runIssueList(ctx, c, args)
@@ -233,18 +223,6 @@ func runShow(ctx context.Context, c *client.Client, args []string) {
 	}
 	runIssueGet(ctx, c, args)
 }
-
-
-
-
-
-
-
-
-
-
-
-
 
 func printIssue(i core.Issue) {
 	fmt.Printf("ID:           %s\n", i.ID)

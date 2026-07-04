@@ -105,6 +105,11 @@ Mechanical quality work, no behavior changes.
   - build (`make build`), run, test (`make test`), configuration env
     vars (`AF_COORDINATOR_SOCKET`/`DB`/`LOG_LEVEL`), install
     (`make build-install install-service`)
+- [x] AFC-SDD-0044 Format `cmd/afctl/main.go`
+  - file has inconsistent spacing/formatting; run `gofmt -w` to fix
+- [x] AFC-SDD-0045 Remove hardcoded DDL schema from tests
+  - `internal/api/api_test.go` and `internal/store/sqlite/sqlite_test.go` use an inlined string `schema` with hand-written DDL
+  - use `sqlite.Migrate` with `migrations.FS` to initialize in-memory SQLite for tests, matching the AGENTS.md rule
 
 Deferred from the audit, deliberately: CI pipeline (GitHub Actions) —
 worth doing before the repo is shared, not before Monday's soak

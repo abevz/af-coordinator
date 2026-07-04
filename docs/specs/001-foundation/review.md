@@ -287,3 +287,27 @@ Use this file to capture:
 - `go build ./...` — compiles clean
 - `go test ./...` — all tests pass, including the new validation tests
 - `go vet ./...` — clean
+
+## AFC-SDD-0044 — Format cmd/afctl/main.go
+
+### What shipped
+
+- Ran `gofmt -w` on `cmd/afctl/main.go` to fix formatting inconsistencies (empty lines).
+
+### What was verified
+
+- `gofmt -l .` — clean
+
+## AFC-SDD-0045 — Remove hardcoded DDL schema from tests
+
+### What shipped
+
+- Removed the inlined string `const schema = ...` from `internal/api/api_test.go` and `internal/store/sqlite/sqlite_test.go`.
+- Switched `newTestDB` and `newTestServer` to initialize the SQLite in-memory database using `sqlite.Migrate(context.Background(), db, migrations.FS)`, which pulls the real migrations from `migrations/0001_schema_v1.sql`.
+- Added required imports `context` and `"github.com/abevz/af-coordinator/migrations"`.
+
+### What was verified
+
+- `go test -race ./...` — all tests pass
+- `go vet ./...` — clean
+
