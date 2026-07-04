@@ -197,6 +197,8 @@ migrations/            schema migrations
 - [Architecture v1](docs/architecture-v1.md)
 - [Schema v1](docs/schema-v1.md)
 - [API v1](docs/api-v1.md)
+- [Agent protocol v1](docs/agent-protocol-v1.md)
+- [Workflows v1](docs/workflows-v1.md)
 - [SDD workflow v1](docs/sdd-workflow-v1.md)
 - [Foundation spec packet](docs/specs/001-foundation/README.md)
 
