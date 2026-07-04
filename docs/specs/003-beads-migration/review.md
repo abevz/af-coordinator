@@ -69,3 +69,10 @@ Sequencing note for 0028: `daily-check` still reads Beads. It must be
 switched to the coordinator (or its Beads section disabled) BEFORE
 beads-dolt is decommissioned, or the soak "succeeds" by breaking a
 consumer.
+
+Mid-soak note (2026-07-04 09:51): daemon binary upgraded (0035-0038
+fixes) via manual restart. NRestarts still 0 — manual restarts do not
+count; crash-free streak unaffected. daily-check migrated off bd on
+branch codex/daily-check-afctl (01bcb1f), verified: 99 tests, zero
+bd/beads references, -894 lines. Merge pending operator review
+(tracked as utils-4).
