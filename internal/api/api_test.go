@@ -508,18 +508,18 @@ func TestGetIssueLeaseTokenLeak(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	
+
 	var result map[string]any
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		t.Fatal(err)
 	}
 	resp.Body.Close()
-	
+
 	leaseObj, ok := result["lease"].(map[string]any)
 	if !ok {
 		t.Fatalf("expected lease object in response, got %v", result["lease"])
 	}
-	
+
 	if _, hasToken := leaseObj["lease_token"]; hasToken {
 		t.Errorf("SECURITY LEAK: lease_token must not be returned in GET issue response")
 	}

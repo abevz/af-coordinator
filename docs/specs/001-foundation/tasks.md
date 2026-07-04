@@ -158,7 +158,7 @@ Mechanical quality work, no behavior changes.
     heartbeat response)
   - tests: show/list a claimed issue → token absent, holder present;
     claim response still carries it
-- [ ] AFC-SDD-0055 Detect client/daemon version skew
+- [x] AFC-SDD-0055 Detect client/daemon version skew
   - found live: agy shipped 0053, installed the new afctl, did not
     restart the daemon — `close --note` silently dropped notes for an
     hour (old server ignored the unknown JSON field). Silent partial
@@ -186,6 +186,20 @@ Mechanical quality work, no behavior changes.
     table-driven test per endpoint × {friendly id, uuid, unknown}
   - bonus: `show --full` prints events and notes but not artifact
     links — add a Links section
+- [ ] AFC-SDD-0057 `afctl doctor` — one command that catches "done in git, not on the host"
+  - motivation: three same-day incidents of shipped-but-not-armed —
+    daemon not restarted after 0053 (notes silently dropped), stale
+    afctl in a second PATH dir, backup timer written but never
+    installed (found only by operator review after afc-1 closed)
+  - checks, each printing ok/WARN with a fix hint:
+    daemon reachable + `/v1/health`; client/daemon version skew (reuse
+    0055); `af-coordinator-backup.timer` installed AND enabled AND last
+    backup < 48h old; newest backup passes `PRAGMA integrity_check`;
+    duplicate afctl/af-coordinatord binaries in PATH with differing
+    versions; socket and DB paths match the daemon's view from health
+  - read-only: doctor diagnoses, never repairs; exit 0 all-ok, 1 any WARN
+  - supports `--json`; table-driven tests for the check evaluators in
+    `internal/` (cmd stays thin)
 
 Deferred from the audit, deliberately: CI pipeline (GitHub Actions) —
 worth doing before the repo is shared, not before Monday's soak

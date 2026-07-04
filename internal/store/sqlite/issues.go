@@ -690,7 +690,7 @@ func CloseIssue(ctx context.Context, db *sql.DB, issueID string, req core.CloseI
 		if err != nil {
 			return fmt.Errorf("insert note: %w", err)
 		}
-		
+
 		_, err = tx.ExecContext(ctx,
 			`INSERT INTO events (id, issue_id, actor, event_type, payload_json, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
 			uuid.New().String(), issueID, req.Actor, "note_added", `{}`, now,

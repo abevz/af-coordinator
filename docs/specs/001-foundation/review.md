@@ -373,3 +373,20 @@ Use this file to capture:
 - `go test ./...` — all tests pass, including the new regression tests
 - `make build-install` — completed successfully
 - `afctl issue close` executed cleanly.
+
+## AFC-SDD-0055 — Detect client/daemon version skew
+
+### What shipped
+
+- Embedded `build.Version` constant in both daemon and client.
+- `GET /v1/health` now returns the daemon's version in its JSON body.
+- `afctl` compares its embedded version with the daemon's version on invocation and warns on stderr if they differ.
+- Added integration test verifying version skew warnings without breaking exit codes.
+
+### Discrepancies vs design
+
+- None.
+
+### Open issues
+
+- None.
