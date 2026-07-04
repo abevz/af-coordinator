@@ -1,6 +1,7 @@
 package sqlite
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"time"
@@ -11,9 +12,9 @@ import (
 
 // CreateRepo inserts a new repository and its remotes in a transaction.
 // The projectKey is resolved to a project ID internally.
-func CreateRepo(db *sql.DB, projectKey string, req core.CreateRepoRequest) (core.Repository, []core.RepoRemote, error) {
+func CreateRepo(ctx context.Context, db *sql.DB, projectKey string, req core.CreateRepoRequest) (core.Repository, []core.RepoRemote, error) {
 	// Resolve project key to ID.
-	proj, err := GetProjectByKey(db, projectKey)
+	proj, err := GetProjectByKey(ctx, db, projectKey)
 	if err != nil {
 		return core.Repository{}, nil, fmt.Errorf("resolve project: %w", err)
 	}
@@ -21,13 +22,13 @@ func CreateRepo(db *sql.DB, projectKey string, req core.CreateRepoRequest) (core
 	now := time.Now().UTC().Format(time.RFC3339)
 	repoID := uuid.New().String()
 
-	tx, err := db.Begin()
+	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return core.Repository{}, nil, fmt.Errorf("begin tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	_, err = tx.Exec(
+	_, err = tx.ExecContext(ctx,
 		`INSERT INTO repositories (id, project_id, logical_name, canonical_git_dir, default_branch, hosting_kind, hosting_slug, created_at, updated_at)
 		 VALUES (?, ?, ?, ?, ?, '', '', ?, ?)`,
 		repoID, proj.ID, req.LogicalName, req.CanonicalGitDir, req.DefaultBranch, now, now,
@@ -43,7 +44,7 @@ func CreateRepo(db *sql.DB, projectKey string, req core.CreateRepoRequest) (core
 		if r.IsPrimary {
 			isPrimary = 1
 		}
-		_, err := tx.Exec(
+		_, err := tx.ExecContext(ctx,
 			`INSERT INTO repo_remotes (id, repository_id, remote_name, fetch_url, push_url, is_primary, created_at, updated_at)
 			 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 			remoteID, repoID, r.RemoteName, r.FetchURL, r.PushURL, isPrimary, now, now,
@@ -81,8 +82,8 @@ func CreateRepo(db *sql.DB, projectKey string, req core.CreateRepoRequest) (core
 }
 
 // GetRepo retrieves a repository by ID or logical name.
-func GetRepo(db *sql.DB, idOrName string) (core.Repository, error) {
-	row := db.QueryRow(
+func GetRepo(ctx context.Context, db *sql.DB, idOrName string) (core.Repository, error) {
+	row := db.QueryRowContext(ctx,
 		`SELECT id, project_id, logical_name, canonical_git_dir, default_branch, hosting_kind, hosting_slug, created_at, updated_at
 		 FROM repositories WHERE id = ? OR logical_name = ?`, idOrName, idOrName,
 	)
@@ -90,17 +91,17 @@ func GetRepo(db *sql.DB, idOrName string) (core.Repository, error) {
 }
 
 // ListRepos lists repositories optionally filtered by project ID.
-func ListRepos(db *sql.DB, projectID string) ([]core.Repository, error) {
+func ListRepos(ctx context.Context, db *sql.DB, projectID string) ([]core.Repository, error) {
 	var rows *sql.Rows
 	var err error
 
 	if projectID != "" {
-		rows, err = db.Query(
+		rows, err = db.QueryContext(ctx,
 			`SELECT id, project_id, logical_name, canonical_git_dir, default_branch, hosting_kind, hosting_slug, created_at, updated_at
 			 FROM repositories WHERE project_id = ? ORDER BY logical_name`, projectID,
 		)
 	} else {
-		rows, err = db.Query(
+		rows, err = db.QueryContext(ctx,
 			`SELECT id, project_id, logical_name, canonical_git_dir, default_branch, hosting_kind, hosting_slug, created_at, updated_at
 			 FROM repositories ORDER BY logical_name`,
 		)
@@ -128,12 +129,12 @@ func ListRepos(db *sql.DB, projectID string) ([]core.Repository, error) {
 }
 
 // ListReposByProjectKey lists repositories by project key (resolved internally).
-func ListReposByProjectKey(db *sql.DB, projectKey string) ([]core.Repository, error) {
-	proj, err := GetProjectByKey(db, projectKey)
+func ListReposByProjectKey(ctx context.Context, db *sql.DB, projectKey string) ([]core.Repository, error) {
+	proj, err := GetProjectByKey(ctx, db, projectKey)
 	if err != nil {
 		return nil, err
 	}
-	return ListRepos(db, proj.ID)
+	return ListRepos(ctx, db, proj.ID)
 }
 
 func scanRepo(s scanner) (core.Repository, error) {

@@ -2,6 +2,7 @@
 package sqlite
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"io/fs"
@@ -36,8 +37,8 @@ func Open(dbPath string) (*sql.DB, error) {
 // Migrate applies embedded SQL migration files that have not yet been applied.
 // Migrations are sorted lexicographically and applied in a single transaction
 // each. Applied migrations are tracked in the _migrations table.
-func Migrate(db *sql.DB, migrationsFS fs.FS) error {
-	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS _migrations (
+func Migrate(ctx context.Context, db *sql.DB, migrationsFS fs.FS) error {
+	if _, err := db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS _migrations (
 		name       text primary key,
 		applied_at text not null
 	)`); err != nil {
@@ -52,7 +53,7 @@ func Migrate(db *sql.DB, migrationsFS fs.FS) error {
 
 	for _, name := range entries {
 		var already int
-		if err := db.QueryRow("SELECT count(*) FROM _migrations WHERE name = ?", name).Scan(&already); err != nil {
+		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM _migrations WHERE name = ?", name).Scan(&already); err != nil {
 			return fmt.Errorf("check migration %s: %w", name, err)
 		}
 		if already > 0 {
@@ -64,11 +65,11 @@ func Migrate(db *sql.DB, migrationsFS fs.FS) error {
 			return fmt.Errorf("read migration %s: %w", name, err)
 		}
 
-		if _, err := db.Exec(string(data)); err != nil {
+		if _, err := db.ExecContext(ctx, string(data)); err != nil {
 			return fmt.Errorf("apply migration %s: %w", name, err)
 		}
 
-		if _, err := db.Exec("INSERT INTO _migrations (name, applied_at) VALUES (?, ?)", name, time.Now().UTC().Format(time.RFC3339)); err != nil {
+		if _, err := db.ExecContext(ctx, "INSERT INTO _migrations (name, applied_at) VALUES (?, ?)", name, time.Now().UTC().Format(time.RFC3339)); err != nil {
 			return fmt.Errorf("record migration %s: %w", name, err)
 		}
 	}

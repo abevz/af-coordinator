@@ -24,7 +24,7 @@ func handleCreateRepo(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 			return
 		}
 
-		repo, remotes, err := sqlite.CreateRepo(db, req.Project, req)
+		repo, remotes, err := sqlite.CreateRepo(r.Context(), db, req.Project, req)
 		if err != nil {
 			if apiErr, ok := errAsAPIError(err); ok {
 				if apiErr.Code == core.ErrNotFound {
@@ -58,7 +58,7 @@ func handleListRepos(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 		var err error
 
 		if projectFilter != "" {
-			repos, err = sqlite.ListReposByProjectKey(db, projectFilter)
+			repos, err = sqlite.ListReposByProjectKey(r.Context(), db, projectFilter)
 			if err != nil {
 				if apiErr, ok := errAsAPIError(err); ok && apiErr.Code == core.ErrNotFound {
 					writeError(w, http.StatusNotFound, core.ErrNotFound,
@@ -70,7 +70,7 @@ func handleListRepos(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 				return
 			}
 		} else {
-			repos, err = sqlite.ListRepos(db, "")
+			repos, err = sqlite.ListRepos(r.Context(), db, "")
 			if err != nil {
 				logger.Error("failed to list repos", "error", err)
 				writeError(w, http.StatusInternalServerError, "internal_error", "failed to list repositories")

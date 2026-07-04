@@ -24,7 +24,7 @@ func handleCreateArtifactRoot(db *sql.DB, logger *slog.Logger) http.HandlerFunc 
 		}
 
 		// Resolve repo ID from the body.
-		repo, err := sqlite.GetRepo(db, req.Repo)
+		repo, err := sqlite.GetRepo(r.Context(), db, req.Repo)
 		if err != nil {
 			if apiErr, ok := errAsAPIError(err); ok && apiErr.Code == core.ErrNotFound {
 				writeError(w, http.StatusNotFound, core.ErrNotFound,
@@ -36,7 +36,7 @@ func handleCreateArtifactRoot(db *sql.DB, logger *slog.Logger) http.HandlerFunc 
 			return
 		}
 
-		root, err := sqlite.CreateArtifactRoot(db, repo.ID, req)
+		root, err := sqlite.CreateArtifactRoot(r.Context(), db, repo.ID, req)
 		if err != nil {
 			if isUniqueConstraintError(err) {
 				writeError(w, http.StatusConflict, "artifact_root_exists",
@@ -61,7 +61,7 @@ func handleListArtifactRoots(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 
 		if repoFilter != "" {
 			// Verify the repo exists first.
-			if _, err := sqlite.GetRepo(db, repoFilter); err != nil {
+			if _, err := sqlite.GetRepo(r.Context(), db, repoFilter); err != nil {
 				if apiErr, ok := errAsAPIError(err); ok && apiErr.Code == core.ErrNotFound {
 					writeError(w, http.StatusNotFound, core.ErrNotFound,
 						"repository not found: "+repoFilter)
@@ -71,9 +71,9 @@ func handleListArtifactRoots(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 				writeError(w, http.StatusInternalServerError, "internal_error", "failed to resolve repository")
 				return
 			}
-			roots, err = sqlite.ListArtifactRoots(db, repoFilter)
+			roots, err = sqlite.ListArtifactRoots(r.Context(), db, repoFilter)
 		} else {
-			roots, err = sqlite.ListArtifactRoots(db, "")
+			roots, err = sqlite.ListArtifactRoots(r.Context(), db, "")
 		}
 
 		if err != nil {
@@ -100,7 +100,7 @@ func handleCreateArtifact(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 		}
 
 		// Resolve repo ID from the body.
-		repo, err := sqlite.GetRepo(db, req.Repo)
+		repo, err := sqlite.GetRepo(r.Context(), db, req.Repo)
 		if err != nil {
 			if apiErr, ok := errAsAPIError(err); ok && apiErr.Code == core.ErrNotFound {
 				writeError(w, http.StatusNotFound, core.ErrNotFound,
@@ -112,7 +112,7 @@ func handleCreateArtifact(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 			return
 		}
 
-		artifact, err := sqlite.CreateArtifact(db, repo.ID, req)
+		artifact, err := sqlite.CreateArtifact(r.Context(), db, repo.ID, req)
 		if err != nil {
 			if isUniqueConstraintError(err) {
 				writeError(w, http.StatusConflict, "artifact_exists",
@@ -137,7 +137,7 @@ func handleListArtifacts(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 
 		if repoFilter != "" {
 			// Verify the repo exists first.
-			if _, err := sqlite.GetRepo(db, repoFilter); err != nil {
+			if _, err := sqlite.GetRepo(r.Context(), db, repoFilter); err != nil {
 				if apiErr, ok := errAsAPIError(err); ok && apiErr.Code == core.ErrNotFound {
 					writeError(w, http.StatusNotFound, core.ErrNotFound,
 						"repository not found: "+repoFilter)
@@ -147,9 +147,9 @@ func handleListArtifacts(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 				writeError(w, http.StatusInternalServerError, "internal_error", "failed to resolve repository")
 				return
 			}
-			artifacts, err = sqlite.ListArtifacts(db, repoFilter)
+			artifacts, err = sqlite.ListArtifacts(r.Context(), db, repoFilter)
 		} else {
-			artifacts, err = sqlite.ListArtifacts(db, "")
+			artifacts, err = sqlite.ListArtifacts(r.Context(), db, "")
 		}
 
 		if err != nil {

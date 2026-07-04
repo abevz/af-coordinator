@@ -24,7 +24,7 @@ func handleRegisterWorktree(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 		}
 
 		// Resolve repo ID from the body.
-		repo, err := sqlite.GetRepo(db, req.Repo)
+		repo, err := sqlite.GetRepo(r.Context(), db, req.Repo)
 		if err != nil {
 			if apiErr, ok := errAsAPIError(err); ok && apiErr.Code == core.ErrNotFound {
 				writeError(w, http.StatusNotFound, core.ErrNotFound,
@@ -36,7 +36,7 @@ func handleRegisterWorktree(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 			return
 		}
 
-		wt, isNew, err := sqlite.UpsertWorktree(db, repo.ID, req)
+		wt, isNew, err := sqlite.UpsertWorktree(r.Context(), db, repo.ID, req)
 		if err != nil {
 			logger.Error("failed to upsert worktree", "path", req.AbsolutePath, "error", err)
 			writeError(w, http.StatusInternalServerError, "internal_error", "failed to register worktree")
@@ -61,7 +61,7 @@ func handleListWorktrees(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 
 		if repoFilter != "" {
 			// Verify the repo exists first.
-			if _, err := sqlite.GetRepo(db, repoFilter); err != nil {
+			if _, err := sqlite.GetRepo(r.Context(), db, repoFilter); err != nil {
 				if apiErr, ok := errAsAPIError(err); ok && apiErr.Code == core.ErrNotFound {
 					writeError(w, http.StatusNotFound, core.ErrNotFound,
 						"repository not found: "+repoFilter)
@@ -71,9 +71,9 @@ func handleListWorktrees(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 				writeError(w, http.StatusInternalServerError, "internal_error", "failed to resolve repository")
 				return
 			}
-			worktrees, err = sqlite.ListWorktrees(db, repoFilter)
+			worktrees, err = sqlite.ListWorktrees(r.Context(), db, repoFilter)
 		} else {
-			worktrees, err = sqlite.ListWorktrees(db, "")
+			worktrees, err = sqlite.ListWorktrees(r.Context(), db, "")
 		}
 
 		if err != nil {

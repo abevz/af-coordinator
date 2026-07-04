@@ -36,7 +36,7 @@ func main() {
 	}
 	defer db.Close()
 
-	if err := sqlite.Migrate(db, migrations.FS); err != nil {
+	if err := sqlite.Migrate(context.Background(), db, migrations.FS); err != nil {
 		logger.Error("failed to run migrations", "error", err)
 		os.Exit(1)
 	}

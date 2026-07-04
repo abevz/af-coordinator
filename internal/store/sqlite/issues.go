@@ -1,6 +1,7 @@
 package sqlite
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -12,9 +13,9 @@ import (
 )
 
 // CreateIssue inserts a new issue, allocating a short_id from the project's sequence.
-func CreateIssue(db *sql.DB, projectKey string, req core.CreateIssueRequest) (core.Issue, error) {
+func CreateIssue(ctx context.Context, db *sql.DB, projectKey string, req core.CreateIssueRequest) (core.Issue, error) {
 	// Resolve project by key.
-	proj, err := GetProjectByKey(db, projectKey)
+	proj, err := GetProjectByKey(ctx, db, projectKey)
 	if err != nil {
 		return core.Issue{}, fmt.Errorf("resolve project: %w", err)
 	}
@@ -22,7 +23,7 @@ func CreateIssue(db *sql.DB, projectKey string, req core.CreateIssueRequest) (co
 	now := time.Now().UTC().Format(time.RFC3339)
 	id := uuid.New().String()
 
-	tx, err := db.Begin()
+	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return core.Issue{}, fmt.Errorf("begin tx: %w", err)
 	}
@@ -30,7 +31,7 @@ func CreateIssue(db *sql.DB, projectKey string, req core.CreateIssueRequest) (co
 
 	// Read current sequence value.
 	var seq int64
-	err = tx.QueryRow(`SELECT next_issue_seq FROM projects WHERE id = ?`, proj.ID).Scan(&seq)
+	err = tx.QueryRowContext(ctx, `SELECT next_issue_seq FROM projects WHERE id = ?`, proj.ID).Scan(&seq)
 	if err != nil {
 		return core.Issue{}, fmt.Errorf("select next_issue_seq: %w", err)
 	}
@@ -40,14 +41,14 @@ func CreateIssue(db *sql.DB, projectKey string, req core.CreateIssueRequest) (co
 	// Resolve repository and worktree references.
 	var repoID, worktreeID interface{} = nil, nil
 	if req.Repo != "" {
-		repo, err := GetRepo(db, req.Repo)
+		repo, err := GetRepo(ctx, db, req.Repo)
 		if err != nil {
 			return core.Issue{}, fmt.Errorf("resolve repo: %w", err)
 		}
 		repoID = repo.ID
 	}
 	if req.Worktree != "" {
-		wt, err := GetWorktree(db, req.Worktree)
+		wt, err := GetWorktree(ctx, db, req.Worktree)
 		if err != nil {
 			return core.Issue{}, fmt.Errorf("resolve worktree: %w", err)
 		}
@@ -60,7 +61,7 @@ func CreateIssue(db *sql.DB, projectKey string, req core.CreateIssueRequest) (co
 		priority = 3
 	}
 
-	_, err = tx.Exec(
+	_, err = tx.ExecContext(ctx,
 		`INSERT INTO issues (id, short_id, project_id, repository_id, worktree_id, scope_kind,
 		                    title, description, status, priority, assignee, version,
 		                    claimed_at, closed_at, created_at, updated_at)
@@ -73,14 +74,14 @@ func CreateIssue(db *sql.DB, projectKey string, req core.CreateIssueRequest) (co
 	}
 
 	// Increment the sequence.
-	_, err = tx.Exec(`UPDATE projects SET next_issue_seq = ?, updated_at = ? WHERE id = ?`, seq+1, now, proj.ID)
+	_, err = tx.ExecContext(ctx, `UPDATE projects SET next_issue_seq = ?, updated_at = ? WHERE id = ?`, seq+1, now, proj.ID)
 	if err != nil {
 		return core.Issue{}, fmt.Errorf("update next_issue_seq: %w", err)
 	}
 
 	// Append event.
 	eventPayload := fmt.Sprintf(`{"title":"%s","scope_kind":"%s"}`, req.Title, req.ScopeKind)
-	_, err = tx.Exec(
+	_, err = tx.ExecContext(ctx,
 		`INSERT INTO events (id, issue_id, actor, event_type, payload_json, created_at)
 		 VALUES (?, ?, ?, ?, ?, ?)`,
 		uuid.New().String(), id, req.Actor, "issue_created", eventPayload, now,
@@ -98,10 +99,10 @@ func CreateIssue(db *sql.DB, projectKey string, req core.CreateIssueRequest) (co
 }
 
 // ResolveIssueID resolves an issue by either its UUID id or short_id, returning the UUID id.
-func ResolveIssueID(db *sql.DB, idOrShortID string) (string, error) {
+func ResolveIssueID(ctx context.Context, db *sql.DB, idOrShortID string) (string, error) {
 	// Try by primary key first.
 	var id string
-	err := db.QueryRow(`SELECT id FROM issues WHERE id = ?`, idOrShortID).Scan(&id)
+	err := db.QueryRowContext(ctx, `SELECT id FROM issues WHERE id = ?`, idOrShortID).Scan(&id)
 	if err == nil {
 		return id, nil
 	}
@@ -110,7 +111,7 @@ func ResolveIssueID(db *sql.DB, idOrShortID string) (string, error) {
 	}
 
 	// Fall back to short_id.
-	err = db.QueryRow(`SELECT id FROM issues WHERE short_id = ?`, idOrShortID).Scan(&id)
+	err = db.QueryRowContext(ctx, `SELECT id FROM issues WHERE short_id = ?`, idOrShortID).Scan(&id)
 	if err == sql.ErrNoRows {
 		return "", core.NewAPIError(core.ErrNotFound, "issue not found: "+idOrShortID)
 	}
@@ -122,10 +123,10 @@ func ResolveIssueID(db *sql.DB, idOrShortID string) (string, error) {
 
 // GetIssue retrieves an issue by ID (UUID), along with its optional active lease.
 // Callers should use ResolveIssueID first to resolve short_id to UUID.
-func GetIssue(db *sql.DB, id string) (core.Issue, *core.IssueLease, error) {
+func GetIssue(ctx context.Context, db *sql.DB, id string) (core.Issue, *core.IssueLease, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
 
-	row := db.QueryRow(
+	row := db.QueryRowContext(ctx,
 		`SELECT i.id, i.short_id, i.project_id, i.repository_id, i.worktree_id, i.scope_kind,
 		        i.title, i.description, i.status, i.priority, i.assignee, i.version,
 		        i.claimed_at, i.closed_at, i.created_at, i.updated_at,
@@ -140,7 +141,7 @@ func GetIssue(db *sql.DB, id string) (core.Issue, *core.IssueLease, error) {
 	}
 
 	// Look up the lease (separate query for token/expiry detail).
-	lease, err := getActiveLease(db, issue.ID)
+	lease, err := getActiveLease(ctx, db, issue.ID)
 	if err != nil {
 		return core.Issue{}, nil, err
 	}
@@ -149,12 +150,12 @@ func GetIssue(db *sql.DB, id string) (core.Issue, *core.IssueLease, error) {
 }
 
 // ListIssues returns issues matching the given filters.
-func ListIssues(db *sql.DB, params core.IssueListParams) ([]core.Issue, error) {
+func ListIssues(ctx context.Context, db *sql.DB, params core.IssueListParams) ([]core.Issue, error) {
 	var where []string
 	args := []interface{}{time.Now().UTC().Format(time.RFC3339)}
 
 	if params.Project != "" {
-		proj, err := GetProjectByKey(db, params.Project)
+		proj, err := GetProjectByKey(ctx, db, params.Project)
 		if err != nil {
 			return nil, fmt.Errorf("resolve project: %w", err)
 		}
@@ -162,7 +163,7 @@ func ListIssues(db *sql.DB, params core.IssueListParams) ([]core.Issue, error) {
 		args = append(args, proj.ID)
 	}
 	if params.Repo != "" {
-		repo, err := GetRepo(db, params.Repo)
+		repo, err := GetRepo(ctx, db, params.Repo)
 		if err != nil {
 			return nil, fmt.Errorf("resolve repo: %w", err)
 		}
@@ -170,7 +171,7 @@ func ListIssues(db *sql.DB, params core.IssueListParams) ([]core.Issue, error) {
 		args = append(args, repo.ID)
 	}
 	if params.Worktree != "" {
-		wt, err := GetWorktree(db, params.Worktree)
+		wt, err := GetWorktree(ctx, db, params.Worktree)
 		if err != nil {
 			return nil, fmt.Errorf("resolve worktree: %w", err)
 		}
@@ -197,7 +198,7 @@ func ListIssues(db *sql.DB, params core.IssueListParams) ([]core.Issue, error) {
 	}
 	query += " ORDER BY i.updated_at DESC"
 
-	rows, err := db.Query(query, args...)
+	rows, err := db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list issues: %w", err)
 	}
@@ -222,7 +223,7 @@ func ListIssues(db *sql.DB, params core.IssueListParams) ([]core.Issue, error) {
 
 // ListReadyIssues returns issues that are actionable (not terminal), not currently leased,
 // and not blocked by an unfinished blocks dependency.
-func ListReadyIssues(db *sql.DB, projectID string) ([]core.Issue, error) {
+func ListReadyIssues(ctx context.Context, db *sql.DB, projectID string) ([]core.Issue, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
 	args := []interface{}{now}
 	query := `SELECT i.id, i.short_id, i.project_id, i.repository_id, i.worktree_id, i.scope_kind,
@@ -249,7 +250,7 @@ func ListReadyIssues(db *sql.DB, projectID string) ([]core.Issue, error) {
 	}
 	query += " ORDER BY i.priority, i.updated_at DESC"
 
-	rows, err := db.Query(query, args...)
+	rows, err := db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list ready issues: %w", err)
 	}
@@ -273,8 +274,8 @@ func ListReadyIssues(db *sql.DB, projectID string) ([]core.Issue, error) {
 }
 
 // ClaimIssue acquires a lease on an issue, moving it from 'open' to 'in_progress'.
-func ClaimIssue(db *sql.DB, issueID, holder string, ttlSeconds int) (core.ClaimResponse, error) {
-	tx, err := db.Begin()
+func ClaimIssue(ctx context.Context, db *sql.DB, issueID, holder string, ttlSeconds int) (core.ClaimResponse, error) {
+	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return core.ClaimResponse{}, fmt.Errorf("begin tx: %w", err)
 	}
@@ -282,7 +283,7 @@ func ClaimIssue(db *sql.DB, issueID, holder string, ttlSeconds int) (core.ClaimR
 
 	// Check issue exists and is open.
 	var status string
-	err = tx.QueryRow(`SELECT status FROM issues WHERE id = ?`, issueID).Scan(&status)
+	err = tx.QueryRowContext(ctx, `SELECT status FROM issues WHERE id = ?`, issueID).Scan(&status)
 	if err == sql.ErrNoRows {
 		return core.ClaimResponse{}, core.NewAPIError(core.ErrNotFound, "issue not found: "+issueID)
 	}
@@ -297,7 +298,7 @@ func ClaimIssue(db *sql.DB, issueID, holder string, ttlSeconds int) (core.ClaimR
 	// Check no unexpired lease exists.
 	var leaseCount int
 	nowRFC := time.Now().UTC().Format(time.RFC3339)
-	err = tx.QueryRow(
+	err = tx.QueryRowContext(ctx,
 		`SELECT count(*) FROM leases WHERE issue_id = ? AND expires_at > ?`,
 		issueID, nowRFC,
 	).Scan(&leaseCount)
@@ -314,7 +315,7 @@ func ClaimIssue(db *sql.DB, issueID, holder string, ttlSeconds int) (core.ClaimR
 	leaseToken := uuid.New().String()
 	expiresAt := now.Add(time.Duration(ttlSeconds) * time.Second).Format(time.RFC3339)
 
-	_, err = tx.Exec(
+	_, err = tx.ExecContext(ctx,
 		`INSERT INTO leases (issue_id, holder, lease_token, expires_at, created_at, updated_at)
 		 VALUES (?, ?, ?, ?, ?, ?)`,
 		issueID, holder, leaseToken, expiresAt, now.Format(time.RFC3339), now.Format(time.RFC3339),
@@ -331,7 +332,7 @@ func ClaimIssue(db *sql.DB, issueID, holder string, ttlSeconds int) (core.ClaimR
 
 	// Update issue status and version.
 	nowStr := now.Format(time.RFC3339)
-	_, err = tx.Exec(
+	_, err = tx.ExecContext(ctx,
 		`UPDATE issues SET status = 'in_progress', claimed_at = ?, version = version + 1, updated_at = ? WHERE id = ?`,
 		nowStr, nowStr, issueID,
 	)
@@ -340,7 +341,7 @@ func ClaimIssue(db *sql.DB, issueID, holder string, ttlSeconds int) (core.ClaimR
 	}
 
 	// Append event.
-	_, err = tx.Exec(
+	_, err = tx.ExecContext(ctx,
 		`INSERT INTO events (id, issue_id, actor, event_type, payload_json, created_at)
 		 VALUES (?, ?, ?, ?, ?, ?)`,
 		uuid.New().String(), issueID, holder, "issue_claimed", `{}`, nowStr,
@@ -357,10 +358,10 @@ func ClaimIssue(db *sql.DB, issueID, holder string, ttlSeconds int) (core.ClaimR
 }
 
 // HeartbeatLease extends the TTL on an existing lease.
-func HeartbeatLease(db *sql.DB, issueID, leaseToken string, ttlSeconds int) (string, error) {
+func HeartbeatLease(ctx context.Context, db *sql.DB, issueID, leaseToken string, ttlSeconds int) (string, error) {
 	// Look up the lease.
 	var holder, expiresAt string
-	err := db.QueryRow(
+	err := db.QueryRowContext(ctx,
 		`SELECT holder, expires_at FROM leases WHERE issue_id = ? AND lease_token = ?`,
 		issueID, leaseToken,
 	).Scan(&holder, &expiresAt)
@@ -384,7 +385,7 @@ func HeartbeatLease(db *sql.DB, issueID, leaseToken string, ttlSeconds int) (str
 	now := time.Now().UTC()
 	newExpiresAt := now.Add(time.Duration(ttlSeconds) * time.Second).Format(time.RFC3339)
 
-	_, err = db.Exec(
+	_, err = db.ExecContext(ctx,
 		`UPDATE leases SET expires_at = ?, updated_at = ? WHERE issue_id = ? AND lease_token = ?`,
 		newExpiresAt, now.Format(time.RFC3339), issueID, leaseToken,
 	)
@@ -396,8 +397,8 @@ func HeartbeatLease(db *sql.DB, issueID, leaseToken string, ttlSeconds int) (str
 }
 
 // ReleaseLease releases a lease and returns the issue to 'open' (unless blocked).
-func ReleaseLease(db *sql.DB, issueID, leaseToken string) error {
-	tx, err := db.Begin()
+func ReleaseLease(ctx context.Context, db *sql.DB, issueID, leaseToken string) error {
+	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
@@ -405,7 +406,7 @@ func ReleaseLease(db *sql.DB, issueID, leaseToken string) error {
 
 	// Find the lease.
 	var holder string
-	err = tx.QueryRow(
+	err = tx.QueryRowContext(ctx,
 		`SELECT holder FROM leases WHERE issue_id = ? AND lease_token = ?`,
 		issueID, leaseToken,
 	).Scan(&holder)
@@ -417,7 +418,7 @@ func ReleaseLease(db *sql.DB, issueID, leaseToken string) error {
 	}
 
 	// Delete the lease.
-	_, err = tx.Exec(
+	_, err = tx.ExecContext(ctx,
 		`DELETE FROM leases WHERE issue_id = ? AND lease_token = ?`,
 		issueID, leaseToken,
 	)
@@ -427,7 +428,7 @@ func ReleaseLease(db *sql.DB, issueID, leaseToken string) error {
 
 	// Update issue status: in_progress -> open (unless blocked).
 	now := time.Now().UTC().Format(time.RFC3339)
-	_, err = tx.Exec(
+	_, err = tx.ExecContext(ctx,
 		`UPDATE issues SET
 		     status = CASE WHEN status = 'blocked' THEN 'blocked' ELSE 'open' END,
 		     claimed_at = NULL,
@@ -441,7 +442,7 @@ func ReleaseLease(db *sql.DB, issueID, leaseToken string) error {
 	}
 
 	// Append event.
-	_, err = tx.Exec(
+	_, err = tx.ExecContext(ctx,
 		`INSERT INTO events (id, issue_id, actor, event_type, payload_json, created_at)
 		 VALUES (?, ?, ?, ?, ?, ?)`,
 		uuid.New().String(), issueID, holder, "issue_released", `{}`, now,
@@ -457,8 +458,8 @@ func ReleaseLease(db *sql.DB, issueID, leaseToken string) error {
 	return nil
 }
 
-func getActiveLease(db *sql.DB, issueID string) (*core.IssueLease, error) {
-	row := db.QueryRow(
+func getActiveLease(ctx context.Context, db *sql.DB, issueID string) (*core.IssueLease, error) {
+	row := db.QueryRowContext(ctx,
 		`SELECT holder, lease_token, expires_at FROM leases WHERE issue_id = ? AND expires_at > ?`,
 		issueID, time.Now().UTC().Format(time.RFC3339),
 	)
@@ -509,8 +510,8 @@ func scanIssue(s scanner) (core.Issue, error) {
 }
 
 // UpdateIssue updates an issue's mutable fields with optimistic concurrency.
-func UpdateIssue(db *sql.DB, issueID string, req core.UpdateIssueRequest) (core.Issue, error) {
-	issue, lease, err := GetIssue(db, issueID)
+func UpdateIssue(ctx context.Context, db *sql.DB, issueID string, req core.UpdateIssueRequest) (core.Issue, error) {
+	issue, lease, err := GetIssue(ctx, db, issueID)
 	if err != nil {
 		return core.Issue{}, err
 	}
@@ -536,7 +537,7 @@ func UpdateIssue(db *sql.DB, issueID string, req core.UpdateIssueRequest) (core.
 
 	now := time.Now().UTC().Format(time.RFC3339)
 
-	tx, err := db.Begin()
+	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return core.Issue{}, fmt.Errorf("begin tx: %w", err)
 	}
@@ -577,7 +578,7 @@ func UpdateIssue(db *sql.DB, issueID string, req core.UpdateIssueRequest) (core.
 	args = append(args, issueID)
 
 	query := "UPDATE issues SET " + strings.Join(sets, ", ") + " WHERE id = ?"
-	result, err := tx.Exec(query, args...)
+	result, err := tx.ExecContext(ctx, query, args...)
 	if err != nil {
 		return core.Issue{}, fmt.Errorf("update issue: %w", err)
 	}
@@ -593,7 +594,7 @@ func UpdateIssue(db *sql.DB, issueID string, req core.UpdateIssueRequest) (core.
 	changed := buildChangedFields(req)
 	eventPayload := map[string]interface{}{"changed": changed}
 	payloadBytes, _ := json.Marshal(eventPayload)
-	_, err = tx.Exec(
+	_, err = tx.ExecContext(ctx,
 		`INSERT INTO events (id, issue_id, actor, event_type, payload_json, created_at)
 		 VALUES (?, ?, ?, ?, ?, ?)`,
 		uuid.New().String(), issueID, req.Actor, "issue_updated", string(payloadBytes), now,
@@ -607,7 +608,7 @@ func UpdateIssue(db *sql.DB, issueID string, req core.UpdateIssueRequest) (core.
 	}
 
 	// Re-read to get updated version, timestamps, etc.
-	updated, _, err := GetIssue(db, issueID)
+	updated, _, err := GetIssue(ctx, db, issueID)
 	if err != nil {
 		return core.Issue{}, fmt.Errorf("re-read issue: %w", err)
 	}
@@ -636,8 +637,8 @@ func buildChangedFields(req core.UpdateIssueRequest) []string {
 }
 
 // CloseIssue closes an issue by setting its status to 'done' or 'cancelled'.
-func CloseIssue(db *sql.DB, issueID string, req core.CloseIssueRequest) error {
-	issue, lease, err := GetIssue(db, issueID)
+func CloseIssue(ctx context.Context, db *sql.DB, issueID string, req core.CloseIssueRequest) error {
+	issue, lease, err := GetIssue(ctx, db, issueID)
 	if err != nil {
 		return err
 	}
@@ -662,13 +663,13 @@ func CloseIssue(db *sql.DB, issueID string, req core.CloseIssueRequest) error {
 
 	now := time.Now().UTC().Format(time.RFC3339)
 
-	tx, err := db.Begin()
+	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	_, err = tx.Exec(
+	_, err = tx.ExecContext(ctx,
 		`UPDATE issues SET status = ?, closed_at = ?, version = version + 1, updated_at = ? WHERE id = ?`,
 		req.Resolution, now, now, issueID,
 	)
@@ -677,11 +678,11 @@ func CloseIssue(db *sql.DB, issueID string, req core.CloseIssueRequest) error {
 	}
 
 	// Remove any active lease on this issue.
-	_, _ = tx.Exec(`DELETE FROM leases WHERE issue_id = ?`, issueID)
+	_, _ = tx.ExecContext(ctx, `DELETE FROM leases WHERE issue_id = ?`, issueID)
 
 	// Append event.
 	payload := fmt.Sprintf(`{"changed":["status","closed_at"],"resolution":"%s"}`, req.Resolution)
-	_, err = tx.Exec(
+	_, err = tx.ExecContext(ctx,
 		`INSERT INTO events (id, issue_id, actor, event_type, payload_json, created_at)
 		 VALUES (?, ?, ?, ?, ?, ?)`,
 		uuid.New().String(), issueID, req.Actor, "issue_closed", payload, now,
@@ -694,12 +695,12 @@ func CloseIssue(db *sql.DB, issueID string, req core.CloseIssueRequest) error {
 }
 
 // AddDependency adds a dependency between two issues. For 'blocks' kind, it performs cycle detection.
-func AddDependency(db *sql.DB, issueID string, req core.AddDependencyRequest) error {
+func AddDependency(ctx context.Context, db *sql.DB, issueID string, req core.AddDependencyRequest) error {
 	// Verify both issues exist.
-	if _, _, err := GetIssue(db, issueID); err != nil {
+	if _, _, err := GetIssue(ctx, db, issueID); err != nil {
 		return err
 	}
-	if _, _, err := GetIssue(db, req.DependsOn); err != nil {
+	if _, _, err := GetIssue(ctx, db, req.DependsOn); err != nil {
 		return err
 	}
 
@@ -709,7 +710,7 @@ func AddDependency(db *sql.DB, issueID string, req core.AddDependencyRequest) er
 	}
 
 	if kind == "blocks" {
-		if wouldCreateCycle(db, issueID, req.DependsOn) {
+		if wouldCreateCycle(ctx, db, issueID, req.DependsOn) {
 			return core.NewAPIError(core.ErrDependencyCycle,
 				"adding this dependency would create a cycle")
 		}
@@ -717,13 +718,13 @@ func AddDependency(db *sql.DB, issueID string, req core.AddDependencyRequest) er
 
 	now := time.Now().UTC().Format(time.RFC3339)
 
-	tx, err := db.Begin()
+	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	_, err = tx.Exec(
+	_, err = tx.ExecContext(ctx,
 		`INSERT INTO dependencies (issue_id, depends_on_issue_id, kind, created_at)
 		 VALUES (?, ?, ?, ?)`,
 		issueID, req.DependsOn, kind, now,
@@ -738,7 +739,7 @@ func AddDependency(db *sql.DB, issueID string, req core.AddDependencyRequest) er
 	}
 
 	// Append event.
-	_, err = tx.Exec(
+	_, err = tx.ExecContext(ctx,
 		`INSERT INTO events (id, issue_id, actor, event_type, payload_json, created_at)
 		 VALUES (?, ?, ?, ?, ?, ?)`,
 		uuid.New().String(), issueID, req.Actor, "dependency_added",
@@ -756,18 +757,18 @@ func AddDependency(db *sql.DB, issueID string, req core.AddDependencyRequest) er
 }
 
 // RemoveDependency removes a dependency record.
-func RemoveDependency(db *sql.DB, issueID, dependsOn, kind, actor string) error {
+func RemoveDependency(ctx context.Context, db *sql.DB, issueID, dependsOn, kind, actor string) error {
 	if kind == "" {
 		kind = "blocks"
 	}
 
-	tx, err := db.Begin()
+	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	result, err := tx.Exec(
+	result, err := tx.ExecContext(ctx,
 		`DELETE FROM dependencies WHERE issue_id = ? AND depends_on_issue_id = ? AND kind = ?`,
 		issueID, dependsOn, kind,
 	)
@@ -786,7 +787,7 @@ func RemoveDependency(db *sql.DB, issueID, dependsOn, kind, actor string) error 
 	now := time.Now().UTC().Format(time.RFC3339)
 
 	// Append event.
-	_, err = tx.Exec(
+	_, err = tx.ExecContext(ctx,
 		`INSERT INTO events (id, issue_id, actor, event_type, payload_json, created_at)
 		 VALUES (?, ?, ?, ?, ?, ?)`,
 		uuid.New().String(), issueID, actor, "dependency_removed",
@@ -805,7 +806,7 @@ func RemoveDependency(db *sql.DB, issueID, dependsOn, kind, actor string) error 
 
 // wouldCreateCycle checks if adding a 'blocks' dependency from fromIssueID to toIssueID would create a cycle.
 // It does a BFS from toIssueID following 'blocks' edges to see if we reach fromIssueID.
-func wouldCreateCycle(db *sql.DB, fromIssueID, toIssueID string) bool {
+func wouldCreateCycle(ctx context.Context, db *sql.DB, fromIssueID, toIssueID string) bool {
 	visited := map[string]bool{}
 	queue := []string{toIssueID}
 	for len(queue) > 0 {
@@ -818,7 +819,7 @@ func wouldCreateCycle(db *sql.DB, fromIssueID, toIssueID string) bool {
 			continue
 		}
 		visited[current] = true
-		rows, err := db.Query(
+		rows, err := db.QueryContext(ctx,
 			`SELECT depends_on_issue_id FROM dependencies WHERE issue_id = ? AND kind = 'blocks'`, current)
 		if err != nil {
 			continue
@@ -838,14 +839,14 @@ func wouldCreateCycle(db *sql.DB, fromIssueID, toIssueID string) bool {
 }
 
 // LinkArtifact links an artifact to an issue by inserting into issue_artifacts.
-func LinkArtifact(db *sql.DB, issueID string, req core.LinkArtifactRequest) (string, error) {
+func LinkArtifact(ctx context.Context, db *sql.DB, issueID string, req core.LinkArtifactRequest) (string, error) {
 	// Verify the issue exists.
-	if _, _, err := GetIssue(db, issueID); err != nil {
+	if _, _, err := GetIssue(ctx, db, issueID); err != nil {
 		return "", err
 	}
 
 	// Resolve artifact by ID.
-	artifact, err := GetArtifact(db, req.Artifact)
+	artifact, err := GetArtifact(ctx, db, req.Artifact)
 	if err != nil {
 		return "", err
 	}
@@ -857,7 +858,7 @@ func LinkArtifact(db *sql.DB, issueID string, req core.LinkArtifactRequest) (str
 
 	now := time.Now().UTC().Format(time.RFC3339)
 
-	_, err = db.Exec(
+	_, err = db.ExecContext(ctx,
 		`INSERT INTO issue_artifacts (issue_id, artifact_id, relation, created_at)
 		 VALUES (?, ?, ?, ?)`,
 		issueID, artifact.ID, relation, now,
@@ -874,8 +875,8 @@ func LinkArtifact(db *sql.DB, issueID string, req core.LinkArtifactRequest) (str
 }
 
 // ListIssueArtifacts returns all artifacts linked to an issue.
-func ListIssueArtifacts(db *sql.DB, issueID string) ([]core.ArtifactRef, error) {
-	rows, err := db.Query(
+func ListIssueArtifacts(ctx context.Context, db *sql.DB, issueID string) ([]core.ArtifactRef, error) {
+	rows, err := db.QueryContext(ctx,
 		`SELECT a.id, a.relative_path, a.kind, ia.relation
 		 FROM issue_artifacts ia
 		 JOIN artifacts a ON ia.artifact_id = a.id
@@ -906,22 +907,22 @@ func ListIssueArtifacts(db *sql.DB, issueID string) ([]core.ArtifactRef, error) 
 }
 
 // CreateNote inserts a new note on an issue.
-func CreateNote(db *sql.DB, issueID string, req core.CreateNoteRequest) (core.Note, error) {
+func CreateNote(ctx context.Context, db *sql.DB, issueID string, req core.CreateNoteRequest) (core.Note, error) {
 	// Verify issue exists.
-	if _, _, err := GetIssue(db, issueID); err != nil {
+	if _, _, err := GetIssue(ctx, db, issueID); err != nil {
 		return core.Note{}, err
 	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
 	id := uuid.New().String()
 
-	tx, err := db.Begin()
+	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return core.Note{}, fmt.Errorf("begin tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	_, err = tx.Exec(
+	_, err = tx.ExecContext(ctx,
 		`INSERT INTO notes (id, issue_id, author, body, created_at)
 		 VALUES (?, ?, ?, ?, ?)`,
 		id, issueID, req.Author, req.Body, now,
@@ -931,7 +932,7 @@ func CreateNote(db *sql.DB, issueID string, req core.CreateNoteRequest) (core.No
 	}
 
 	// Append event.
-	_, err = tx.Exec(
+	_, err = tx.ExecContext(ctx,
 		`INSERT INTO events (id, issue_id, actor, event_type, payload_json, created_at)
 		 VALUES (?, ?, ?, ?, ?, ?)`,
 		uuid.New().String(), issueID, req.Author, "note_added", `{}`, now,
@@ -954,13 +955,13 @@ func CreateNote(db *sql.DB, issueID string, req core.CreateNoteRequest) (core.No
 }
 
 // ListNotes returns all notes for an issue, ordered by creation time.
-func ListNotes(db *sql.DB, issueID string) ([]core.Note, error) {
+func ListNotes(ctx context.Context, db *sql.DB, issueID string) ([]core.Note, error) {
 	// Verify issue exists.
-	if _, _, err := GetIssue(db, issueID); err != nil {
+	if _, _, err := GetIssue(ctx, db, issueID); err != nil {
 		return nil, err
 	}
 
-	rows, err := db.Query(
+	rows, err := db.QueryContext(ctx,
 		`SELECT id, issue_id, author, body, created_at FROM notes WHERE issue_id = ? ORDER BY created_at ASC`,
 		issueID,
 	)
@@ -987,13 +988,13 @@ func ListNotes(db *sql.DB, issueID string) ([]core.Note, error) {
 }
 
 // ListEvents returns all events for an issue, ordered by creation time.
-func ListEvents(db *sql.DB, issueID string) ([]core.Event, error) {
+func ListEvents(ctx context.Context, db *sql.DB, issueID string) ([]core.Event, error) {
 	// Verify issue exists.
-	if _, _, err := GetIssue(db, issueID); err != nil {
+	if _, _, err := GetIssue(ctx, db, issueID); err != nil {
 		return nil, err
 	}
 
-	rows, err := db.Query(
+	rows, err := db.QueryContext(ctx,
 		`SELECT id, issue_id, actor, event_type, payload_json, created_at FROM events WHERE issue_id = ? ORDER BY created_at ASC`,
 		issueID,
 	)

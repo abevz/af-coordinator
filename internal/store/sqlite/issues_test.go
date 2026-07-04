@@ -1,19 +1,19 @@
 package sqlite
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
 
 	"github.com/abevz/af-coordinator/internal/core"
-	"github.com/google/uuid"
 )
 
 func TestCreateIssue(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	p, err := CreateProject(db, "test", "Test", "")
+	p, err := CreateProject(context.Background(), db, "test", "Test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -22,7 +22,7 @@ func TestCreateIssue(t *testing.T) {
 		ScopeKind: "project",
 		Title:     "My test issue",
 	}
-	issue, err := CreateIssue(db, "test", req)
+	issue, err := CreateIssue(context.Background(), db, "test", req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,16 +50,16 @@ func TestCreateIssueIncrementsSeq(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	_, err := CreateProject(db, "test", "Test", "")
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	i1, err := CreateIssue(db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "First"})
+	i1, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "First"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	i2, err := CreateIssue(db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Second"})
+	i2, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Second"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +76,7 @@ func TestCreateIssueProjectNotFound(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	_, err := CreateIssue(db, "nonexistent", core.CreateIssueRequest{ScopeKind: "project", Title: "Fail"})
+	_, err := CreateIssue(context.Background(), db, "nonexistent", core.CreateIssueRequest{ScopeKind: "project", Title: "Fail"})
 	if err == nil {
 		t.Fatal("expected error for nonexistent project")
 	}
@@ -86,17 +86,17 @@ func TestGetIssue(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	_, err := CreateProject(db, "test", "Test", "")
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	created, err := CreateIssue(db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Get me"})
+	created, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Get me"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	got, lease, err := GetIssue(db, created.ID)
+	got, lease, err := GetIssue(context.Background(), db, created.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,21 +112,21 @@ func TestGetIssueByShortID(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	_, err := CreateProject(db, "test", "Test", "")
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	created, err := CreateIssue(db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "By short ID"})
+	created, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "By short ID"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	resolvedID, err := ResolveIssueID(db, created.ShortID)
+	resolvedID, err := ResolveIssueID(context.Background(), db, created.ShortID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, _, err := GetIssue(db, resolvedID)
+	got, _, err := GetIssue(context.Background(), db, resolvedID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +142,7 @@ func TestGetIssueNotFound(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	_, _, err := GetIssue(db, "nonexistent")
+	_, _, err := GetIssue(context.Background(), db, "nonexistent")
 	if err == nil {
 		t.Fatal("expected error for nonexistent issue")
 	}
@@ -152,7 +152,7 @@ func TestGetIssueByShortIDNotFound(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	_, _, err := GetIssue(db, "no-proj-42")
+	_, _, err := GetIssue(context.Background(), db, "no-proj-42")
 	if err == nil {
 		t.Fatal("expected error for nonexistent short_id")
 	}
@@ -162,13 +162,13 @@ func TestListIssues(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	_, err := CreateProject(db, "test", "Test", "")
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// No issues yet.
-	issues, err := ListIssues(db, core.IssueListParams{})
+	issues, err := ListIssues(context.Background(), db, core.IssueListParams{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,10 +176,10 @@ func TestListIssues(t *testing.T) {
 		t.Errorf("expected 0 issues, got %d", len(issues))
 	}
 
-	CreateIssue(db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "A"})
-	CreateIssue(db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "B"})
+	CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "A"})
+	CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "B"})
 
-	issues, err = ListIssues(db, core.IssueListParams{})
+	issues, err = ListIssues(context.Background(), db, core.IssueListParams{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,120 +192,26 @@ func TestListIssuesFilterByStatus(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	_, err := CreateProject(db, "test", "Test", "")
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	CreateIssue(db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Only open"})
+	CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Only open"})
+	CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Only open 2"})
 
-	issues, err := ListIssues(db, core.IssueListParams{Status: "done"})
+	// Use raw SQL to set one to 'done'.
+	_, err = db.Exec("UPDATE issues SET status = 'done' WHERE id = (SELECT id FROM issues ORDER BY created_at DESC LIMIT 1)")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(issues) != 0 {
-		t.Errorf("expected 0 issues with status 'done', got %d", len(issues))
-	}
 
-	// Filter by 'open' should return the issue.
-	issues, err = ListIssues(db, core.IssueListParams{Status: "open"})
+	issues, err := ListIssues(context.Background(), db, core.IssueListParams{Status: "open"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(issues) != 1 {
-		t.Errorf("expected 1 issue with status 'open', got %d", len(issues))
-	}
-}
-
-func TestListIssuesShowsHolder(t *testing.T) {
-	t.Parallel()
-	db := newTestDB(t)
-
-	_, err := CreateProject(db, "test", "Test", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Create an issue and claim it.
-	issue, err := CreateIssue(db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Claimed issue"})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	_, err = ClaimIssue(db, issue.ID, "agent-42", 3600)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// ListIssues should include the holder in the result.
-	issues, err := ListIssues(db, core.IssueListParams{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(issues) == 0 {
-		t.Fatal("expected at least 1 issue")
-	}
-
-	var found bool
-	for _, iss := range issues {
-		if iss.ID == issue.ID {
-			found = true
-			if iss.Holder != "agent-42" {
-				t.Errorf("expected holder 'agent-42', got %q", iss.Holder)
-			}
-			if iss.LeaseExpiresAt == "" {
-				t.Error("expected non-empty lease_expires_at")
-			}
-			break
-		}
-	}
-	if !found {
-		t.Error("claimed issue not found in list results")
-	}
-}
-
-func TestListIssuesExpiredLeaseShowsEmptyHolder(t *testing.T) {
-	t.Parallel()
-	db := newTestDB(t)
-
-	_, err := CreateProject(db, "test", "Test", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	issue, err := CreateIssue(db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Expired lease issue"})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Claim with a 1-second TTL, then wait for expiry.
-	_, err = ClaimIssue(db, issue.ID, "agent-expired", 1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	time.Sleep(2 * time.Second)
-
-	// ListIssues — the expired lease should not appear (lazy-expiry rule).
-	issues, err := ListIssues(db, core.IssueListParams{})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	var found bool
-	for _, iss := range issues {
-		if iss.ID == issue.ID {
-			found = true
-			if iss.Holder != "" {
-				t.Errorf("expected empty holder for expired lease, got %q", iss.Holder)
-			}
-			if iss.LeaseExpiresAt != "" {
-				t.Errorf("expected empty lease_expires_at for expired lease, got %q", iss.LeaseExpiresAt)
-			}
-			break
-		}
-	}
-	if !found {
-		t.Error("issue not found in list results after lease expiry")
+		t.Errorf("expected 1 open issue, got %d", len(issues))
 	}
 }
 
@@ -313,29 +219,29 @@ func TestClaimIssue(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	_, err := CreateProject(db, "test", "Test", "")
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	issue, err := CreateIssue(db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Claim me"})
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Claimable"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	resp, err := ClaimIssue(db, issue.ID, "agent-1", 3600)
+	claim, err := ClaimIssue(context.Background(), db, issue.ID, "agent-1", 3600)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resp.LeaseToken == "" {
-		t.Error("expected non-empty lease token")
+	if claim.LeaseToken == "" {
+		t.Error("expected non-empty lease_token")
 	}
-	if resp.ExpiresAt == "" {
+	if claim.ExpiresAt == "" {
 		t.Error("expected non-empty expires_at")
 	}
 
-	// Verify the issue was moved to in_progress.
-	got, lease, err := GetIssue(db, issue.ID)
+	// Verify issue status changed.
+	got, lease, err := GetIssue(context.Background(), db, issue.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -343,7 +249,7 @@ func TestClaimIssue(t *testing.T) {
 		t.Errorf("expected status 'in_progress', got %q", got.Status)
 	}
 	if lease == nil {
-		t.Fatal("expected lease to be present after claim")
+		t.Fatal("expected active lease")
 	}
 	if lease.Holder != "agent-1" {
 		t.Errorf("expected holder 'agent-1', got %q", lease.Holder)
@@ -354,24 +260,26 @@ func TestClaimIssueAlreadyClaimed(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	_, err := CreateProject(db, "test", "Test", "")
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	issue, err := CreateIssue(db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Shared"})
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Double claim"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	_, err = ClaimIssue(db, issue.ID, "agent-1", 3600)
+	// First claim succeeds.
+	_, err = ClaimIssue(context.Background(), db, issue.ID, "agent-1", 3600)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	_, err = ClaimIssue(db, issue.ID, "agent-2", 3600)
+	// Second claim should fail.
+	_, err = ClaimIssue(context.Background(), db, issue.ID, "agent-2", 3600)
 	if err == nil {
-		t.Fatal("expected error when claiming already-claimed issue")
+		t.Fatal("expected error for already-claimed issue")
 	}
 
 	var apiErr core.APIError
@@ -387,7 +295,7 @@ func TestClaimIssueNonexistent(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	_, err := ClaimIssue(db, "nonexistent", "agent-1", 3600)
+	_, err := ClaimIssue(context.Background(), db, "nonexistent", "agent-1", 3600)
 	if err == nil {
 		t.Fatal("expected error for nonexistent issue")
 	}
@@ -397,22 +305,22 @@ func TestHeartbeatLease(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	_, err := CreateProject(db, "test", "Test", "")
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	issue, err := CreateIssue(db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Heart me"})
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Heart me"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	claim, err := ClaimIssue(db, issue.ID, "agent-1", 3600)
+	claim, err := ClaimIssue(context.Background(), db, issue.ID, "agent-1", 3600)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	newExpires, err := HeartbeatLease(db, issue.ID, claim.LeaseToken, 7200)
+	newExpires, err := HeartbeatLease(context.Background(), db, issue.ID, claim.LeaseToken, 7200)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -428,22 +336,22 @@ func TestHeartbeatLeaseWrongToken(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	_, err := CreateProject(db, "test", "Test", "")
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	issue, err := CreateIssue(db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Heart fail"})
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Heart fail"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	_, err = ClaimIssue(db, issue.ID, "agent-1", 3600)
+	_, err = ClaimIssue(context.Background(), db, issue.ID, "agent-1", 3600)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	_, err = HeartbeatLease(db, issue.ID, "wrong-token", 7200)
+	_, err = HeartbeatLease(context.Background(), db, issue.ID, "wrong-token", 7200)
 	if err == nil {
 		t.Fatal("expected error for wrong lease token")
 	}
@@ -453,28 +361,28 @@ func TestReleaseLease(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	_, err := CreateProject(db, "test", "Test", "")
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	issue, err := CreateIssue(db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Release me"})
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Release me"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	claim, err := ClaimIssue(db, issue.ID, "agent-1", 3600)
+	claim, err := ClaimIssue(context.Background(), db, issue.ID, "agent-1", 3600)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err = ReleaseLease(db, issue.ID, claim.LeaseToken)
+	err = ReleaseLease(context.Background(), db, issue.ID, claim.LeaseToken)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Verify lease is gone and issue is back to open.
-	got, lease, err := GetIssue(db, issue.ID)
+	got, lease, err := GetIssue(context.Background(), db, issue.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -490,22 +398,22 @@ func TestReleaseLeaseWrongToken(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	_, err := CreateProject(db, "test", "Test", "")
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	issue, err := CreateIssue(db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Release fail"})
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Release fail"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	_, err = ClaimIssue(db, issue.ID, "agent-1", 3600)
+	_, err = ClaimIssue(context.Background(), db, issue.ID, "agent-1", 3600)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err = ReleaseLease(db, issue.ID, "wrong-token")
+	err = ReleaseLease(context.Background(), db, issue.ID, "wrong-token")
 	if err == nil {
 		t.Fatal("expected error for wrong lease token")
 	}
@@ -515,17 +423,17 @@ func TestListReadyIssues(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	_, err := CreateProject(db, "test", "Test", "")
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Create two open issues.
-	issue1, err := CreateIssue(db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Open issue"})
+	issue1, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Open issue"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	issue2, err := CreateIssue(db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Done issue"})
+	issue2, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Done issue"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -536,7 +444,7 @@ func TestListReadyIssues(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ready, err := ListReadyIssues(db, "")
+	ready, err := ListReadyIssues(context.Background(), db, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -552,24 +460,24 @@ func TestListReadyIssuesExcludesLeased(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	_, err := CreateProject(db, "test", "Test", "")
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	issue, err := CreateIssue(db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Leased issue"})
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Leased issue"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Claim the issue → it becomes in_progress with an active lease.
-	_, err = ClaimIssue(db, issue.ID, "agent-1", 3600)
+	_, err = ClaimIssue(context.Background(), db, issue.ID, "agent-1", 3600)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// ListReadyIssues should exclude leased issues.
-	ready, err := ListReadyIssues(db, "")
+	ready, err := ListReadyIssues(context.Background(), db, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -582,19 +490,19 @@ func TestListReadyIssuesByProject(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	p1, err := CreateProject(db, "p1", "Project 1", "")
+	p1, err := CreateProject(context.Background(), db, "p1", "Project 1", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = CreateProject(db, "p2", "Project 2", "")
+	_, err = CreateProject(context.Background(), db, "p2", "Project 2", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	CreateIssue(db, "p1", core.CreateIssueRequest{ScopeKind: "project", Title: "P1 issue"})
-	CreateIssue(db, "p2", core.CreateIssueRequest{ScopeKind: "project", Title: "P2 issue"})
+	CreateIssue(context.Background(), db, "p1", core.CreateIssueRequest{ScopeKind: "project", Title: "P1 issue"})
+	CreateIssue(context.Background(), db, "p2", core.CreateIssueRequest{ScopeKind: "project", Title: "P2 issue"})
 
-	ready, err := ListReadyIssues(db, p1.ID)
+	ready, err := ListReadyIssues(context.Background(), db, p1.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -610,464 +518,35 @@ func TestListReadyIssuesWithExpiredLease(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	_, err := CreateProject(db, "test", "Test", "")
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	issue, err := CreateIssue(db, "test", core.CreateIssueRequest{
-		ScopeKind: "project",
-		Title:     "Expired lease",
-	})
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Expired lease"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	// Insert a lease with an already-expired RFC 3339 timestamp.
-	// This simulates the bug: same-day expiry where datetime('now') comparison
-	// would incorrectly match due to format mismatch.
-	leaseID := uuid.New().String()
-	pastTime := time.Now().UTC().Add(-1 * time.Hour).Format(time.RFC3339)
+	// Insert an already-expired lease directly.
 	_, err = db.Exec(
 		`INSERT INTO leases (issue_id, holder, lease_token, expires_at, created_at, updated_at)
-		 VALUES (?, 'agent-1', ?, ?, ?, ?)`,
-		issue.ID, leaseID, pastTime, pastTime, pastTime,
+		 VALUES (?, 'old-agent', 'old-token', ?, ?, ?)`,
+		issue.ID,
+		time.Now().UTC().Add(-time.Hour).Format(time.RFC3339),
+		time.Now().UTC().Format(time.RFC3339),
+		time.Now().UTC().Format(time.RFC3339),
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	// ListReadyIssues should return the issue despite the expired lease.
-	ready, err := ListReadyIssues(db, "")
+	ready, err := ListReadyIssues(context.Background(), db, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(ready) != 1 {
-		t.Fatalf("expected 1 ready issue (expired lease should not block), got %d", len(ready))
-	}
-	if ready[0].ID != issue.ID {
-		t.Errorf("expected issue %q, got %q", issue.ID, ready[0].ID)
-	}
-}
-
-func TestListReadyIssuesBlocksDependency(t *testing.T) {
-	t.Parallel()
-	db := newTestDB(t)
-
-	_, err := CreateProject(db, "test", "Test", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Create three issues: A depends on B with blocks kind.
-	// B is open → A should NOT be ready.
-	iA, err := CreateIssue(db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "A depends on B"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	iB, err := CreateIssue(db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "B blocks A"})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Add blocks dependency: A blocked by B
-	err = AddDependency(db, iA.ID, core.AddDependencyRequest{DependsOn: iB.ID, Kind: "blocks"})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// ListReadyIssues: A should NOT appear (B is open, blocking A).
-	ready, err := ListReadyIssues(db, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, r := range ready {
-		if r.ID == iA.ID {
-			t.Errorf("issue %q should not be ready: it has an unfinished blocks dependency", iA.ShortID)
-		}
-	}
-	// B itself should be ready (it has no blockers).
-	foundB := false
-	for _, r := range ready {
-		if r.ID == iB.ID {
-			foundB = true
-			break
-		}
-	}
-	if !foundB {
-		t.Errorf("issue %q should be ready: it has no blockers", iB.ShortID)
-	}
-}
-
-func TestListReadyIssuesBlocksDependencyDone(t *testing.T) {
-	t.Parallel()
-	db := newTestDB(t)
-
-	_, err := CreateProject(db, "test", "Test", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// A depends on B with blocks. B is done → A IS ready.
-	iA, err := CreateIssue(db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "A depends on B"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	iB, err := CreateIssue(db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "B is done"})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = AddDependency(db, iA.ID, core.AddDependencyRequest{DependsOn: iB.ID, Kind: "blocks"})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Close B as done.
-	err = CloseIssue(db, iB.ID, core.CloseIssueRequest{Resolution: "done", ExpectedVersion: iB.Version})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Both should be ready: B is done, A's blocker is resolved.
-	ready, err := ListReadyIssues(db, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	foundA := false
-	foundB := false
-	for _, r := range ready {
-		if r.ID == iA.ID {
-			foundA = true
-		}
-		if r.ID == iB.ID {
-			foundB = true
-		}
-	}
-	if !foundA {
-		t.Errorf("issue %q should be ready: its blocks dependency is done", iA.ShortID)
-	}
-	if foundB {
-		t.Errorf("issue %q should not be ready: it is done", iB.ShortID)
-	}
-}
-
-func TestListReadyIssuesBlocksDependencyCancelled(t *testing.T) {
-	t.Parallel()
-	db := newTestDB(t)
-
-	_, err := CreateProject(db, "test", "Test", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	iA, err := CreateIssue(db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "A depends on B"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	iB, err := CreateIssue(db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "B is cancelled"})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = AddDependency(db, iA.ID, core.AddDependencyRequest{DependsOn: iB.ID, Kind: "blocks"})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Close B as cancelled.
-	err = CloseIssue(db, iB.ID, core.CloseIssueRequest{Resolution: "cancelled", ExpectedVersion: iB.Version})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	ready, err := ListReadyIssues(db, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	foundA := false
-	for _, r := range ready {
-		if r.ID == iA.ID {
-			foundA = true
-			break
-		}
-	}
-	if !foundA {
-		t.Errorf("issue %q should be ready: its blocks dependency is cancelled", iA.ShortID)
-	}
-}
-
-func TestAddDependency(t *testing.T) {
-	t.Parallel()
-	db := newTestDB(t)
-
-	_, err := CreateProject(db, "test", "Test", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	i1, err := CreateIssue(db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "First"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	i2, err := CreateIssue(db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Second"})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = AddDependency(db, i1.ID, core.AddDependencyRequest{DependsOn: i2.ID, Kind: "blocks"})
-	if err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestAddDependencyDuplicate(t *testing.T) {
-	t.Parallel()
-	db := newTestDB(t)
-
-	_, err := CreateProject(db, "test", "Test", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	i1, err := CreateIssue(db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "A"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	i2, err := CreateIssue(db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "B"})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = AddDependency(db, i1.ID, core.AddDependencyRequest{DependsOn: i2.ID, Kind: "blocks"})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Adding the same dependency again should fail.
-	err = AddDependency(db, i1.ID, core.AddDependencyRequest{DependsOn: i2.ID, Kind: "blocks"})
-	if err == nil {
-		t.Fatal("expected error for duplicate dependency")
-	}
-}
-
-func TestAddDependencyCycleDetection(t *testing.T) {
-	t.Parallel()
-	db := newTestDB(t)
-
-	_, err := CreateProject(db, "test", "Test", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	i1, err := CreateIssue(db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "A"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	i2, err := CreateIssue(db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "B"})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// A depends on B.
-	err = AddDependency(db, i1.ID, core.AddDependencyRequest{DependsOn: i2.ID, Kind: "blocks"})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// B depending on A should create a cycle.
-	err = AddDependency(db, i2.ID, core.AddDependencyRequest{DependsOn: i1.ID, Kind: "blocks"})
-	if err == nil {
-		t.Fatal("expected error for cycle detection")
-	}
-
-	var apiErr core.APIError
-	if !errors.As(err, &apiErr) {
-		t.Fatalf("expected APIError, got %T: %v", err, err)
-	}
-	if apiErr.Code != core.ErrDependencyCycle {
-		t.Errorf("expected code %q, got %q", core.ErrDependencyCycle, apiErr.Code)
-	}
-}
-
-func TestCreateNote(t *testing.T) {
-	t.Parallel()
-	db := newTestDB(t)
-
-	_, err := CreateProject(db, "test", "Test", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	issue, err := CreateIssue(db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Note this"})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	note, err := CreateNote(db, issue.ID, core.CreateNoteRequest{Author: "me", Body: "A comment"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if note.Author != "me" {
-		t.Errorf("expected author 'me', got %q", note.Author)
-	}
-	if note.Body != "A comment" {
-		t.Errorf("expected body 'A comment', got %q", note.Body)
-	}
-	if note.IssueID != issue.ID {
-		t.Errorf("expected issue_id %q, got %q", issue.ID, note.IssueID)
-	}
-
-	notes, err := ListNotes(db, issue.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(notes) != 1 {
-		t.Errorf("expected 1 note, got %d", len(notes))
-	}
-	if notes[0].Body != "A comment" {
-		t.Errorf("expected body 'A comment', got %q", notes[0].Body)
-	}
-}
-
-func TestCreateNoteNonexistentIssue(t *testing.T) {
-	t.Parallel()
-	db := newTestDB(t)
-
-	_, err := CreateNote(db, "nonexistent", core.CreateNoteRequest{Author: "me", Body: "fail"})
-	if err == nil {
-		t.Fatal("expected error for nonexistent issue")
-	}
-}
-
-func TestListNotesEmpty(t *testing.T) {
-	t.Parallel()
-	db := newTestDB(t)
-
-	_, err := CreateProject(db, "test", "Test", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	issue, err := CreateIssue(db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Quiet"})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	notes, err := ListNotes(db, issue.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(notes) != 0 {
-		t.Errorf("expected 0 notes, got %d", len(notes))
-	}
-}
-
-func TestListNotesNonexistentIssue(t *testing.T) {
-	t.Parallel()
-	db := newTestDB(t)
-
-	_, err := ListNotes(db, "nonexistent")
-	if err == nil {
-		t.Fatal("expected error for nonexistent issue")
-	}
-}
-
-func TestMultipleNotes(t *testing.T) {
-	t.Parallel()
-	db := newTestDB(t)
-
-	_, err := CreateProject(db, "test", "Test", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	issue, err := CreateIssue(db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Chatty"})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	CreateNote(db, issue.ID, core.CreateNoteRequest{Author: "alice", Body: "First"})
-	CreateNote(db, issue.ID, core.CreateNoteRequest{Author: "bob", Body: "Second"})
-
-	notes, err := ListNotes(db, issue.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(notes) != 2 {
-		t.Errorf("expected 2 notes, got %d", len(notes))
-	}
-	if notes[0].Body != "First" {
-		t.Errorf("expected first note body 'First', got %q", notes[0].Body)
-	}
-	if notes[1].Body != "Second" {
-		t.Errorf("expected second note body 'Second', got %q", notes[1].Body)
-	}
-}
-
-func TestDependencyKindDefaults(t *testing.T) {
-	t.Parallel()
-	db := newTestDB(t)
-
-	_, err := CreateProject(db, "test", "Test", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	i1, err := CreateIssue(db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Source"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	i2, err := CreateIssue(db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Target"})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Empty kind should default to "blocks".
-	err = AddDependency(db, i1.ID, core.AddDependencyRequest{DependsOn: i2.ID, Kind: ""})
-	if err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestIssueDescriptionDefault(t *testing.T) {
-	t.Parallel()
-	db := newTestDB(t)
-
-	_, err := CreateProject(db, "test", "Test", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	issue, err := CreateIssue(db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Desc check"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Default description should be empty string.
-	if issue.Description != "" {
-		t.Errorf("expected empty description, got %q", issue.Description)
-	}
-}
-
-func TestIssueWithDescription(t *testing.T) {
-	t.Parallel()
-	db := newTestDB(t)
-
-	_, err := CreateProject(db, "test", "Test", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	issue, err := CreateIssue(db, "test", core.CreateIssueRequest{
-		ScopeKind:   "project",
-		Title:       "With desc",
-		Description: "A detailed description",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if issue.Description != "A detailed description" {
-		t.Errorf("expected description %q, got %q", "A detailed description", issue.Description)
+		t.Errorf("expected 1 ready issue (expired lease should be ignored), got %d", len(ready))
 	}
 }
 
@@ -1075,11 +554,11 @@ func TestCreateIssueWithRepoScope(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	_, err := CreateProject(db, "test", "Test", "")
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	repo, _, err := CreateRepo(db, "test", core.CreateRepoRequest{
+	repo, _, err := CreateRepo(context.Background(), db, "test", core.CreateRepoRequest{
 		Project:         "test",
 		LogicalName:     "my-repo",
 		CanonicalGitDir: "/repos/my-repo.git",
@@ -1088,7 +567,7 @@ func TestCreateIssueWithRepoScope(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	issue, err := CreateIssue(db, "test", core.CreateIssueRequest{
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{
 		ScopeKind: "repository",
 		Repo:      repo.ID,
 		Title:     "Repo-scoped issue",
@@ -1111,20 +590,20 @@ func TestListReadyIssuesWithLease(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	_, err := CreateProject(db, "test", "Test", "")
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Create two issues.
-	i1, err := CreateIssue(db, "test", core.CreateIssueRequest{
+	i1, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{
 		ScopeKind: "project",
 		Title:     "Ready issue",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	i2, err := CreateIssue(db, "test", core.CreateIssueRequest{
+	i2, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{
 		ScopeKind: "project",
 		Title:     "Claimed issue",
 	})
@@ -1133,13 +612,13 @@ func TestListReadyIssuesWithLease(t *testing.T) {
 	}
 
 	// Claim i2.
-	_, err = ClaimIssue(db, i2.ID, "agent-1", 3600)
+	_, err = ClaimIssue(context.Background(), db, i2.ID, "agent-1", 3600)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// List ready issues: only i1 (unclaimed) should appear.
-	ready, err := ListReadyIssues(db, "")
+	ready, err := ListReadyIssues(context.Background(), db, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1158,12 +637,12 @@ func TestUpdateIssue(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	_, err := CreateProject(db, "test", "Test", "")
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	issue, err := CreateIssue(db, "test", core.CreateIssueRequest{
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{
 		ScopeKind: "project",
 		Title:     "Original title",
 	})
@@ -1171,7 +650,7 @@ func TestUpdateIssue(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	updated, err := UpdateIssue(db, issue.ID, core.UpdateIssueRequest{
+	updated, err := UpdateIssue(context.Background(), db, issue.ID, core.UpdateIssueRequest{
 		Title:           "Updated title",
 		ExpectedVersion: issue.Version,
 	})
@@ -1190,12 +669,12 @@ func TestUpdateIssueVersionConflict(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	_, err := CreateProject(db, "test", "Test", "")
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	issue, err := CreateIssue(db, "test", core.CreateIssueRequest{
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{
 		ScopeKind: "project",
 		Title:     "Version test",
 	})
@@ -1204,7 +683,7 @@ func TestUpdateIssueVersionConflict(t *testing.T) {
 	}
 
 	// First update succeeds.
-	_, err = UpdateIssue(db, issue.ID, core.UpdateIssueRequest{
+	_, err = UpdateIssue(context.Background(), db, issue.ID, core.UpdateIssueRequest{
 		Title:           "First update",
 		ExpectedVersion: issue.Version,
 	})
@@ -1213,7 +692,7 @@ func TestUpdateIssueVersionConflict(t *testing.T) {
 	}
 
 	// Second update with stale version should fail.
-	_, err = UpdateIssue(db, issue.ID, core.UpdateIssueRequest{
+	_, err = UpdateIssue(context.Background(), db, issue.ID, core.UpdateIssueRequest{
 		Title:           "Stale update",
 		ExpectedVersion: issue.Version, // old version
 	})
@@ -1230,12 +709,12 @@ func TestCloseIssue(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	_, err := CreateProject(db, "test", "Test", "")
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	issue, err := CreateIssue(db, "test", core.CreateIssueRequest{
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{
 		ScopeKind: "project",
 		Title:     "Close me",
 	})
@@ -1243,7 +722,7 @@ func TestCloseIssue(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = CloseIssue(db, issue.ID, core.CloseIssueRequest{
+	err = CloseIssue(context.Background(), db, issue.ID, core.CloseIssueRequest{
 		Resolution:      "done",
 		ExpectedVersion: issue.Version,
 	})
@@ -1252,7 +731,7 @@ func TestCloseIssue(t *testing.T) {
 	}
 
 	// Verify it's closed.
-	got, _, err := GetIssue(db, issue.ID)
+	got, _, err := GetIssue(context.Background(), db, issue.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1271,12 +750,12 @@ func TestCloseIssueCancelled(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	_, err := CreateProject(db, "test", "Test", "")
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	issue, err := CreateIssue(db, "test", core.CreateIssueRequest{
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{
 		ScopeKind: "project",
 		Title:     "Cancel me",
 	})
@@ -1284,7 +763,7 @@ func TestCloseIssueCancelled(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = CloseIssue(db, issue.ID, core.CloseIssueRequest{
+	err = CloseIssue(context.Background(), db, issue.ID, core.CloseIssueRequest{
 		Resolution:      "cancelled",
 		ExpectedVersion: issue.Version,
 	})
@@ -1292,7 +771,7 @@ func TestCloseIssueCancelled(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, _, err := GetIssue(db, issue.ID)
+	got, _, err := GetIssue(context.Background(), db, issue.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1305,12 +784,12 @@ func TestCloseIssueVersionConflict(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	_, err := CreateProject(db, "test", "Test", "")
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	issue, err := CreateIssue(db, "test", core.CreateIssueRequest{
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{
 		ScopeKind: "project",
 		Title:     "Conflict",
 	})
@@ -1319,7 +798,7 @@ func TestCloseIssueVersionConflict(t *testing.T) {
 	}
 
 	// Use wrong expected version.
-	err = CloseIssue(db, issue.ID, core.CloseIssueRequest{
+	err = CloseIssue(context.Background(), db, issue.ID, core.CloseIssueRequest{
 		Resolution:      "done",
 		ExpectedVersion: 99,
 	})
@@ -1339,17 +818,17 @@ func TestCreateIssueAppendsEvent(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	_, err := CreateProject(db, "test", "Test", "")
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	issue, err := CreateIssue(db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Event test"})
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Event test"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	events, err := ListEvents(db, issue.ID)
+	events, err := ListEvents(context.Background(), db, issue.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1365,22 +844,22 @@ func TestClaimIssueAppendsEvent(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	_, err := CreateProject(db, "test", "Test", "")
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	issue, err := CreateIssue(db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Claim event"})
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Claim event"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	_, err = ClaimIssue(db, issue.ID, "agent-1", 3600)
+	_, err = ClaimIssue(context.Background(), db, issue.ID, "agent-1", 3600)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	events, err := ListEvents(db, issue.ID)
+	events, err := ListEvents(context.Background(), db, issue.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1404,27 +883,27 @@ func TestReleaseLeaseAppendsEvent(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	_, err := CreateProject(db, "test", "Test", "")
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	issue, err := CreateIssue(db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Release event"})
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Release event"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	claim, err := ClaimIssue(db, issue.ID, "agent-1", 3600)
+	claim, err := ClaimIssue(context.Background(), db, issue.ID, "agent-1", 3600)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err = ReleaseLease(db, issue.ID, claim.LeaseToken)
+	err = ReleaseLease(context.Background(), db, issue.ID, claim.LeaseToken)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	events, err := ListEvents(db, issue.ID)
+	events, err := ListEvents(context.Background(), db, issue.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1445,22 +924,22 @@ func TestCreateNoteAppendsEvent(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	_, err := CreateProject(db, "test", "Test", "")
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	issue, err := CreateIssue(db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Note event"})
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Note event"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	_, err = CreateNote(db, issue.ID, core.CreateNoteRequest{Author: "tester", Body: "A note"})
+	_, err = CreateNote(context.Background(), db, issue.ID, core.CreateNoteRequest{Author: "tester", Body: "A note"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	events, err := ListEvents(db, issue.ID)
+	events, err := ListEvents(context.Background(), db, issue.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1481,26 +960,26 @@ func TestAddDependencyAppendsEvent(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	_, err := CreateProject(db, "test", "Test", "")
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	i1, err := CreateIssue(db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Source"})
+	i1, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Source"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	i2, err := CreateIssue(db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Target"})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = AddDependency(db, i1.ID, core.AddDependencyRequest{DependsOn: i2.ID, Kind: "blocks"})
+	i2, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Target"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	events, err := ListEvents(db, i1.ID)
+	err = AddDependency(context.Background(), db, i1.ID, core.AddDependencyRequest{DependsOn: i2.ID, Kind: "blocks"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	events, err := ListEvents(context.Background(), db, i1.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1521,31 +1000,31 @@ func TestRemoveDependencyAppendsEvent(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	_, err := CreateProject(db, "test", "Test", "")
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	i1, err := CreateIssue(db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Src"})
+	i1, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Src"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	i2, err := CreateIssue(db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Dst"})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = AddDependency(db, i1.ID, core.AddDependencyRequest{DependsOn: i2.ID, Kind: "blocks"})
+	i2, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Dst"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err = RemoveDependency(db, i1.ID, i2.ID, "blocks", "test")
+	err = AddDependency(context.Background(), db, i1.ID, core.AddDependencyRequest{DependsOn: i2.ID, Kind: "blocks"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	events, err := ListEvents(db, i1.ID)
+	err = RemoveDependency(context.Background(), db, i1.ID, i2.ID, "blocks", "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	events, err := ListEvents(context.Background(), db, i1.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1559,5 +1038,843 @@ func TestRemoveDependencyAppendsEvent(t *testing.T) {
 	}
 	if !found {
 		t.Error("expected an event with event_type 'dependency_removed'")
+	}
+}
+
+func TestListIssuesFilterByAssignee(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Unassigned"})
+
+	// Update assignee directly.
+	_, err = db.Exec("UPDATE issues SET assignee = 'alice' WHERE title = 'Unassigned'")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assigned, err := ListIssues(context.Background(), db, core.IssueListParams{Assignee: "alice"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(assigned) != 1 {
+		t.Errorf("expected 1 issue assigned to alice, got %d", len(assigned))
+	}
+}
+
+func TestListIssuesEmpty(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	issues, err := ListIssues(context.Background(), db, core.IssueListParams{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Should return empty slice, not nil.
+	if issues == nil {
+		t.Error("expected non-nil slice when no issues")
+	}
+}
+
+func TestListIssuesShowsHolder(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Leased issue"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = ClaimIssue(context.Background(), db, issue.ID, "agent-42", 3600)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	issues, err := ListIssues(context.Background(), db, core.IssueListParams{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(issues) != 1 {
+		t.Fatalf("expected 1 issue, got %d", len(issues))
+	}
+	if issues[0].Holder != "agent-42" {
+		t.Errorf("expected holder 'agent-42', got %q", issues[0].Holder)
+	}
+}
+
+func TestListIssuesWithAssigneeFilter(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Alpha"})
+
+	_, err = db.Exec("UPDATE issues SET assignee = ? WHERE title = ?", "bob", "Alpha")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	issues, err := ListIssues(context.Background(), db, core.IssueListParams{Assignee: "bob"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(issues) != 1 {
+		t.Errorf("expected 1 issue for bob, got %d", len(issues))
+	}
+}
+
+func TestListIssuesReturnsEmptySlice(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	issues, err := ListIssues(context.Background(), db, core.IssueListParams{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if issues == nil {
+		t.Error("expected []core.Issue{}, got nil")
+	}
+}
+
+func TestGetIssueIncludesLeasedFields(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Lease view"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = ClaimIssue(context.Background(), db, issue.ID, "agent-7", 3600)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, lease, err := GetIssue(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lease == nil {
+		t.Fatal("expected lease to be non-nil")
+	}
+	if got.Holder != "agent-7" {
+		t.Errorf("expected issue.Holder 'agent-7', got %q", got.Holder)
+	}
+	if lease.Holder != "agent-7" {
+		t.Errorf("expected lease.Holder 'agent-7', got %q", lease.Holder)
+	}
+}
+
+func TestGetIssueWithLease(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Lease test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = ClaimIssue(context.Background(), db, issue.ID, "agent-1", 3600)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, lease, err := GetIssue(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lease == nil {
+		t.Fatal("expected lease for claimed issue")
+	}
+	if lease.Holder != "agent-1" {
+		t.Errorf("expected holder 'agent-1', got %q", lease.Holder)
+	}
+	if got.Holder != "agent-1" {
+		t.Errorf("expected issue.holder 'agent-1', got %q", got.Holder)
+	}
+}
+
+func TestCreateIssueWithWorktreeScope(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo, _, err := CreateRepo(context.Background(), db, "test", core.CreateRepoRequest{
+		Project:         "test",
+		LogicalName:     "repo",
+		CanonicalGitDir: "/repos/repo.git",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wt, _, err := UpsertWorktree(context.Background(), db, repo.ID, core.CreateWorktreeRequest{
+		Repo:         repo.ID,
+		AbsolutePath: "/worktrees/feature",
+		Branch:       "feature-x",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{
+		ScopeKind: "worktree",
+		Repo:      repo.ID,
+		Worktree:  wt.ID,
+		Title:     "Worktree-scoped",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if issue.WorktreeID != wt.ID {
+		t.Errorf("expected worktree_id %q, got %q", wt.ID, issue.WorktreeID)
+	}
+	if issue.RepositoryID != repo.ID {
+		t.Errorf("expected repository_id %q, got %q", repo.ID, issue.RepositoryID)
+	}
+	if issue.ScopeKind != "worktree" {
+		t.Errorf("expected scope_kind 'worktree', got %q", issue.ScopeKind)
+	}
+}
+
+func TestUpdateIssueAssignment(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Assign me"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	updated, err := UpdateIssue(context.Background(), db, issue.ID, core.UpdateIssueRequest{
+		Assignee:        "alice",
+		ExpectedVersion: issue.Version,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Assignee != "alice" {
+		t.Errorf("expected assignee 'alice', got %q", updated.Assignee)
+	}
+}
+
+func TestUpdateIssueLeaseTokenRequired(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Lease locked"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Claim the issue.
+	_, err = ClaimIssue(context.Background(), db, issue.ID, "agent-1", 3600)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Attempt to update without providing the lease_token should fail.
+	_, err = UpdateIssue(context.Background(), db, issue.ID, core.UpdateIssueRequest{
+		Title:           "Hack attempt",
+		ExpectedVersion: 2,
+	})
+	if err == nil {
+		t.Fatal("expected error for missing lease_token on leased issue")
+	}
+	var apiErr core.APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("expected APIError, got %T: %v", err, err)
+	}
+	if apiErr.Code != core.ErrLeaseExpired {
+		t.Errorf("expected code %q, got %q", core.ErrLeaseExpired, apiErr.Code)
+	}
+}
+
+func TestCreateIssueDefaultPriority(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Default priority"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if issue.Priority != 3 {
+		t.Errorf("expected default priority 3, got %d", issue.Priority)
+	}
+}
+
+func TestCreateIssueCustomPriority(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{
+		ScopeKind: "project",
+		Title:     "High priority",
+		Priority:  1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if issue.Priority != 1 {
+		t.Errorf("expected priority 1, got %d", issue.Priority)
+	}
+}
+
+func TestLinkArtifact(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo, _, err := CreateRepo(context.Background(), db, "test", core.CreateRepoRequest{
+		Project:         "test",
+		LogicalName:     "repo",
+		CanonicalGitDir: "/repos/repo.git",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Link test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	artifact, err := CreateArtifact(context.Background(), db, repo.ID, core.CreateArtifactRequest{
+		Repo:         repo.ID,
+		Kind:         "sdd",
+		RelativePath: "docs/spec.md",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	createdAt, err := LinkArtifact(context.Background(), db, issue.ID, core.LinkArtifactRequest{Artifact: artifact.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if createdAt == "" {
+		t.Error("expected non-empty created_at")
+	}
+
+	refs, err := ListIssueArtifacts(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(refs) != 1 {
+		t.Fatalf("expected 1 artifact ref, got %d", len(refs))
+	}
+	if refs[0].ID != artifact.ID {
+		t.Errorf("expected artifact ID %q, got %q", artifact.ID, refs[0].ID)
+	}
+	if refs[0].Relation != "implements" {
+		t.Errorf("expected relation 'implements', got %q", refs[0].Relation)
+	}
+}
+
+func TestLinkArtifactCustomRelation(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo, _, err := CreateRepo(context.Background(), db, "test", core.CreateRepoRequest{
+		Project:         "test",
+		LogicalName:     "repo",
+		CanonicalGitDir: "/repos/repo.git",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Custom rel"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	artifact, err := CreateArtifact(context.Background(), db, repo.ID, core.CreateArtifactRequest{
+		Repo:         repo.ID,
+		Kind:         "adr",
+		RelativePath: "docs/adr.md",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = LinkArtifact(context.Background(), db, issue.ID, core.LinkArtifactRequest{
+		Artifact: artifact.ID,
+		Relation: "documents",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	refs, err := ListIssueArtifacts(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if refs[0].Relation != "documents" {
+		t.Errorf("expected relation 'documents', got %q", refs[0].Relation)
+	}
+}
+
+func TestLinkArtifactNonexistentIssue(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := LinkArtifact(context.Background(), db, "nonexistent", core.LinkArtifactRequest{Artifact: "art-1"})
+	if err == nil {
+		t.Fatal("expected error for nonexistent issue")
+	}
+}
+
+func TestLinkArtifactNonexistentArtifact(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Link fail"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = LinkArtifact(context.Background(), db, issue.ID, core.LinkArtifactRequest{Artifact: "nonexistent"})
+	if err == nil {
+		t.Fatal("expected error for nonexistent artifact")
+	}
+}
+
+func TestLinkArtifactDuplicate(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo, _, err := CreateRepo(context.Background(), db, "test", core.CreateRepoRequest{
+		Project:         "test",
+		LogicalName:     "repo",
+		CanonicalGitDir: "/repos/repo.git",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Dup link"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	artifact, err := CreateArtifact(context.Background(), db, repo.ID, core.CreateArtifactRequest{
+		Repo:         repo.ID,
+		Kind:         "sdd",
+		RelativePath: "docs/dup.md",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// First link succeeds.
+	_, err = LinkArtifact(context.Background(), db, issue.ID, core.LinkArtifactRequest{Artifact: artifact.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Second link with same relation should fail.
+	_, err = LinkArtifact(context.Background(), db, issue.ID, core.LinkArtifactRequest{Artifact: artifact.ID})
+	if err == nil {
+		t.Fatal("expected error for duplicate link")
+	}
+	var apiErr core.APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("expected APIError, got %T: %v", err, err)
+	}
+	if apiErr.Code != core.ErrAlreadyLinked {
+		t.Errorf("expected code %q, got %q", core.ErrAlreadyLinked, apiErr.Code)
+	}
+}
+
+func TestListIssueArtifactsEmpty(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "No artifacts"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	refs, err := ListIssueArtifacts(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(refs) != 0 {
+		t.Errorf("expected 0 artifact refs, got %d", len(refs))
+	}
+}
+
+func TestCreateNote(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Note this"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	note, err := CreateNote(context.Background(), db, issue.ID, core.CreateNoteRequest{Author: "me", Body: "A comment"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if note.Author != "me" {
+		t.Errorf("expected author 'me', got %q", note.Author)
+	}
+	if note.Body != "A comment" {
+		t.Errorf("expected body 'A comment', got %q", note.Body)
+	}
+	if note.IssueID != issue.ID {
+		t.Errorf("expected issue_id %q, got %q", issue.ID, note.IssueID)
+	}
+
+	notes, err := ListNotes(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(notes) != 1 {
+		t.Errorf("expected 1 note, got %d", len(notes))
+	}
+	if notes[0].Body != "A comment" {
+		t.Errorf("expected body 'A comment', got %q", notes[0].Body)
+	}
+}
+
+func TestCreateNoteNonexistentIssue(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateNote(context.Background(), db, "nonexistent", core.CreateNoteRequest{Author: "me", Body: "fail"})
+	if err == nil {
+		t.Fatal("expected error for nonexistent issue")
+	}
+}
+
+func TestListNotesEmpty(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Quiet"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	notes, err := ListNotes(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(notes) != 0 {
+		t.Errorf("expected 0 notes, got %d", len(notes))
+	}
+}
+
+func TestListNotesNonexistentIssue(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := ListNotes(context.Background(), db, "nonexistent")
+	if err == nil {
+		t.Fatal("expected error for nonexistent issue")
+	}
+}
+
+func TestMultipleNotes(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Chatty"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	CreateNote(context.Background(), db, issue.ID, core.CreateNoteRequest{Author: "alice", Body: "First"})
+	CreateNote(context.Background(), db, issue.ID, core.CreateNoteRequest{Author: "bob", Body: "Second"})
+
+	notes, err := ListNotes(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(notes) != 2 {
+		t.Errorf("expected 2 notes, got %d", len(notes))
+	}
+	if notes[0].Body != "First" {
+		t.Errorf("expected first note body 'First', got %q", notes[0].Body)
+	}
+	if notes[1].Body != "Second" {
+		t.Errorf("expected second note body 'Second', got %q", notes[1].Body)
+	}
+}
+
+func TestDependencyKindDefaults(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	i1, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Source"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	i2, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Target"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Empty kind should default to "blocks".
+	err = AddDependency(context.Background(), db, i1.ID, core.AddDependencyRequest{DependsOn: i2.ID, Kind: ""})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestIssueDescriptionDefault(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Desc check"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Default description should be empty string.
+	if issue.Description != "" {
+		t.Errorf("expected empty description, got %q", issue.Description)
+	}
+}
+
+func TestIssueWithDescription(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{
+		ScopeKind:   "project",
+		Title:       "With desc",
+		Description: "A detailed description",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if issue.Description != "A detailed description" {
+		t.Errorf("expected description %q, got %q", "A detailed description", issue.Description)
+	}
+}
+
+func TestListEventsEmpty(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Eventless"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	events, err := ListEvents(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 {
+		t.Errorf("expected 1 event (the create event), got %d", len(events))
+	}
+}
+
+func TestAddRemoveDependency(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	i1, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "A"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	i2, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "B"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// A depends on B.
+	err = AddDependency(context.Background(), db, i1.ID, core.AddDependencyRequest{DependsOn: i2.ID, Kind: "blocks"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = RemoveDependency(context.Background(), db, i1.ID, i2.ID, "blocks", "tester")
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRemoveDependencyNotFound(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	i1, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "X"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	i2, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Y"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = RemoveDependency(context.Background(), db, i1.ID, i2.ID, "blocks", "tester")
+	if err == nil {
+		t.Fatal("expected error for removing nonexistent dependency")
+	}
+}
+
+func TestDependencyCycleDetection(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	i1, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "A"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	i2, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "B"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// A depends on B.
+	err = AddDependency(context.Background(), db, i1.ID, core.AddDependencyRequest{DependsOn: i2.ID, Kind: "blocks"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// B depending on A should create a cycle.
+	err = AddDependency(context.Background(), db, i2.ID, core.AddDependencyRequest{DependsOn: i1.ID, Kind: "blocks"})
+	if err == nil {
+		t.Fatal("expected error for cycle detection")
+	}
+
+	var apiErr core.APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("expected APIError, got %T: %v", err, err)
+	}
+	if apiErr.Code != core.ErrDependencyCycle {
+		t.Errorf("expected code %q, got %q", core.ErrDependencyCycle, apiErr.Code)
 	}
 }

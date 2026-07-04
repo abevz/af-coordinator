@@ -1,6 +1,7 @@
 package sqlite
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"time"
@@ -10,11 +11,11 @@ import (
 )
 
 // CreateProject inserts a new project and returns it.
-func CreateProject(db *sql.DB, key, name, description string) (core.Project, error) {
+func CreateProject(ctx context.Context, db *sql.DB, key, name, description string) (core.Project, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
 	id := uuid.New().String()
 
-	_, err := db.Exec(
+	_, err := db.ExecContext(ctx,
 		`INSERT INTO projects (id, key, name, description, next_issue_seq, created_at, updated_at)
 		 VALUES (?, ?, ?, ?, 1, ?, ?)`,
 		id, key, name, description, now, now,
@@ -35,8 +36,8 @@ func CreateProject(db *sql.DB, key, name, description string) (core.Project, err
 }
 
 // GetProject retrieves a project by its ID.
-func GetProject(db *sql.DB, id string) (core.Project, error) {
-	row := db.QueryRow(
+func GetProject(ctx context.Context, db *sql.DB, id string) (core.Project, error) {
+	row := db.QueryRowContext(ctx,
 		`SELECT id, key, name, description, next_issue_seq, created_at, updated_at
 		 FROM projects WHERE id = ?`, id,
 	)
@@ -44,8 +45,8 @@ func GetProject(db *sql.DB, id string) (core.Project, error) {
 }
 
 // GetProjectByKey retrieves a project by its key.
-func GetProjectByKey(db *sql.DB, key string) (core.Project, error) {
-	row := db.QueryRow(
+func GetProjectByKey(ctx context.Context, db *sql.DB, key string) (core.Project, error) {
+	row := db.QueryRowContext(ctx,
 		`SELECT id, key, name, description, next_issue_seq, created_at, updated_at
 		 FROM projects WHERE key = ?`, key,
 	)
@@ -53,8 +54,8 @@ func GetProjectByKey(db *sql.DB, key string) (core.Project, error) {
 }
 
 // ListProjects returns all projects ordered by created_at descending.
-func ListProjects(db *sql.DB) ([]core.Project, error) {
-	rows, err := db.Query(
+func ListProjects(ctx context.Context, db *sql.DB) ([]core.Project, error) {
+	rows, err := db.QueryContext(ctx,
 		`SELECT id, key, name, description, next_issue_seq, created_at, updated_at
 		 FROM projects ORDER BY created_at DESC`,
 	)

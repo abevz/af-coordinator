@@ -1,6 +1,7 @@
 package sqlite
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -11,7 +12,7 @@ func TestCreateRepo(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	_, err := CreateProject(db, "test", "Test", "")
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -22,7 +23,7 @@ func TestCreateRepo(t *testing.T) {
 		CanonicalGitDir: "/repos/my-repo.git",
 		DefaultBranch:   "main",
 	}
-	repo, remotes, err := CreateRepo(db, "test", req)
+	repo, remotes, err := CreateRepo(context.Background(), db, "test", req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +48,7 @@ func TestCreateRepoWithRemotes(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	_, err := CreateProject(db, "test", "Test", "")
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +63,7 @@ func TestCreateRepoWithRemotes(t *testing.T) {
 			{RemoteName: "upstream", FetchURL: "https://upstream.example.com/repo.git"},
 		},
 	}
-	repo, remotes, err := CreateRepo(db, "test", req)
+	repo, remotes, err := CreateRepo(context.Background(), db, "test", req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,12 +85,12 @@ func TestGetRepo(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	_, err := CreateProject(db, "test", "Test", "")
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	created, _, err := CreateRepo(db, "test", core.CreateRepoRequest{
+	created, _, err := CreateRepo(context.Background(), db, "test", core.CreateRepoRequest{
 		Project:         "test",
 		LogicalName:     "get-repo",
 		CanonicalGitDir: "/repos/get-repo.git",
@@ -98,7 +99,7 @@ func TestGetRepo(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := GetRepo(db, created.ID)
+	got, err := GetRepo(context.Background(), db, created.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,12 +118,12 @@ func TestGetRepoByLogicalName(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	_, err := CreateProject(db, "test", "Test", "")
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	created, _, err := CreateRepo(db, "test", core.CreateRepoRequest{
+	created, _, err := CreateRepo(context.Background(), db, "test", core.CreateRepoRequest{
 		Project:         "test",
 		LogicalName:     "utils",
 		CanonicalGitDir: "/home/utils",
@@ -131,7 +132,7 @@ func TestGetRepoByLogicalName(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := GetRepo(db, "utils")
+	got, err := GetRepo(context.Background(), db, "utils")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +148,7 @@ func TestGetRepoNotFound(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	_, err := GetRepo(db, "nonexistent")
+	_, err := GetRepo(context.Background(), db, "nonexistent")
 	if err == nil {
 		t.Fatal("expected error for nonexistent repo")
 	}
@@ -164,13 +165,13 @@ func TestListRepos(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	_, err := CreateProject(db, "test", "Test", "")
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// No repos yet.
-	repos, err := ListRepos(db, "")
+	repos, err := ListRepos(context.Background(), db, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,18 +179,18 @@ func TestListRepos(t *testing.T) {
 		t.Errorf("expected 0 repos, got %d", len(repos))
 	}
 
-	CreateRepo(db, "test", core.CreateRepoRequest{
+	CreateRepo(context.Background(), db, "test", core.CreateRepoRequest{
 		Project:         "test",
 		LogicalName:     "repo-a",
 		CanonicalGitDir: "/repos/repo-a.git",
 	})
-	CreateRepo(db, "test", core.CreateRepoRequest{
+	CreateRepo(context.Background(), db, "test", core.CreateRepoRequest{
 		Project:         "test",
 		LogicalName:     "repo-b",
 		CanonicalGitDir: "/repos/repo-b.git",
 	})
 
-	repos, err = ListRepos(db, "")
+	repos, err = ListRepos(context.Background(), db, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,27 +203,27 @@ func TestListReposByProject(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	p1, err := CreateProject(db, "p1", "Project 1", "")
+	p1, err := CreateProject(context.Background(), db, "p1", "Project 1", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = CreateProject(db, "p2", "Project 2", "")
+	_, err = CreateProject(context.Background(), db, "p2", "Project 2", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	CreateRepo(db, "p1", core.CreateRepoRequest{
+	CreateRepo(context.Background(), db, "p1", core.CreateRepoRequest{
 		Project:         "p1",
 		LogicalName:     "p1-repo",
 		CanonicalGitDir: "/repos/p1-repo.git",
 	})
-	CreateRepo(db, "p2", core.CreateRepoRequest{
+	CreateRepo(context.Background(), db, "p2", core.CreateRepoRequest{
 		Project:         "p2",
 		LogicalName:     "p2-repo",
 		CanonicalGitDir: "/repos/p2-repo.git",
 	})
 
-	repos, err := ListRepos(db, p1.ID)
+	repos, err := ListRepos(context.Background(), db, p1.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -235,18 +236,18 @@ func TestListReposByProjectKey(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	_, err := CreateProject(db, "myproj", "My Project", "")
+	_, err := CreateProject(context.Background(), db, "myproj", "My Project", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	CreateRepo(db, "myproj", core.CreateRepoRequest{
+	CreateRepo(context.Background(), db, "myproj", core.CreateRepoRequest{
 		Project:         "myproj",
 		LogicalName:     "alpha",
 		CanonicalGitDir: "/repos/alpha.git",
 	})
 
-	repos, err := ListReposByProjectKey(db, "myproj")
+	repos, err := ListReposByProjectKey(context.Background(), db, "myproj")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -262,12 +263,12 @@ func TestCreateRepoDuplicateName(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	_, err := CreateProject(db, "test", "Test", "")
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	_, _, err = CreateRepo(db, "test", core.CreateRepoRequest{
+	_, _, err = CreateRepo(context.Background(), db, "test", core.CreateRepoRequest{
 		Project:         "test",
 		LogicalName:     "dup",
 		CanonicalGitDir: "/repos/dup.git",
@@ -276,7 +277,7 @@ func TestCreateRepoDuplicateName(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, _, err = CreateRepo(db, "test", core.CreateRepoRequest{
+	_, _, err = CreateRepo(context.Background(), db, "test", core.CreateRepoRequest{
 		Project:         "test",
 		LogicalName:     "dup",
 		CanonicalGitDir: "/repos/dup-again.git",
@@ -293,7 +294,7 @@ func TestCreateRepoNonexistentProject(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	_, _, err := CreateRepo(db, "nonexistent", core.CreateRepoRequest{
+	_, _, err := CreateRepo(context.Background(), db, "nonexistent", core.CreateRepoRequest{
 		Project:         "nonexistent",
 		LogicalName:     "repo",
 		CanonicalGitDir: "/repos/repo.git",
