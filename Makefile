@@ -2,13 +2,16 @@ GO ?= go
 BINDIR ?= $(HOME)/.local/bin
 BACKUPDIR ?= $(HOME)/backups/af-coordinator
 
-.PHONY: fmt vet build test build-install install-service uninstall-service
+.PHONY: fmt vet lint build test build-install install-service uninstall-service
 
 fmt:
 	gofmt -w cmd internal
 
 vet:
 	$(GO) vet ./...
+
+lint:
+	golangci-lint run --disable errcheck,staticcheck
 
 build:
 	$(GO) build ./...

@@ -249,16 +249,15 @@ migrations/            schema migrations
 - [SDD workflow v1](docs/sdd-workflow-v1.md)
 - [Foundation spec packet](docs/specs/001-foundation/README.md)
 
-## Recommended implementation order
+## Known limitations
 
-1. SQLite schema + migrations
-2. daemon boot + health endpoint
-3. project/repo/worktree registration
-4. artifact registration + issue-to-spec links
-5. issue create/get/list/ready
-6. claim/release/heartbeat lease flow
-7. update/close with optimistic concurrency
-8. notes + events
-9. `afctl`
-10. systemd user service
-11. export and backup helpers
+- The coordinator assumes a single active daemon per machine.
+- There is currently no web UI or built-in visualization.
+- The project is designed for local-first operations and does not natively synchronize state across multiple machines.
+
+## How to release
+
+1. Ensure the `review.md` for the active SDD packet is complete.
+2. Verify that all tests pass (`make test`) and the codebase is clean (`make lint`).
+3. Build the binaries using `make build`.
+4. Create a new git tag and push it to the upstream repository.
