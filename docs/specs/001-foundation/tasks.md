@@ -66,7 +66,7 @@
     not_found, not a silent empty list
   - tests: table-driven across every endpoint — short_id accepted,
     unknown id → not_found
-- [ ] AFC-SDD-0038 Record the real actor in events (audit trail is lying)
+- [x] AFC-SDD-0038 Record the real actor in events (audit trail is lying)
   - `issue_created`, `issue_updated`, `issue_closed` events hardcode
     actor `"unknown"` (issues.go lines ~87/~595/~683); only
     `issue_claimed` records the real holder. The event log currently

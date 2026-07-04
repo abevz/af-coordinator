@@ -134,7 +134,7 @@ func fail(err error) {
 			resp := core.APIErrorResponse{Error: core.NewAPIError(clientErr.Code, clientErr.Message)}
 			json.NewEncoder(os.Stderr).Encode(resp)
 		} else {
-			fmt.Fprintf(os.Stderr, "error: %s: %s\n", clientErr.Code, clientErr.Message)
+			fmt.Fprintf(os.Stderr, "error: %v\n", clientErr)
 		}
 		os.Exit(mapExitCode(clientErr.Code))
 	}
