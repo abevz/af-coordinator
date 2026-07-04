@@ -28,7 +28,7 @@ func handleCreateProject(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 			return
 		}
 
-		project, err := sqlite.CreateProject(db, body.Key, body.Name, body.Description)
+		project, err := sqlite.CreateProject(r.Context(), db, body.Key, body.Name, body.Description)
 		if err != nil {
 			logger.Error("failed to create project", "key", body.Key, "error", err)
 			// Detect unique constraint violation on key.
@@ -47,7 +47,7 @@ func handleCreateProject(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 
 func handleListProjects(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		projects, err := sqlite.ListProjects(db)
+		projects, err := sqlite.ListProjects(r.Context(), db)
 		if err != nil {
 			logger.Error("failed to list projects", "error", err)
 			writeError(w, http.StatusInternalServerError, "internal_error", "failed to list projects")

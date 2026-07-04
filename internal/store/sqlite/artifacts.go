@@ -1,6 +1,7 @@
 package sqlite
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"time"
@@ -10,7 +11,7 @@ import (
 )
 
 // CreateArtifactRoot inserts a new artifact root for the given repository.
-func CreateArtifactRoot(db *sql.DB, repoID string, req core.CreateArtifactRootRequest) (core.ArtifactRoot, error) {
+func CreateArtifactRoot(ctx context.Context, db *sql.DB, repoID string, req core.CreateArtifactRootRequest) (core.ArtifactRoot, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
 	id := uuid.New().String()
 
@@ -29,7 +30,7 @@ func CreateArtifactRoot(db *sql.DB, repoID string, req core.CreateArtifactRootRe
 		isPrimary = 1
 	}
 
-	_, err := db.Exec(
+	_, err := db.ExecContext(ctx,
 		`INSERT INTO artifact_roots (id, repository_id, root_path, kind, is_primary, created_at, updated_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		id, repoID, req.RootPath, kind, isPrimary, now, now,
@@ -50,8 +51,8 @@ func CreateArtifactRoot(db *sql.DB, repoID string, req core.CreateArtifactRootRe
 }
 
 // GetArtifactRoot retrieves an artifact root by ID.
-func GetArtifactRoot(db *sql.DB, id string) (core.ArtifactRoot, error) {
-	row := db.QueryRow(
+func GetArtifactRoot(ctx context.Context, db *sql.DB, id string) (core.ArtifactRoot, error) {
+	row := db.QueryRowContext(ctx,
 		`SELECT id, repository_id, root_path, kind, is_primary, created_at, updated_at
 		 FROM artifact_roots WHERE id = ?`, id,
 	)
@@ -59,17 +60,17 @@ func GetArtifactRoot(db *sql.DB, id string) (core.ArtifactRoot, error) {
 }
 
 // ListArtifactRoots returns artifact roots, optionally filtered by repository ID.
-func ListArtifactRoots(db *sql.DB, repoID string) ([]core.ArtifactRoot, error) {
+func ListArtifactRoots(ctx context.Context, db *sql.DB, repoID string) ([]core.ArtifactRoot, error) {
 	var rows *sql.Rows
 	var err error
 
 	if repoID != "" {
-		rows, err = db.Query(
+		rows, err = db.QueryContext(ctx,
 			`SELECT id, repository_id, root_path, kind, is_primary, created_at, updated_at
 			 FROM artifact_roots WHERE repository_id = ? ORDER BY root_path`, repoID,
 		)
 	} else {
-		rows, err = db.Query(
+		rows, err = db.QueryContext(ctx,
 			`SELECT id, repository_id, root_path, kind, is_primary, created_at, updated_at
 			 FROM artifact_roots ORDER BY root_path`,
 		)
@@ -97,7 +98,7 @@ func ListArtifactRoots(db *sql.DB, repoID string) ([]core.ArtifactRoot, error) {
 }
 
 // CreateArtifact inserts a new artifact.
-func CreateArtifact(db *sql.DB, repoID string, req core.CreateArtifactRequest) (core.Artifact, error) {
+func CreateArtifact(ctx context.Context, db *sql.DB, repoID string, req core.CreateArtifactRequest) (core.Artifact, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
 	id := uuid.New().String()
 
@@ -106,7 +107,7 @@ func CreateArtifact(db *sql.DB, repoID string, req core.CreateArtifactRequest) (
 			fmt.Sprintf("invalid artifact kind: %q", req.Kind))
 	}
 
-	_, err := db.Exec(
+	_, err := db.ExecContext(ctx,
 		`INSERT INTO artifacts (id, repository_id, worktree_id, artifact_root_id, kind, relative_path, title, external_key, status, created_at, updated_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		id, repoID, nullableUUID(req.Worktree), nullableUUID(req.ArtifactRootID),
@@ -132,8 +133,8 @@ func CreateArtifact(db *sql.DB, repoID string, req core.CreateArtifactRequest) (
 }
 
 // GetArtifact retrieves an artifact by ID.
-func GetArtifact(db *sql.DB, id string) (core.Artifact, error) {
-	row := db.QueryRow(
+func GetArtifact(ctx context.Context, db *sql.DB, id string) (core.Artifact, error) {
+	row := db.QueryRowContext(ctx,
 		`SELECT id, repository_id, worktree_id, artifact_root_id, kind, relative_path,
 		        title, external_key, status, created_at, updated_at
 		 FROM artifacts WHERE id = ?`, id,
@@ -142,18 +143,18 @@ func GetArtifact(db *sql.DB, id string) (core.Artifact, error) {
 }
 
 // ListArtifacts returns artifacts, optionally filtered by repository ID.
-func ListArtifacts(db *sql.DB, repoID string) ([]core.Artifact, error) {
+func ListArtifacts(ctx context.Context, db *sql.DB, repoID string) ([]core.Artifact, error) {
 	var rows *sql.Rows
 	var err error
 
 	if repoID != "" {
-		rows, err = db.Query(
+		rows, err = db.QueryContext(ctx,
 			`SELECT id, repository_id, worktree_id, artifact_root_id, kind, relative_path,
 			        title, external_key, status, created_at, updated_at
 			 FROM artifacts WHERE repository_id = ? ORDER BY relative_path`, repoID,
 		)
 	} else {
-		rows, err = db.Query(
+		rows, err = db.QueryContext(ctx,
 			`SELECT id, repository_id, worktree_id, artifact_root_id, kind, relative_path,
 			        title, external_key, status, created_at, updated_at
 			 FROM artifacts ORDER BY relative_path`,

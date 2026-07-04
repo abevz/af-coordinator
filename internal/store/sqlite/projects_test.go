@@ -1,6 +1,7 @@
 package sqlite
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -11,7 +12,7 @@ func TestCreateProject(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	p, err := CreateProject(db, "test", "Test Project", "A test project")
+	p, err := CreateProject(context.Background(), db, "test", "Test Project", "A test project")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,12 +37,12 @@ func TestGetProject(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	p, err := CreateProject(db, "tst", "Test", "")
+	p, err := CreateProject(context.Background(), db, "tst", "Test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	got, err := GetProject(db, p.ID)
+	got, err := GetProject(context.Background(), db, p.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,12 +61,12 @@ func TestGetProjectByKey(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	_, err := CreateProject(db, "alpha", "Alpha", "")
+	_, err := CreateProject(context.Background(), db, "alpha", "Alpha", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	p, err := GetProjectByKey(db, "alpha")
+	p, err := GetProjectByKey(context.Background(), db, "alpha")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,12 +79,12 @@ func TestCreateProjectDuplicateKey(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	_, err := CreateProject(db, "dup", "First", "")
+	_, err := CreateProject(context.Background(), db, "dup", "First", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	_, err = CreateProject(db, "dup", "Second", "")
+	_, err = CreateProject(context.Background(), db, "dup", "Second", "")
 	if err == nil {
 		t.Fatal("expected error for duplicate key")
 	}
@@ -97,7 +98,7 @@ func TestGetProjectNotFound(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	_, err := GetProject(db, "nonexistent")
+	_, err := GetProject(context.Background(), db, "nonexistent")
 	if err == nil {
 		t.Fatal("expected error for nonexistent project")
 	}
@@ -114,7 +115,7 @@ func TestGetProjectByKeyNotFound(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	_, err := GetProjectByKey(db, "missing")
+	_, err := GetProjectByKey(context.Background(), db, "missing")
 	if err == nil {
 		t.Fatal("expected error for nonexistent project key")
 	}
@@ -125,7 +126,7 @@ func TestListProjects(t *testing.T) {
 	db := newTestDB(t)
 
 	// No projects yet.
-	projects, err := ListProjects(db)
+	projects, err := ListProjects(context.Background(), db)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,10 +135,10 @@ func TestListProjects(t *testing.T) {
 	}
 
 	// Create two projects.
-	CreateProject(db, "a", "A", "")
-	CreateProject(db, "b", "B", "")
+	CreateProject(context.Background(), db, "a", "A", "")
+	CreateProject(context.Background(), db, "b", "B", "")
 
-	projects, err = ListProjects(db)
+	projects, err = ListProjects(context.Background(), db)
 	if err != nil {
 		t.Fatal(err)
 	}

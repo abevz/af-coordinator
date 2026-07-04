@@ -1,6 +1,7 @@
 package sqlite
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -11,11 +12,11 @@ func TestCreateWorktree(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	_, err := CreateProject(db, "test", "Test", "")
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	repo, _, err := CreateRepo(db, "test", core.CreateRepoRequest{
+	repo, _, err := CreateRepo(context.Background(), db, "test", core.CreateRepoRequest{
 		Project:         "test",
 		LogicalName:     "my-repo",
 		CanonicalGitDir: "/repos/my-repo.git",
@@ -31,7 +32,7 @@ func TestCreateWorktree(t *testing.T) {
 		HeadCommit:   "abc123",
 		IsMain:       true,
 	}
-	wt, isNew, err := UpsertWorktree(db, repo.ID, req)
+	wt, isNew, err := UpsertWorktree(context.Background(), db, repo.ID, req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,11 +63,11 @@ func TestUpsertWorktreeUpdatesExisting(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	_, err := CreateProject(db, "test", "Test", "")
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	repo, _, err := CreateRepo(db, "test", core.CreateRepoRequest{
+	repo, _, err := CreateRepo(context.Background(), db, "test", core.CreateRepoRequest{
 		Project:         "test",
 		LogicalName:     "repo",
 		CanonicalGitDir: "/repos/repo.git",
@@ -76,7 +77,7 @@ func TestUpsertWorktreeUpdatesExisting(t *testing.T) {
 	}
 
 	// First insert.
-	wt1, isNew, err := UpsertWorktree(db, repo.ID, core.CreateWorktreeRequest{
+	wt1, isNew, err := UpsertWorktree(context.Background(), db, repo.ID, core.CreateWorktreeRequest{
 		Repo:         repo.ID,
 		AbsolutePath: "/worktrees/my-wt",
 		Branch:       "feature/x",
@@ -90,7 +91,7 @@ func TestUpsertWorktreeUpdatesExisting(t *testing.T) {
 	}
 
 	// Upsert again with same path — should update.
-	wt2, isNew, err := UpsertWorktree(db, repo.ID, core.CreateWorktreeRequest{
+	wt2, isNew, err := UpsertWorktree(context.Background(), db, repo.ID, core.CreateWorktreeRequest{
 		Repo:         repo.ID,
 		AbsolutePath: "/worktrees/my-wt",
 		Branch:       "feature/y",
@@ -117,11 +118,11 @@ func TestGetWorktree(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	_, err := CreateProject(db, "test", "Test", "")
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	repo, _, err := CreateRepo(db, "test", core.CreateRepoRequest{
+	repo, _, err := CreateRepo(context.Background(), db, "test", core.CreateRepoRequest{
 		Project:         "test",
 		LogicalName:     "repo",
 		CanonicalGitDir: "/repos/repo.git",
@@ -130,7 +131,7 @@ func TestGetWorktree(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	created, _, err := UpsertWorktree(db, repo.ID, core.CreateWorktreeRequest{
+	created, _, err := UpsertWorktree(context.Background(), db, repo.ID, core.CreateWorktreeRequest{
 		Repo:         repo.ID,
 		AbsolutePath: "/worktrees/get-me",
 		Branch:       "main",
@@ -139,7 +140,7 @@ func TestGetWorktree(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := GetWorktree(db, created.ID)
+	got, err := GetWorktree(context.Background(), db, created.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +156,7 @@ func TestGetWorktreeNotFound(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	_, err := GetWorktree(db, "nonexistent")
+	_, err := GetWorktree(context.Background(), db, "nonexistent")
 	if err == nil {
 		t.Fatal("expected error for nonexistent worktree")
 	}
@@ -172,11 +173,11 @@ func TestListWorktrees(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	_, err := CreateProject(db, "test", "Test", "")
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	repo, _, err := CreateRepo(db, "test", core.CreateRepoRequest{
+	repo, _, err := CreateRepo(context.Background(), db, "test", core.CreateRepoRequest{
 		Project:         "test",
 		LogicalName:     "repo",
 		CanonicalGitDir: "/repos/repo.git",
@@ -186,7 +187,7 @@ func TestListWorktrees(t *testing.T) {
 	}
 
 	// No worktrees yet.
-	worktrees, err := ListWorktrees(db, "")
+	worktrees, err := ListWorktrees(context.Background(), db, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,18 +195,18 @@ func TestListWorktrees(t *testing.T) {
 		t.Errorf("expected 0 worktrees, got %d", len(worktrees))
 	}
 
-	UpsertWorktree(db, repo.ID, core.CreateWorktreeRequest{
+	UpsertWorktree(context.Background(), db, repo.ID, core.CreateWorktreeRequest{
 		Repo:         repo.ID,
 		AbsolutePath: "/worktrees/wt-a",
 		Branch:       "main",
 	})
-	UpsertWorktree(db, repo.ID, core.CreateWorktreeRequest{
+	UpsertWorktree(context.Background(), db, repo.ID, core.CreateWorktreeRequest{
 		Repo:         repo.ID,
 		AbsolutePath: "/worktrees/wt-b",
 		Branch:       "feature",
 	})
 
-	worktrees, err = ListWorktrees(db, "")
+	worktrees, err = ListWorktrees(context.Background(), db, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,11 +219,11 @@ func TestListWorktreesByRepo(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	_, err := CreateProject(db, "test", "Test", "")
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	repo1, _, err := CreateRepo(db, "test", core.CreateRepoRequest{
+	repo1, _, err := CreateRepo(context.Background(), db, "test", core.CreateRepoRequest{
 		Project:         "test",
 		LogicalName:     "repo-1",
 		CanonicalGitDir: "/repos/repo-1.git",
@@ -230,7 +231,7 @@ func TestListWorktreesByRepo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	repo2, _, err := CreateRepo(db, "test", core.CreateRepoRequest{
+	repo2, _, err := CreateRepo(context.Background(), db, "test", core.CreateRepoRequest{
 		Project:         "test",
 		LogicalName:     "repo-2",
 		CanonicalGitDir: "/repos/repo-2.git",
@@ -239,16 +240,16 @@ func TestListWorktreesByRepo(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	UpsertWorktree(db, repo1.ID, core.CreateWorktreeRequest{
+	UpsertWorktree(context.Background(), db, repo1.ID, core.CreateWorktreeRequest{
 		Repo:         repo1.ID,
 		AbsolutePath: "/worktrees/repo1-wt",
 	})
-	UpsertWorktree(db, repo2.ID, core.CreateWorktreeRequest{
+	UpsertWorktree(context.Background(), db, repo2.ID, core.CreateWorktreeRequest{
 		Repo:         repo2.ID,
 		AbsolutePath: "/worktrees/repo2-wt",
 	})
 
-	worktrees, err := ListWorktrees(db, repo1.ID)
+	worktrees, err := ListWorktrees(context.Background(), db, repo1.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -261,11 +262,11 @@ func TestCreateWorktreeIsEphemeral(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	_, err := CreateProject(db, "test", "Test", "")
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	repo, _, err := CreateRepo(db, "test", core.CreateRepoRequest{
+	repo, _, err := CreateRepo(context.Background(), db, "test", core.CreateRepoRequest{
 		Project:         "test",
 		LogicalName:     "repo",
 		CanonicalGitDir: "/repos/repo.git",
@@ -274,7 +275,7 @@ func TestCreateWorktreeIsEphemeral(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	wt, _, err := UpsertWorktree(db, repo.ID, core.CreateWorktreeRequest{
+	wt, _, err := UpsertWorktree(context.Background(), db, repo.ID, core.CreateWorktreeRequest{
 		Repo:         repo.ID,
 		AbsolutePath: "/worktrees/ephemeral",
 		Branch:       "temp",

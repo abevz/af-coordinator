@@ -1,6 +1,7 @@
 package sqlite
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"time"
@@ -12,19 +13,19 @@ import (
 // UpsertWorktree creates or updates a worktree by absolute_path.
 // If a worktree with the given absolute_path already exists, it updates the
 // record and returns the existing ID. Otherwise it inserts a new row.
-func UpsertWorktree(db *sql.DB, repoID string, req core.CreateWorktreeRequest) (core.Worktree, bool, error) {
+func UpsertWorktree(ctx context.Context, db *sql.DB, repoID string, req core.CreateWorktreeRequest) (core.Worktree, bool, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
 
 	// Check if a worktree with this absolute_path already exists.
 	var existingID string
-	err := db.QueryRow(`SELECT id FROM worktrees WHERE absolute_path = ?`, req.AbsolutePath).Scan(&existingID)
+	err := db.QueryRowContext(ctx, `SELECT id FROM worktrees WHERE absolute_path = ?`, req.AbsolutePath).Scan(&existingID)
 	isNew := false
 
 	if err == sql.ErrNoRows {
 		// Insert new.
 		isNew = true
 		existingID = uuid.New().String()
-		_, err := db.Exec(
+		_, err := db.ExecContext(ctx,
 			`INSERT INTO worktrees (id, repository_id, absolute_path, branch, head_commit, remote_name, remote_branch, is_main, is_ephemeral, last_seen_at, created_at, updated_at)
 			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			existingID, repoID, req.AbsolutePath, req.Branch, req.HeadCommit,
@@ -38,7 +39,7 @@ func UpsertWorktree(db *sql.DB, repoID string, req core.CreateWorktreeRequest) (
 		return core.Worktree{}, false, fmt.Errorf("check existing worktree: %w", err)
 	} else {
 		// Update existing.
-		_, err := db.Exec(
+		_, err := db.ExecContext(ctx,
 			`UPDATE worktrees SET
 				repository_id = ?, branch = ?, head_commit = ?, remote_name = ?,
 				remote_branch = ?, is_main = ?, is_ephemeral = ?, last_seen_at = ?, updated_at = ?
@@ -53,7 +54,7 @@ func UpsertWorktree(db *sql.DB, repoID string, req core.CreateWorktreeRequest) (
 	}
 
 	// Read back the full row.
-	row := db.QueryRow(
+	row := db.QueryRowContext(ctx,
 		`SELECT id, repository_id, absolute_path, branch, head_commit, remote_name, remote_branch,
 		        is_main, is_ephemeral, last_seen_at, created_at, updated_at
 		 FROM worktrees WHERE id = ?`, existingID,
@@ -66,8 +67,8 @@ func UpsertWorktree(db *sql.DB, repoID string, req core.CreateWorktreeRequest) (
 }
 
 // GetWorktree retrieves a worktree by ID.
-func GetWorktree(db *sql.DB, id string) (core.Worktree, error) {
-	row := db.QueryRow(
+func GetWorktree(ctx context.Context, db *sql.DB, id string) (core.Worktree, error) {
+	row := db.QueryRowContext(ctx,
 		`SELECT id, repository_id, absolute_path, branch, head_commit, remote_name, remote_branch,
 		        is_main, is_ephemeral, last_seen_at, created_at, updated_at
 		 FROM worktrees WHERE id = ?`, id,
@@ -76,18 +77,18 @@ func GetWorktree(db *sql.DB, id string) (core.Worktree, error) {
 }
 
 // ListWorktrees lists worktrees, optionally filtered by repository ID.
-func ListWorktrees(db *sql.DB, repoID string) ([]core.Worktree, error) {
+func ListWorktrees(ctx context.Context, db *sql.DB, repoID string) ([]core.Worktree, error) {
 	var rows *sql.Rows
 	var err error
 
 	if repoID != "" {
-		rows, err = db.Query(
+		rows, err = db.QueryContext(ctx,
 			`SELECT id, repository_id, absolute_path, branch, head_commit, remote_name, remote_branch,
 			        is_main, is_ephemeral, last_seen_at, created_at, updated_at
 			 FROM worktrees WHERE repository_id = ? ORDER BY absolute_path`, repoID,
 		)
 	} else {
-		rows, err = db.Query(
+		rows, err = db.QueryContext(ctx,
 			`SELECT id, repository_id, absolute_path, branch, head_commit, remote_name, remote_branch,
 			        is_main, is_ephemeral, last_seen_at, created_at, updated_at
 			 FROM worktrees ORDER BY absolute_path`,
