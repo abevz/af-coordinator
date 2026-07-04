@@ -294,7 +294,7 @@ func truncate(s string, n int) string {
 }
 
 // printIssueDetailed displays a single issue with full details.
-func printIssueDetailed(i core.Issue, l *core.IssueLease, events []core.Event) {
+func printIssueDetailed(i core.Issue, l *core.IssueLease, events []core.Event, notes []core.Note) {
 	fmt.Printf("ID:            %s\n", i.ID)
 	fmt.Printf("Short ID:      %s\n", i.ShortID)
 	fmt.Printf("Status:        %s %s\n", statusSymbol(i.Status), i.Status)
@@ -335,7 +335,21 @@ func printIssueDetailed(i core.Issue, l *core.IssueLease, events []core.Event) {
 		fmt.Printf("\nHistory:\n")
 		for _, e := range events {
 			fmt.Printf("  [%s] %s by %s\n", e.CreatedAt, e.EventType, e.Actor)
-			if e.PayloadJSON != "" && e.PayloadJSON != "{}" {
+			
+			// If it's a note_added event, try to find and print the note body.
+			if e.EventType == "note_added" {
+				var noteBody string
+				for _, n := range notes {
+					// Correlate note with event by timestamp and actor
+					if n.CreatedAt == e.CreatedAt && n.Author == e.Actor {
+						noteBody = n.Body
+						break
+					}
+				}
+				if noteBody != "" {
+					fmt.Printf("    Note: %s\n", noteBody)
+				}
+			} else if e.PayloadJSON != "" && e.PayloadJSON != "{}" {
 				fmt.Printf("    %s\n", e.PayloadJSON)
 			}
 		}

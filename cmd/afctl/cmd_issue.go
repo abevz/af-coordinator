@@ -129,10 +129,16 @@ func runIssueGet(ctx context.Context, c *client.Client, args []string) error {
 		fail(err)
 	}
 
+	notes, err := c.ListNotes(ctx, issueID)
+	if err != nil {
+		fail(err)
+	}
+
 	if jsonOutput {
 		resp := map[string]any{
 			"issue":  issue,
 			"events": events,
+			"notes":  notes,
 		}
 		if lease != nil {
 			resp["lease"] = lease
@@ -140,7 +146,7 @@ func runIssueGet(ctx context.Context, c *client.Client, args []string) error {
 		json.NewEncoder(os.Stdout).Encode(resp)
 		return nil
 	}
-	printIssueDetailed(issue, lease, events)
+	printIssueDetailed(issue, lease, events, notes)
 	return nil
 }
 
