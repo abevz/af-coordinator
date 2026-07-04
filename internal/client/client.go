@@ -12,6 +12,16 @@ import (
 	"github.com/abevz/af-coordinator/internal/core"
 )
 
+// ClientError is a structured error returned when the daemon responds with an API error envelope.
+type ClientError struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+func (e *ClientError) Error() string {
+	return fmt.Sprintf("%s: %s", e.Code, e.Message)
+}
+
 // Client is an HTTP client that connects to the daemon over a Unix socket.
 type Client struct {
 	socketPath string
@@ -369,7 +379,7 @@ func (c *Client) doJSON(method, path string, body any, target any) error {
 	if resp.StatusCode >= 400 {
 		var errResp core.APIErrorResponse
 		if decodeErr := json.NewDecoder(resp.Body).Decode(&errResp); decodeErr == nil && errResp.Error.Code != "" {
-			return fmt.Errorf("api error: %s: %s", errResp.Error.Code, errResp.Error.Message)
+			return &ClientError{Code: errResp.Error.Code, Message: errResp.Error.Message}
 		}
 		return fmt.Errorf("unexpected status: %s", resp.Status)
 	}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -11,35 +12,59 @@ import (
 	"github.com/abevz/af-coordinator/internal/core"
 )
 
+var jsonOutput bool
+var defaultActor string
+
+func init() {
+	defaultActor = os.Getenv("AF_COORDINATOR_ACTOR")
+}
+
 func main() {
 	cfg := config.Default()
 
-	if len(os.Args) < 2 {
+	// Parse global flags (--json, --actor) from os.Args before command dispatch.
+	args := os.Args[1:]
+	var filtered []string
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--json":
+			jsonOutput = true
+		case "--actor":
+			if i+1 < len(args) {
+				defaultActor = args[i+1]
+				i++
+			}
+		default:
+			filtered = append(filtered, args[i])
+		}
+	}
+
+	if len(filtered) < 1 {
 		printUsage()
 		os.Exit(1)
 	}
 
 	c := client.New(cfg.SocketPath)
 
-	switch os.Args[1] {
+	switch filtered[0] {
 	case "health":
 		runHealth(c)
 	case "project":
-		runProject(c, os.Args[2:])
+		runProject(c, filtered[1:])
 	case "repo":
-		runRepo(c, os.Args[2:])
+		runRepo(c, filtered[1:])
 	case "worktree":
-		runWorktree(c, os.Args[2:])
+		runWorktree(c, filtered[1:])
 	case "artifact-root":
-		runArtifactRoot(c, os.Args[2:])
+		runArtifactRoot(c, filtered[1:])
 	case "artifact":
-		runArtifact(c, os.Args[2:])
+		runArtifact(c, filtered[1:])
 	case "issue":
-		runIssue(c, os.Args[2:])
+		runIssue(c, filtered[1:])
 	case "ls":
-		runLs(c, os.Args[2:])
+		runLs(c, filtered[1:])
 	case "show":
-		runShow(c, os.Args[2:])
+		runShow(c, filtered[1:])
 	default:
 		printUsage()
 		os.Exit(1)
@@ -47,7 +72,11 @@ func main() {
 }
 
 func printUsage() {
-	fmt.Fprintf(os.Stderr, `Usage: afctl <command>
+	fmt.Fprintf(os.Stderr, `Usage: afctl [--json] [--actor <name>] <command>
+
+Global flags:
+  --json                Output in JSON format (default: human-readable)
+  --actor <name>        Set the acting identity (default: AF_COORDINATOR_ACTOR env)
 
 Commands:
   health                Check daemon health
@@ -90,13 +119,78 @@ Commands:
 `)
 }
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+func fail(err error) {
+	var clientErr *client.ClientError
+	if errors.As(err, &clientErr) {
+		if jsonOutput {
+			resp := core.APIErrorResponse{Error: core.NewAPIError(clientErr.Code, clientErr.Message)}
+			json.NewEncoder(os.Stderr).Encode(resp)
+		} else {
+			fmt.Fprintf(os.Stderr, "error: %s: %s\n", clientErr.Code, clientErr.Message)
+		}
+		os.Exit(mapExitCode(clientErr.Code))
+	}
+	// Транспортная/не-API ошибка
+	if jsonOutput {
+		json.NewEncoder(os.Stderr).Encode(core.APIErrorResponse{
+			Error: core.NewAPIError("internal_error", err.Error()),
+		})
+	} else {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+	}
+	os.Exit(1)
+}
+
+func mapExitCode(code string) int {
+	switch code {
+	case core.ErrNotFound:
+		return 5
+	case core.ErrLeaseHeld:
+		return 3
+	case core.ErrLeaseExpired:
+		return 4
+	case core.ErrConflict:
+		return 2
+	case core.ErrDependencyCycle:
+		return 6
+	default:
+		return 1
+	}
+}
+
+func mapExitCodeErr(err error) int {
+	if err == nil {
+		return 0
+	}
+	var clientErr *client.ClientError
+	if errors.As(err, &clientErr) {
+		return mapExitCode(clientErr.Code)
+	}
+	return 1
+}
+
+func resolveActor(flagVal string) (string, error) {
+	if flagVal != "" {
+		return flagVal, nil
+	}
+	if defaultActor != "" {
+		return defaultActor, nil
+	}
+	return "", fmt.Errorf("actor is required: set --actor flag or AF_COORDINATOR_ACTOR environment variable")
+}
+
 // ─── Health ──────────────────────────────────────────────────────────────────
 
 func runHealth(c *client.Client) {
 	health, err := c.Health()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+		fail(err)
+	}
+	if jsonOutput {
+		json.NewEncoder(os.Stdout).Encode(health)
+		return
 	}
 	fmt.Printf("Name:       %s\n", health.Name)
 	fmt.Printf("Status:     %s\n", health.Status)
@@ -153,8 +247,11 @@ func runProjectAdd(c *client.Client, args []string) {
 
 	project, err := c.CreateProject(key, name, description)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+		fail(err)
+	}
+	if jsonOutput {
+		json.NewEncoder(os.Stdout).Encode(project)
+		return
 	}
 	printProject(project)
 }
@@ -162,8 +259,11 @@ func runProjectAdd(c *client.Client, args []string) {
 func runProjectList(c *client.Client) {
 	projects, err := c.ListProjects()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+		fail(err)
+	}
+	if jsonOutput {
+		json.NewEncoder(os.Stdout).Encode(projects)
+		return
 	}
 	if len(projects) == 0 {
 		fmt.Println("No projects found.")
@@ -246,8 +346,14 @@ func runRepoAdd(c *client.Client, args []string) {
 
 	repo, remotes, err := c.CreateRepo(req)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+		fail(err)
+	}
+	if jsonOutput {
+		json.NewEncoder(os.Stdout).Encode(map[string]any{
+			"repository": repo,
+			"remotes":    remotes,
+		})
+		return
 	}
 	fmt.Printf("Repository ID: %s\n", repo.ID)
 	fmt.Printf("Project ID:    %s\n", repo.ProjectID)
@@ -277,8 +383,11 @@ func runRepoList(c *client.Client, args []string) {
 
 	repos, err := c.ListRepos(project)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+		fail(err)
+	}
+	if jsonOutput {
+		json.NewEncoder(os.Stdout).Encode(repos)
+		return
 	}
 	if len(repos) == 0 {
 		fmt.Println("No repositories found.")
@@ -361,8 +470,11 @@ func runWorktreeRegister(c *client.Client, args []string) {
 
 	wt, err := c.RegisterWorktree(req)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+		fail(err)
+	}
+	if jsonOutput {
+		json.NewEncoder(os.Stdout).Encode(wt)
+		return
 	}
 	printWorktree(wt)
 }
@@ -377,8 +489,11 @@ func runWorktreeList(c *client.Client, args []string) {
 
 	worktrees, err := c.ListWorktrees(repo)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+		fail(err)
+	}
+	if jsonOutput {
+		json.NewEncoder(os.Stdout).Encode(worktrees)
+		return
 	}
 	if len(worktrees) == 0 {
 		fmt.Println("No worktrees found.")
@@ -441,8 +556,11 @@ func runArtifactRootAdd(c *client.Client, args []string) {
 
 	root, err := c.CreateArtifactRoot(req)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+		fail(err)
+	}
+	if jsonOutput {
+		json.NewEncoder(os.Stdout).Encode(root)
+		return
 	}
 	printArtifactRoot(root)
 }
@@ -457,8 +575,11 @@ func runArtifactRootList(c *client.Client, args []string) {
 
 	roots, err := c.ListArtifactRoots(repo)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+		fail(err)
+	}
+	if jsonOutput {
+		json.NewEncoder(os.Stdout).Encode(roots)
+		return
 	}
 	if len(roots) == 0 {
 		fmt.Println("No artifact roots found.")
@@ -555,8 +676,11 @@ func runArtifactRegister(c *client.Client, args []string) {
 
 	artifact, err := c.CreateArtifact(req)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+		fail(err)
+	}
+	if jsonOutput {
+		json.NewEncoder(os.Stdout).Encode(artifact)
+		return
 	}
 	printArtifact(artifact)
 }
@@ -571,8 +695,11 @@ func runArtifactList(c *client.Client, args []string) {
 
 	artifacts, err := c.ListArtifacts(repo)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+		fail(err)
+	}
+	if jsonOutput {
+		json.NewEncoder(os.Stdout).Encode(artifacts)
+		return
 	}
 	if len(artifacts) == 0 {
 		fmt.Println("No artifacts found.")
@@ -711,8 +838,11 @@ func runIssueCreate(c *client.Client, args []string) {
 
 	issue, err := c.CreateIssue(req)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+		fail(err)
+	}
+	if jsonOutput {
+		json.NewEncoder(os.Stdout).Encode(issue)
+		return
 	}
 	printIssue(issue)
 }
@@ -726,8 +856,17 @@ func runIssueGet(c *client.Client, args []string) {
 	issueID := args[0]
 	issue, lease, err := c.GetIssue(issueID)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+		fail(err)
+	}
+	if jsonOutput {
+		resp := map[string]any{
+			"issue": issue,
+		}
+		if lease != nil {
+			resp["lease"] = lease
+		}
+		json.NewEncoder(os.Stdout).Encode(resp)
+		return
 	}
 	printIssueDetailed(issue, lease)
 }
@@ -787,8 +926,11 @@ func runIssueList(c *client.Client, args []string) {
 
 	issues, err := c.ListIssues(project, repo, worktree, status, assignee)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+		fail(err)
+	}
+	if jsonOutput {
+		json.NewEncoder(os.Stdout).Encode(issues)
+		return
 	}
 	if len(issues) == 0 {
 		fmt.Println("No issues found.")
@@ -807,8 +949,11 @@ func runIssueReady(c *client.Client, args []string) {
 
 	issues, err := c.ListReadyIssues(project)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+		fail(err)
+	}
+	if jsonOutput {
+		json.NewEncoder(os.Stdout).Encode(issues)
+		return
 	}
 	if len(issues) == 0 {
 		fmt.Println("No ready issues found.")
@@ -819,7 +964,7 @@ func runIssueReady(c *client.Client, args []string) {
 
 func runIssueClaim(c *client.Client, args []string) {
 	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "Usage: afctl issue claim <issue-id> --holder <name> [--ttl <seconds>]")
+		fmt.Fprintln(os.Stderr, "Usage: afctl issue claim <issue-id> [--holder <name>|--actor <name>] [--ttl <seconds>]")
 		os.Exit(1)
 	}
 
@@ -829,7 +974,7 @@ func runIssueClaim(c *client.Client, args []string) {
 
 	for i := 1; i < len(args); i++ {
 		switch args[i] {
-		case "--holder":
+		case "--holder", "--actor":
 			if i+1 < len(args) {
 				holder = args[i+1]
 				i++
@@ -842,15 +987,20 @@ func runIssueClaim(c *client.Client, args []string) {
 		}
 	}
 
-	if holder == "" {
-		fmt.Fprintln(os.Stderr, "error: --holder is required")
+	var err error
+	holder, err = resolveActor(holder)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 
 	resp, err := c.ClaimIssue(issueID, holder, ttl)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+		fail(err)
+	}
+	if jsonOutput {
+		json.NewEncoder(os.Stdout).Encode(resp)
+		return
 	}
 	fmt.Printf("Lease Token: %s\n", resp.LeaseToken)
 	fmt.Printf("Expires At:  %s\n", resp.ExpiresAt)
@@ -888,8 +1038,11 @@ func runIssueHeartbeat(c *client.Client, args []string) {
 
 	expiresAt, err := c.HeartbeatLease(issueID, leaseToken, ttl)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+		fail(err)
+	}
+	if jsonOutput {
+		json.NewEncoder(os.Stdout).Encode(map[string]string{"expires_at": expiresAt})
+		return
 	}
 	fmt.Printf("Expires At: %s\n", expiresAt)
 }
@@ -919,8 +1072,11 @@ func runIssueRelease(c *client.Client, args []string) {
 	}
 
 	if err := c.ReleaseLease(issueID, leaseToken); err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+		fail(err)
+	}
+	if jsonOutput {
+		fmt.Println(`{"status":"ok"}`)
+		return
 	}
 	fmt.Println("Lease released.")
 }
@@ -982,8 +1138,11 @@ func runIssueUpdate(c *client.Client, args []string) {
 
 	issue, err := c.UpdateIssue(issueID, req)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+		fail(err)
+	}
+	if jsonOutput {
+		json.NewEncoder(os.Stdout).Encode(issue)
+		return
 	}
 	printIssue(issue)
 }
@@ -1032,8 +1191,11 @@ func runIssueClose(c *client.Client, args []string) {
 	}
 
 	if err := c.CloseIssue(issueID, req); err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+		fail(err)
+	}
+	if jsonOutput {
+		fmt.Println(`{"status":"ok"}`)
+		return
 	}
 	fmt.Println("Issue closed.")
 }
@@ -1068,8 +1230,11 @@ func runIssueLink(c *client.Client, args []string) {
 	}
 
 	if err := c.LinkArtifact(issueID, req); err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+		fail(err)
+	}
+	if jsonOutput {
+		fmt.Println(`{"status":"ok"}`)
+		return
 	}
 	fmt.Println("Artifact linked.")
 }
@@ -1121,8 +1286,11 @@ func runIssueDependencyAdd(c *client.Client, args []string) {
 	}
 
 	if err := c.AddDependency(issueID, req); err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+		fail(err)
+	}
+	if jsonOutput {
+		fmt.Println(`{"status":"ok"}`)
+		return
 	}
 	fmt.Println("Dependency added.")
 }
@@ -1158,8 +1326,11 @@ func runIssueDependencyRemove(c *client.Client, args []string) {
 	}
 
 	if err := c.RemoveDependency(issueID, dependsOn, kind); err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+		fail(err)
+	}
+	if jsonOutput {
+		fmt.Println(`{"status":"ok"}`)
+		return
 	}
 	fmt.Println("Dependency removed.")
 }
@@ -1185,7 +1356,7 @@ func runIssueNote(c *client.Client, args []string) {
 
 func runIssueNoteAdd(c *client.Client, args []string) {
 	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "Usage: afctl issue note add <issue-id> --author <name> --body <text>")
+		fmt.Fprintln(os.Stderr, "Usage: afctl issue note add <issue-id> [--author <name>|--actor <name>] --body <text>")
 		os.Exit(1)
 	}
 
@@ -1195,7 +1366,7 @@ func runIssueNoteAdd(c *client.Client, args []string) {
 
 	for i := 1; i < len(args); i++ {
 		switch args[i] {
-		case "--author":
+		case "--author", "--actor":
 			if i+1 < len(args) {
 				author = args[i+1]
 				i++
@@ -1208,8 +1379,10 @@ func runIssueNoteAdd(c *client.Client, args []string) {
 		}
 	}
 
-	if author == "" {
-		fmt.Fprintln(os.Stderr, "error: --author is required")
+	var err error
+	author, err = resolveActor(author)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 	if body == "" {
@@ -1219,8 +1392,11 @@ func runIssueNoteAdd(c *client.Client, args []string) {
 
 	note, err := c.CreateNote(issueID, author, body)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+		fail(err)
+	}
+	if jsonOutput {
+		json.NewEncoder(os.Stdout).Encode(note)
+		return
 	}
 	fmt.Printf("Note ID:    %s\n", note.ID)
 	fmt.Printf("Issue ID:   %s\n", note.IssueID)
@@ -1239,8 +1415,11 @@ func runIssueNoteList(c *client.Client, args []string) {
 
 	notes, err := c.ListNotes(issueID)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+		fail(err)
+	}
+	if jsonOutput {
+		json.NewEncoder(os.Stdout).Encode(notes)
+		return
 	}
 	if len(notes) == 0 {
 		fmt.Println("No notes found.")
@@ -1281,8 +1460,11 @@ func runIssueEventsList(c *client.Client, args []string) {
 
 	events, err := c.ListEvents(issueID)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+		fail(err)
+	}
+	if jsonOutput {
+		json.NewEncoder(os.Stdout).Encode(events)
+		return
 	}
 	if len(events) == 0 {
 		fmt.Println("No events found.")
