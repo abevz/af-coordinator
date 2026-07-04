@@ -9,7 +9,7 @@ Numbering continues the global AFC-SDD sequence.
       (`utils`) in addition to UUID — `GetRepo` now queries both `id`
       and `logical_name`
       Files: internal/store/sqlite/repos.go
-- [ ] AFC-SDD-0025 Register utils project, repository, and worktree in
+- [x] AFC-SDD-0025 Register utils project, repository, and worktree in
       af-coordinator
   - `afctl project add --key utils --name "Utils repo"`
   - `afctl repo add --project utils --logical-name utils --canonical-git-dir /home/abevz/github/utils`
