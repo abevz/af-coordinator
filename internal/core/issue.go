@@ -32,22 +32,24 @@ type Event struct {
 
 // Issue represents a task or work item in a project.
 type Issue struct {
-	ID           string `json:"id"`
-	ShortID      string `json:"short_id"`
-	ProjectID    string `json:"project_id"`
-	RepositoryID string `json:"repository_id,omitempty"`
-	WorktreeID   string `json:"worktree_id,omitempty"`
-	ScopeKind    string `json:"scope_kind"`
-	Title        string `json:"title"`
-	Description  string `json:"description,omitempty"`
-	Status       string `json:"status"`
-	Priority     int    `json:"priority"`
-	Assignee     string `json:"assignee,omitempty"`
-	Version      int    `json:"version"`
-	ClaimedAt    string `json:"claimed_at,omitempty"`
-	ClosedAt     string `json:"closed_at,omitempty"`
-	CreatedAt    string `json:"created_at"`
-	UpdatedAt    string `json:"updated_at"`
+	ID             string `json:"id"`
+	ShortID        string `json:"short_id"`
+	ProjectID      string `json:"project_id"`
+	RepositoryID   string `json:"repository_id,omitempty"`
+	WorktreeID     string `json:"worktree_id,omitempty"`
+	ScopeKind      string `json:"scope_kind"`
+	Title          string `json:"title"`
+	Description    string `json:"description,omitempty"`
+	Status         string `json:"status"`
+	Priority       int    `json:"priority"`
+	Assignee       string `json:"assignee,omitempty"`
+	Version        int    `json:"version"`
+	ClaimedAt      string `json:"claimed_at,omitempty"`
+	Holder         string `json:"holder,omitempty"`
+	LeaseExpiresAt string `json:"lease_expires_at,omitempty"`
+	ClosedAt       string `json:"closed_at,omitempty"`
+	CreatedAt      string `json:"created_at"`
+	UpdatedAt      string `json:"updated_at"`
 }
 
 // IssueLease represents the current lease on an issue (included in responses).

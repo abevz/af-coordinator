@@ -796,6 +796,80 @@ func TestListIssues(t *testing.T) {
 	}
 }
 
+func TestListIssuesShowsHolder(t *testing.T) {
+	server, db := newTestServer(t)
+
+	// Create project and an issue.
+	now := time.Now().UTC().Format(time.RFC3339)
+	_, err := db.Exec(
+		`INSERT INTO projects (id, key, name, description, next_issue_seq, created_at, updated_at)
+		 VALUES ('proj-1', 'test', 'Test', '', 1, ?, ?)`,
+		now, now,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	issueID := "issue-1"
+	_, err = db.Exec(
+		`INSERT INTO issues (id, short_id, project_id, scope_kind, title, description, status, priority, assignee, version, created_at, updated_at)
+		 VALUES (?, 'test-1', 'proj-1', 'project', 'Claimed', '', 'open', 3, '', 1, ?, ?)`,
+		issueID, now, now,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Claim the issue via the API.
+	body := `{"holder":"agent-99","ttl_seconds":3600}`
+	req, err := http.NewRequest("POST", server.URL+"/v1/issues/"+issueID+"/claim", strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 on claim, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// List issues — the holder should appear in the response.
+	resp, err = http.Get(server.URL + "/v1/issues?project=test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Issues []struct {
+			ID             string `json:"id"`
+			Holder         string `json:"holder"`
+			LeaseExpiresAt string `json:"lease_expires_at"`
+		} `json:"issues"`
+	}
+	result = decodeJSON[struct {
+		Issues []struct {
+			ID             string `json:"id"`
+			Holder         string `json:"holder"`
+			LeaseExpiresAt string `json:"lease_expires_at"`
+		} `json:"issues"`
+	}](t, resp)
+
+	if len(result.Issues) != 1 {
+		t.Fatalf("expected 1 issue, got %d", len(result.Issues))
+	}
+	if result.Issues[0].Holder != "agent-99" {
+		t.Errorf("expected holder 'agent-99', got %q", result.Issues[0].Holder)
+	}
+	if result.Issues[0].LeaseExpiresAt == "" {
+		t.Error("expected non-empty lease_expires_at")
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Health
 // ---------------------------------------------------------------------------

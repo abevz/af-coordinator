@@ -213,6 +213,98 @@ func TestListIssuesFilterByStatus(t *testing.T) {
 	}
 }
 
+func TestListIssuesShowsHolder(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create an issue and claim it.
+	issue, err := CreateIssue(db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Claimed issue"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = ClaimIssue(db, issue.ID, "agent-42", 3600)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// ListIssues should include the holder in the result.
+	issues, err := ListIssues(db, core.IssueListParams{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(issues) == 0 {
+		t.Fatal("expected at least 1 issue")
+	}
+
+	var found bool
+	for _, iss := range issues {
+		if iss.ID == issue.ID {
+			found = true
+			if iss.Holder != "agent-42" {
+				t.Errorf("expected holder 'agent-42', got %q", iss.Holder)
+			}
+			if iss.LeaseExpiresAt == "" {
+				t.Error("expected non-empty lease_expires_at")
+			}
+			break
+		}
+	}
+	if !found {
+		t.Error("claimed issue not found in list results")
+	}
+}
+
+func TestListIssuesExpiredLeaseShowsEmptyHolder(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	issue, err := CreateIssue(db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Expired lease issue"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Claim with a 1-second TTL, then wait for expiry.
+	_, err = ClaimIssue(db, issue.ID, "agent-expired", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(2 * time.Second)
+
+	// ListIssues — the expired lease should not appear (lazy-expiry rule).
+	issues, err := ListIssues(db, core.IssueListParams{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var found bool
+	for _, iss := range issues {
+		if iss.ID == issue.ID {
+			found = true
+			if iss.Holder != "" {
+				t.Errorf("expected empty holder for expired lease, got %q", iss.Holder)
+			}
+			if iss.LeaseExpiresAt != "" {
+				t.Errorf("expected empty lease_expires_at for expired lease, got %q", iss.LeaseExpiresAt)
+			}
+			break
+		}
+	}
+	if !found {
+		t.Error("issue not found in list results after lease expiry")
+	}
+}
+
 func TestClaimIssue(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)

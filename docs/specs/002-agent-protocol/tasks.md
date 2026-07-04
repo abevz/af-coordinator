@@ -48,7 +48,7 @@ Numbering continues the global AFC-SDD sequence.
     json mode: add `"dry_run": true`
   - regression test: dry-run output differs from real output AND leaves
     the file untouched (assert file bytes unchanged)
-- [ ] AFC-SDD-0035 Show active lease holder in issue lists
+- [x] AFC-SDD-0035 Show active lease holder in issue lists
   - found by operator: `afctl issue list` renders an ASSIGNEE column
     (advisory, almost always empty) but not the lease holder — the one
     thing you actually want to know about an in_progress issue

@@ -1505,6 +1505,9 @@ func printIssue(i core.Issue) {
 	if i.Assignee != "" {
 		fmt.Printf("Assignee:     %s\n", i.Assignee)
 	}
+	if i.Holder != "" {
+		fmt.Printf("Holder:       %s\n", i.Holder)
+	}
 	fmt.Printf("Version:      %d\n", i.Version)
 	if i.ClaimedAt != "" {
 		fmt.Printf("Claimed At:   %s\n", i.ClaimedAt)
@@ -1572,14 +1575,15 @@ func printIssueDetailed(i core.Issue, l *core.IssueLease) {
 
 // printIssuesTable displays a list of issues in a fixed-width table format.
 func printIssuesTable(issues []core.Issue) {
-	fmt.Printf("%-10s %-12s %-12s %-50s %-12s\n", "ID", "SHORT", "STATUS", "TITLE", "ASSIGNEE")
-	fmt.Printf("%-10s %-12s %-12s %-50s %-12s\n", "---", "-----", "------", "-----", "-------")
+	fmt.Printf("%-10s %-12s %-12s %-50s %-12s %-12s\n", "ID", "SHORT", "STATUS", "TITLE", "ASSIGNEE", "CLAIMED")
+	fmt.Printf("%-10s %-12s %-12s %-50s %-12s %-12s\n", "---", "-----", "------", "-----", "-------", "-------")
 	for _, i := range issues {
 		id := truncate(i.ID, 11) // 8 chars + "..."
 		title := truncate(i.Title, 50)
 		status := statusSymbol(i.Status) + " " + i.Status
 		assignee := truncate(i.Assignee, 12)
-		fmt.Printf("%-10s %-12s %-12s %-50s %-12s\n", id, i.ShortID, status, title, assignee)
+		claimed := truncate(i.Holder, 12)
+		fmt.Printf("%-10s %-12s %-12s %-50s %-12s %-12s\n", id, i.ShortID, status, title, assignee, claimed)
 	}
 }
 
