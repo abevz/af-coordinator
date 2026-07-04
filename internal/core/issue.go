@@ -68,6 +68,7 @@ type CreateIssueRequest struct {
 	Title       string `json:"title"`
 	Description string `json:"description,omitempty"`
 	Priority    int    `json:"priority,omitempty"`
+	Actor       string `json:"actor,omitempty"`
 }
 
 // IssueListParams represents query params for GET /v1/issues.
@@ -111,6 +112,7 @@ type UpdateIssueRequest struct {
 	Status          string `json:"status,omitempty"`
 	ExpectedVersion int    `json:"expected_version"`
 	LeaseToken      string `json:"lease_token,omitempty"`
+	Actor           string `json:"actor,omitempty"`
 }
 
 // CloseIssueRequest is the JSON body for POST /v1/issues/{issue_id}/close.
@@ -118,18 +120,21 @@ type CloseIssueRequest struct {
 	Resolution      string `json:"resolution"`
 	ExpectedVersion int    `json:"expected_version"`
 	LeaseToken      string `json:"lease_token"`
+	Actor           string `json:"actor,omitempty"`
 }
 
 // AddDependencyRequest is the JSON body for POST /v1/issues/{issue_id}/dependencies.
 type AddDependencyRequest struct {
 	DependsOn string `json:"depends_on"`
 	Kind      string `json:"kind"`
+	Actor     string `json:"actor,omitempty"`
 }
 
 // RemoveDependencyRequest holds the path and query params for DELETE /v1/issues/{issue_id}/dependencies/{depends_on}.
 type RemoveDependencyRequest struct {
 	DependsOn string
 	Kind      string
+	Actor     string
 }
 
 // LinkArtifactRequest is the JSON body for POST /v1/issues/{issue_id}/links.

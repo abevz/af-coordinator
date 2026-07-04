@@ -23,6 +23,11 @@ func handleCreateIssue(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 			return
 		}
 
+		if req.Actor == "" {
+			writeError(w, http.StatusBadRequest, core.ErrValidationFailed, "actor is required")
+			return
+		}
+
 		issue, err := sqlite.CreateIssue(db, req.Project, req)
 		if err != nil {
 			if apiErr, ok := errAsAPIError(err); ok {
@@ -45,16 +50,30 @@ func handleCreateIssue(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 	}
 }
 
+// resolveIssueID resolves the issue_id path parameter (supports both UUID and short_id)
+// and writes an error response if the issue is not found. Returns the UUID id and true on success.
+func resolveIssueID(db *sql.DB, w http.ResponseWriter, r *http.Request) (string, bool) {
+	id, err := sqlite.ResolveIssueID(db, r.PathValue("issue_id"))
+	if err != nil {
+		if apiErr, ok := errAsAPIError(err); ok && apiErr.Code == core.ErrNotFound {
+			writeError(w, http.StatusNotFound, core.ErrNotFound, err.Error())
+		} else {
+			writeError(w, http.StatusInternalServerError, "internal_error", "failed to resolve issue")
+		}
+		return "", false
+	}
+	return id, true
+}
+
 func handleGetIssue(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		issueID := r.PathValue("issue_id")
+		issueID, ok := resolveIssueID(db, w, r)
+		if !ok {
+			return
+		}
 
 		issue, lease, err := sqlite.GetIssue(db, issueID)
 		if err != nil {
-			if apiErr, ok := errAsAPIError(err); ok && apiErr.Code == core.ErrNotFound {
-				writeError(w, http.StatusNotFound, core.ErrNotFound, "issue not found: "+issueID)
-				return
-			}
 			logger.Error("failed to get issue", "issue_id", issueID, "error", err)
 			writeError(w, http.StatusInternalServerError, "internal_error", "failed to get issue")
 			return
@@ -98,7 +117,10 @@ func handleListIssues(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 
 func handleClaimIssue(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		issueID := r.PathValue("issue_id")
+		issueID, ok := resolveIssueID(db, w, r)
+		if !ok {
+			return
+		}
 
 		var req core.ClaimRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -137,7 +159,10 @@ func handleClaimIssue(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 
 func handleHeartbeatLease(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		issueID := r.PathValue("issue_id")
+		issueID, ok := resolveIssueID(db, w, r)
+		if !ok {
+			return
+		}
 
 		var req core.HeartbeatRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -176,7 +201,10 @@ func handleHeartbeatLease(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 
 func handleReleaseLease(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		issueID := r.PathValue("issue_id")
+		issueID, ok := resolveIssueID(db, w, r)
+		if !ok {
+			return
+		}
 
 		var req core.ReleaseRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -244,11 +272,19 @@ func handleListReadyIssues(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 
 func handleUpdateIssue(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		issueID := r.PathValue("issue_id")
+		issueID, ok := resolveIssueID(db, w, r)
+		if !ok {
+			return
+		}
 
 		var req core.UpdateIssueRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeError(w, http.StatusBadRequest, core.ErrValidationFailed, "invalid JSON body")
+			return
+		}
+
+		if req.Actor == "" {
+			writeError(w, http.StatusBadRequest, core.ErrValidationFailed, "actor is required")
 			return
 		}
 
@@ -281,11 +317,19 @@ func handleUpdateIssue(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 
 func handleCloseIssue(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		issueID := r.PathValue("issue_id")
+		issueID, ok := resolveIssueID(db, w, r)
+		if !ok {
+			return
+		}
 
 		var req core.CloseIssueRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeError(w, http.StatusBadRequest, core.ErrValidationFailed, "invalid JSON body")
+			return
+		}
+
+		if req.Actor == "" {
+			writeError(w, http.StatusBadRequest, core.ErrValidationFailed, "actor is required")
 			return
 		}
 
@@ -318,7 +362,10 @@ func handleCloseIssue(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 
 func handleAddDependency(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		issueID := r.PathValue("issue_id")
+		issueID, ok := resolveIssueID(db, w, r)
+		if !ok {
+			return
+		}
 
 		var req core.AddDependencyRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -332,6 +379,11 @@ func handleAddDependency(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 		}
 		if req.Kind == "" {
 			req.Kind = "blocks"
+		}
+
+		if req.Actor == "" {
+			writeError(w, http.StatusBadRequest, core.ErrValidationFailed, "actor is required")
+			return
 		}
 
 		err := sqlite.AddDependency(db, issueID, req)
@@ -360,14 +412,19 @@ func handleAddDependency(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 
 func handleRemoveDependency(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		issueID := r.PathValue("issue_id")
+		issueID, ok := resolveIssueID(db, w, r)
+		if !ok {
+			return
+		}
 		dependsOn := r.PathValue("depends_on")
 		kind := r.URL.Query().Get("kind")
 		if kind == "" {
 			kind = "blocks"
 		}
 
-		err := sqlite.RemoveDependency(db, issueID, dependsOn, kind)
+		actor := r.URL.Query().Get("actor")
+
+		err := sqlite.RemoveDependency(db, issueID, dependsOn, kind, actor)
 		if err != nil {
 			if apiErr, ok := errAsAPIError(err); ok && apiErr.Code == core.ErrNotFound {
 				writeError(w, http.StatusNotFound, core.ErrNotFound, apiErr.Message)
@@ -420,7 +477,10 @@ func handleLinkArtifact(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 
 func handleCreateNote(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		issueID := r.PathValue("issue_id")
+		issueID, ok := resolveIssueID(db, w, r)
+		if !ok {
+			return
+		}
 
 		var req core.CreateNoteRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -454,7 +514,10 @@ func handleCreateNote(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 
 func handleListNotes(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		issueID := r.PathValue("issue_id")
+		issueID, ok := resolveIssueID(db, w, r)
+		if !ok {
+			return
+		}
 
 		notes, err := sqlite.ListNotes(db, issueID)
 		if err != nil {
@@ -473,7 +536,10 @@ func handleListNotes(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 
 func handleListEvents(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		issueID := r.PathValue("issue_id")
+		issueID, ok := resolveIssueID(db, w, r)
+		if !ok {
+			return
+		}
 
 		events, err := sqlite.ListEvents(db, issueID)
 		if err != nil {

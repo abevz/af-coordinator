@@ -3,7 +3,6 @@ package sqlite
 import (
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -84,7 +83,7 @@ func CreateIssue(db *sql.DB, projectKey string, req core.CreateIssueRequest) (co
 	_, err = tx.Exec(
 		`INSERT INTO events (id, issue_id, actor, event_type, payload_json, created_at)
 		 VALUES (?, ?, ?, ?, ?, ?)`,
-		uuid.New().String(), id, "unknown", "issue_created", eventPayload, now,
+		uuid.New().String(), id, req.Actor, "issue_created", eventPayload, now,
 	)
 	if err != nil {
 		return core.Issue{}, fmt.Errorf("insert event: %w", err)
@@ -98,11 +97,34 @@ func CreateIssue(db *sql.DB, projectKey string, req core.CreateIssueRequest) (co
 		req.Title, req.Description, status, priority, "", 1, "", "", "", "", now, now), nil
 }
 
-// GetIssue retrieves an issue by ID or short_id, along with its optional active lease.
+// ResolveIssueID resolves an issue by either its UUID id or short_id, returning the UUID id.
+func ResolveIssueID(db *sql.DB, idOrShortID string) (string, error) {
+	// Try by primary key first.
+	var id string
+	err := db.QueryRow(`SELECT id FROM issues WHERE id = ?`, idOrShortID).Scan(&id)
+	if err == nil {
+		return id, nil
+	}
+	if err != sql.ErrNoRows {
+		return "", fmt.Errorf("resolve issue by id: %w", err)
+	}
+
+	// Fall back to short_id.
+	err = db.QueryRow(`SELECT id FROM issues WHERE short_id = ?`, idOrShortID).Scan(&id)
+	if err == sql.ErrNoRows {
+		return "", core.NewAPIError(core.ErrNotFound, "issue not found: "+idOrShortID)
+	}
+	if err != nil {
+		return "", fmt.Errorf("resolve issue by short_id: %w", err)
+	}
+	return id, nil
+}
+
+// GetIssue retrieves an issue by ID (UUID), along with its optional active lease.
+// Callers should use ResolveIssueID first to resolve short_id to UUID.
 func GetIssue(db *sql.DB, id string) (core.Issue, *core.IssueLease, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
 
-	// Try by primary key first.
 	row := db.QueryRow(
 		`SELECT i.id, i.short_id, i.project_id, i.repository_id, i.worktree_id, i.scope_kind,
 		        i.title, i.description, i.status, i.priority, i.assignee, i.version,
@@ -114,25 +136,7 @@ func GetIssue(db *sql.DB, id string) (core.Issue, *core.IssueLease, error) {
 	)
 	issue, err := scanIssue(row)
 	if err != nil {
-		// If not found by id, try by short_id.
-		var apiErr core.APIError
-		if errors.As(err, &apiErr) && apiErr.Code == core.ErrNotFound {
-			row2 := db.QueryRow(
-				`SELECT i.id, i.short_id, i.project_id, i.repository_id, i.worktree_id, i.scope_kind,
-				        i.title, i.description, i.status, i.priority, i.assignee, i.version,
-				        i.claimed_at, i.closed_at, i.created_at, i.updated_at,
-				        COALESCE(l.holder, ''), COALESCE(l.expires_at, '')
-				 FROM issues i
-				 LEFT JOIN leases l ON l.issue_id = i.id AND l.expires_at > ?
-				 WHERE i.short_id = ?`, now, id,
-			)
-			issue, err = scanIssue(row2)
-			if err != nil {
-				return core.Issue{}, nil, err
-			}
-		} else {
-			return core.Issue{}, nil, err
-		}
+		return core.Issue{}, nil, err
 	}
 
 	// Look up the lease (separate query for token/expiry detail).
@@ -592,7 +596,7 @@ func UpdateIssue(db *sql.DB, issueID string, req core.UpdateIssueRequest) (core.
 	_, err = tx.Exec(
 		`INSERT INTO events (id, issue_id, actor, event_type, payload_json, created_at)
 		 VALUES (?, ?, ?, ?, ?, ?)`,
-		uuid.New().String(), issueID, "unknown", "issue_updated", string(payloadBytes), now,
+		uuid.New().String(), issueID, req.Actor, "issue_updated", string(payloadBytes), now,
 	)
 	if err != nil {
 		return core.Issue{}, fmt.Errorf("insert event: %w", err)
@@ -680,7 +684,7 @@ func CloseIssue(db *sql.DB, issueID string, req core.CloseIssueRequest) error {
 	_, err = tx.Exec(
 		`INSERT INTO events (id, issue_id, actor, event_type, payload_json, created_at)
 		 VALUES (?, ?, ?, ?, ?, ?)`,
-		uuid.New().String(), issueID, "unknown", "issue_closed", payload, now,
+		uuid.New().String(), issueID, req.Actor, "issue_closed", payload, now,
 	)
 	if err != nil {
 		return fmt.Errorf("insert event: %w", err)
@@ -737,7 +741,7 @@ func AddDependency(db *sql.DB, issueID string, req core.AddDependencyRequest) er
 	_, err = tx.Exec(
 		`INSERT INTO events (id, issue_id, actor, event_type, payload_json, created_at)
 		 VALUES (?, ?, ?, ?, ?, ?)`,
-		uuid.New().String(), issueID, "unknown", "dependency_added",
+		uuid.New().String(), issueID, req.Actor, "dependency_added",
 		fmt.Sprintf(`{"depends_on":"%s","kind":"%s"}`, req.DependsOn, kind), now,
 	)
 	if err != nil {
@@ -752,7 +756,7 @@ func AddDependency(db *sql.DB, issueID string, req core.AddDependencyRequest) er
 }
 
 // RemoveDependency removes a dependency record.
-func RemoveDependency(db *sql.DB, issueID, dependsOn, kind string) error {
+func RemoveDependency(db *sql.DB, issueID, dependsOn, kind, actor string) error {
 	if kind == "" {
 		kind = "blocks"
 	}
@@ -785,7 +789,7 @@ func RemoveDependency(db *sql.DB, issueID, dependsOn, kind string) error {
 	_, err = tx.Exec(
 		`INSERT INTO events (id, issue_id, actor, event_type, payload_json, created_at)
 		 VALUES (?, ?, ?, ?, ?, ?)`,
-		uuid.New().String(), issueID, "unknown", "dependency_removed",
+		uuid.New().String(), issueID, actor, "dependency_removed",
 		fmt.Sprintf(`{"depends_on":"%s","kind":"%s"}`, dependsOn, kind), now,
 	)
 	if err != nil {
