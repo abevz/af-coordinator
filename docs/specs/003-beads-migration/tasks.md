@@ -23,7 +23,7 @@ Numbering continues the global AFC-SDD sequence.
 - [ ] AFC-SDD-0029 Write review.md with migration outcome and acceptance
       verdict
 
-- [ ] AFC-SDD-0049 Improve API and Client test coverage
+- [x] AFC-SDD-0049 Improve API and Client test coverage
       (User requested to increase test coverage for `internal/api` and `internal/client`)
 
 Ordering: 0024 → 0031 → 0025 → 0026 → 0027 → 0028 → 0049 → 0029.
