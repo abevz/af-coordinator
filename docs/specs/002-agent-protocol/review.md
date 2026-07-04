@@ -34,3 +34,22 @@ Shipped.
 ### Open
 
 - `gofmt` formatting not checked; should run before merge
+
+## AFC-SDD-0018 — Agent protocol document
+
+Shipped.
+
+### What shipped
+
+- `docs/agent-protocol-v1.md` — canonical agent protocol contract (67 lines, under 150-line cap)
+
+### What was verified
+
+- All quoted commands verified against afctl source: `issue ready`, `issue claim`, `issue heartbeat`, `issue note add`, `issue close`, `issue release`
+- Line count: 67 (under 150-line cap)
+- Every command in the document uses real afctl flags matching the implementation
+- Session loop is complete: ready → claim → heartbeat → note → close/release
+
+### Open
+
+- Manual end-to-end test of the protocol through actual agent interaction

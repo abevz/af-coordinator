@@ -7,7 +7,7 @@ Numbering continues the global AFC-SDD sequence.
     stderr, exit-code table from design.md
   - actor resolution: flag > `AF_COORDINATOR_ACTOR` > error for mutations
   - table-driven tests for exit-code mapping (per AGENTS.md testing policy)
-- [ ] AFC-SDD-0018 Write `docs/agent-protocol-v1.md`
+- [x] AFC-SDD-0018 Write `docs/agent-protocol-v1.md`
   - session loop, exit-code reaction table, scope rules, prohibitions
   - hard cap 150 lines; every quoted command must actually work
 - [ ] AFC-SDD-0019 Claude Code hook snippet (`contrib/hooks/claude-code/`)
