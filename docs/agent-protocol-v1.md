@@ -34,7 +34,7 @@ Every agent session follows this cycle:
 
 5. **Close or release**
    ```
-   afctl issue close <short_id> --resolution done --expected-version N --lease-token <token>
+   afctl issue close <short_id> --resolution done --expected-version N --lease-token <token> --note "what was done"
    afctl issue release <short_id> --lease-token <token>
    ```
 
@@ -65,3 +65,4 @@ Commands with `--json` succeed or fail with typed exit codes so the caller can r
 - Do not edit files in a coordinated repo without an active claim.
 - Do not restate spec contents in issue descriptions — link to the specification file instead.
 - Do not commit from within a worktree that is the coordinated checkout — use a sibling worktree.
+- Do not close an issue without a note — the audit trail is for whoever comes after you.

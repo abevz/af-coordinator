@@ -62,7 +62,7 @@ Numbering continues the global AFC-SDD sequence.
   - tests: listed issue with active lease shows holder; with expired
     lease shows empty (regression for the lazy-expiry contract)
 
-- [ ] AFC-SDD-0053 `afctl issue close --note` and protocol discipline for closures
+- [x] AFC-SDD-0053 `afctl issue close --note` and protocol discipline for closures
   - observed in the wild: agents close issues without recording why —
     utils-6 was closed by antigravity-1 with no note at all; the close
     reason lives only in a git commit. Beads had `bd close --reason`;

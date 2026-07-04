@@ -121,6 +121,7 @@ type CloseIssueRequest struct {
 	ExpectedVersion int    `json:"expected_version"`
 	LeaseToken      string `json:"lease_token"`
 	Actor           string `json:"actor,omitempty"`
+	Note            string `json:"note,omitempty"`
 }
 
 // AddDependencyRequest is the JSON body for POST /v1/issues/{issue_id}/dependencies.

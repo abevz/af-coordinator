@@ -80,7 +80,7 @@ Clients handle `version_conflict` by rereading and retrying;
 - `PATCH /v1/issues/{issue_id}` — metadata edit; requires
   `expected_version`, plus `lease_token` if the issue is claimed
 - `POST /v1/issues/{issue_id}/close` — requires `lease_token` +
-  `expected_version`; body: `resolution` (`done` | `cancelled`)
+  `expected_version`; body: `resolution` (`done` | `cancelled`), optional `note` (appends note and closes atomically)
 
 ## Leases
 

@@ -680,7 +680,27 @@ func CloseIssue(ctx context.Context, db *sql.DB, issueID string, req core.CloseI
 	// Remove any active lease on this issue.
 	_, _ = tx.ExecContext(ctx, `DELETE FROM leases WHERE issue_id = ?`, issueID)
 
-	// Append event.
+	// If a note is provided, append it first (note-then-close).
+	if req.Note != "" {
+		noteID := uuid.New().String()
+		_, err = tx.ExecContext(ctx,
+			`INSERT INTO notes (id, issue_id, author, body, created_at) VALUES (?, ?, ?, ?, ?)`,
+			noteID, issueID, req.Actor, req.Note, now,
+		)
+		if err != nil {
+			return fmt.Errorf("insert note: %w", err)
+		}
+		
+		_, err = tx.ExecContext(ctx,
+			`INSERT INTO events (id, issue_id, actor, event_type, payload_json, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+			uuid.New().String(), issueID, req.Actor, "note_added", `{}`, now,
+		)
+		if err != nil {
+			return fmt.Errorf("insert note event: %w", err)
+		}
+	}
+
+	// Append close event.
 	payload := fmt.Sprintf(`{"changed":["status","closed_at"],"resolution":"%s"}`, req.Resolution)
 	_, err = tx.ExecContext(ctx,
 		`INSERT INTO events (id, issue_id, actor, event_type, payload_json, created_at)

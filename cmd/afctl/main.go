@@ -119,7 +119,7 @@ Commands:
     heartbeat           Extend an existing lease
     release             Release a claimed lease
     update              Update issue fields (title, description, priority, assignee, status)
-    close               Close an issue (resolution: done or cancelled)
+    close               Close an issue (resolution: done or cancelled) [--note "text"]
     link                Link an artifact to an issue
     note                Manage notes on an issue
       add              Add a note to an issue

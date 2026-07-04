@@ -6,3 +6,4 @@ This repo is coordinated by [af-coordinator](https://github.com/abevz/af-coordin
 - **Never** edit files without an active claim.
 - **Never** touch the coordinator database.
 - **Never** restate specs in issue descriptions — link them.
+- **Never** close an issue without a note (`--note`) — the audit trail is for whoever comes after you.

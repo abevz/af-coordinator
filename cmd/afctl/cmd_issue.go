@@ -458,7 +458,7 @@ func runIssueUpdate(ctx context.Context, c *client.Client, args []string) error 
 
 func runIssueClose(ctx context.Context, c *client.Client, args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("%s", "Usage: afctl issue close <issue-id> --resolution done|cancelled --expected-version N --lease-token ...")
+		return fmt.Errorf("%s", "Usage: afctl issue close <issue-id> --resolution done|cancelled --expected-version N --lease-token ... [--note \"what was done\"]")
 	}
 
 	issueID := args[0]
@@ -480,6 +480,11 @@ func runIssueClose(ctx context.Context, c *client.Client, args []string) error {
 		case "--lease-token":
 			if i+1 < len(args) {
 				req.LeaseToken = args[i+1]
+				i++
+			}
+		case "--note":
+			if i+1 < len(args) {
+				req.Note = args[i+1]
 				i++
 			}
 		}
