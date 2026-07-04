@@ -842,6 +842,13 @@ func runIssueCreate(c *client.Client, args []string) {
 		}
 	}
 
+	actor, err := resolveActor("")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+	req.Actor = actor
+
 	issue, err := c.CreateIssue(req)
 	if err != nil {
 		fail(err)
@@ -1142,6 +1149,13 @@ func runIssueUpdate(c *client.Client, args []string) {
 		os.Exit(1)
 	}
 
+	actor, err := resolveActor("")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+	req.Actor = actor
+
 	issue, err := c.UpdateIssue(issueID, req)
 	if err != nil {
 		fail(err)
@@ -1195,6 +1209,13 @@ func runIssueClose(c *client.Client, args []string) {
 		fmt.Fprintln(os.Stderr, "error: --lease-token is required")
 		os.Exit(1)
 	}
+
+	actor, err := resolveActor("")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+	req.Actor = actor
 
 	if err := c.CloseIssue(issueID, req); err != nil {
 		fail(err)
