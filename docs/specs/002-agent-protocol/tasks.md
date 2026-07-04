@@ -21,7 +21,7 @@ Numbering continues the global AFC-SDD sequence.
 - [x] AFC-SDD-0022 End-to-end concurrency test
   - two concurrent claims on one issue: exactly one success, one
     `lease_held` (exit 3 via CLI path or 409 via API path)
-- [ ] AFC-SDD-0032 Add `afctl protocol` subcommand (go:embed agent-protocol-v1.md,
+- [x] AFC-SDD-0032 Add `afctl protocol` subcommand (go:embed agent-protocol-v1.md,
       so the contract travels with the binary)
 - [ ] AFC-SDD-0033 Add `afctl init` — wire a repo's AGENTS.md into the coordinator
   - writes a managed block into `./AGENTS.md` between markers

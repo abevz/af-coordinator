@@ -15,7 +15,7 @@ Numbering continues the global AFC-SDD sequence.
   - `afctl repo add --project utils --logical-name utils --canonical-git-dir /home/abevz/github/utils`
   - `afctl worktree register --repo utils --absolute-path /home/abevz/github/utils --main`
   - verify: `afctl issue list --project utils` returns empty list
-- [ ] AFC-SDD-0026 Replace utils AGENTS.md with afctl protocol adapter
+- [x] AFC-SDD-0026 Replace utils AGENTS.md with afctl protocol adapter
   - commit on a branch in the utils repo
   - let operator review and apply
 - [ ] AFC-SDD-0027 Parallel soak: monitor daemon stability for >= 48h

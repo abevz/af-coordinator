@@ -20,3 +20,24 @@ Shipped.
 
 - AGENTS.md replacement (0026) — pending
 - Long-term soak (0027) — pending
+
+## AFC-SDD-0026 — Replace utils AGENTS.md with afctl protocol adapter
+
+Shipped.
+
+### What shipped
+
+- `~/github/utils/AGENTS.md` replaced: Beads workflow → afctl adapter snippet
+  + Session Completion section (mandatory push, no bd dolt push)
+- References: `afctl protocol` (go:embed) or absolute path to protocol doc
+- Actor identity: `AF_COORDINATOR_ACTOR` with stable names
+
+### What was verified
+
+- Branch `chore/afctl-protocol` created, commit applied by operator
+- Session Completion preserved from original (critical git push workflow)
+- No Beads references remain
+
+### Open
+
+- Soak period (0027) — pending
