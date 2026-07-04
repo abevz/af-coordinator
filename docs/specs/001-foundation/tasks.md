@@ -200,6 +200,23 @@ Mechanical quality work, no behavior changes.
   - read-only: doctor diagnoses, never repairs; exit 0 all-ok, 1 any WARN
   - supports `--json`; table-driven tests for the check evaluators in
     `internal/` (cmd stays thin)
+- [ ] AFC-SDD-0058 Attach a document to an issue in one command
+  - operator could not figure out how to attach a spec to an issue —
+    because today it is four steps with a UUID in the middle:
+    artifact register → artifact list → copy uuid → issue link
+  - CLI: `afctl issue link <issue> --path <repo-relative-path>
+    [--repo <name>] [--kind spec] [--relation implements]` — upserts
+    the artifact by (repo, relative_path) and links it in one step;
+    `--repo` defaults to the issue's repository when the issue is
+    repository-scoped; existing `--artifact <uuid>` form stays
+  - `--artifact` additionally accepts a relative path (resolve via the
+    0056 resolver principle: friendly identifier everywhere)
+  - `show --full` prints a Links section (artifact path, kind,
+    relation) — this was the unshipped bonus of 0056
+  - docs: workflows-v1.md gains a short "Attaching specs and documents"
+    recipe; api-v1.md documents the upsert semantics
+  - tests: link by path creates artifact when absent, reuses when
+    present (no duplicate), relation recorded; show --full renders it
 
 Deferred from the audit, deliberately: CI pipeline (GitHub Actions) —
 worth doing before the repo is shared, not before Monday's soak
