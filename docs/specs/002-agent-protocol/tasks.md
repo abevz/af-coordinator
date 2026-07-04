@@ -23,6 +23,24 @@ Numbering continues the global AFC-SDD sequence.
     `lease_held` (exit 3 via CLI path or 409 via API path)
 - [ ] AFC-SDD-0032 Add `afctl protocol` subcommand (go:embed agent-protocol-v1.md,
       so the contract travels with the binary)
+- [ ] AFC-SDD-0033 Add `afctl init` — wire a repo's AGENTS.md into the coordinator
+  - writes a managed block into `./AGENTS.md` between markers
+    `<!-- BEGIN AF-COORDINATOR INTEGRATION v:1 -->` /
+    `<!-- END AF-COORDINATOR INTEGRATION -->`; block content is the
+    embedded adapter snippet from 0032 (single source, no second copy)
+  - idempotent: no AGENTS.md → create with the block; block absent →
+    append; block present → replace in place (this is how a repo picks
+    up a newer protocol after `afctl` upgrade); text outside the
+    markers is never touched
+  - prior art: Beads' `BEGIN/END BEADS INTEGRATION v:1 hash:` block
+  - supports `--json`; standard exit codes; prints what it did
+    (created | updated | unchanged)
+  - out of scope: project/repo/worktree registration (those commands
+    exist), hook installation, touching any file other than AGENTS.md
+  - tests (per AGENTS.md testing policy): table-driven over the four
+    states — missing file, file without block, stale block, current
+    block (must be a no-op)
 
 Ordering: 0017 blocks everything else (hooks and the protocol doc quote
 `--json` commands). 0018 before 0019-0021 so snippets can link to it.
+0032 blocks 0033 (shared embedded snippet).
