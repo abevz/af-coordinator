@@ -42,6 +42,17 @@
     emit. Heartbeats must stay event-free.
 - [x] AFC-SDD-0016 Enforce artifact kind validation on write
   - `ValidateArtifactKind` exists but is not called on the write path.
+- [ ] AFC-SDD-0036 Tighten project key validation (it is the short-id prefix)
+  - found by operator: `validProjectKey` (`^[a-z][a-z0-9-]*$`) accepts a
+    51-char repo name as a key, so every issue id would carry it; it also
+    accepts trailing and doubled hyphens (`saa-` → short_id `saa--1`)
+  - cap length (max 16), reject trailing hyphen and `--` runs:
+    `^[a-z][a-z0-9]*(-[a-z0-9]+)*$` plus length check
+  - error message must say WHY: "key becomes the issue prefix
+    (<key>-<n>); keep it short"
+  - document in schema-v1.md and api-v1.md; table-driven tests incl. the
+    51-char and `saa-` cases
+  - existing keys are unaffected (validation is create-time only)
 
 ## Next tracks (after the punch list — nothing below starts without its own spec packet)
 
