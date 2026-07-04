@@ -49,6 +49,8 @@ func main() {
 	switch filtered[0] {
 	case "health":
 		runHealth(c)
+	case "protocol":
+		runProtocol()
 	case "project":
 		runProject(c, filtered[1:])
 	case "repo":
@@ -80,6 +82,7 @@ Global flags:
 
 Commands:
   health                Check daemon health
+  protocol              Print the agent protocol contract
   project               Manage projects
     add                 Create a new project
     list                List all projects

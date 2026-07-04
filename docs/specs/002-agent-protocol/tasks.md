@@ -21,6 +21,8 @@ Numbering continues the global AFC-SDD sequence.
 - [x] AFC-SDD-0022 End-to-end concurrency test
   - two concurrent claims on one issue: exactly one success, one
     `lease_held` (exit 3 via CLI path or 409 via API path)
+- [ ] AFC-SDD-0032 Add `afctl protocol` subcommand (go:embed agent-protocol-v1.md,
+      so the contract travels with the binary)
 
 Ordering: 0017 blocks everything else (hooks and the protocol doc quote
 `--json` commands). 0018 before 0019-0021 so snippets can link to it.
