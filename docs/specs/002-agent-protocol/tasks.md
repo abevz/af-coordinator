@@ -2,7 +2,7 @@
 
 Numbering continues the global AFC-SDD sequence.
 
-- [ ] AFC-SDD-0017 Add `--json` output and typed exit codes to afctl
+- [x] AFC-SDD-0017 Add `--json` output and typed exit codes to afctl
   - global flag, JSON success on stdout, error envelope passthrough on
     stderr, exit-code table from design.md
   - actor resolution: flag > `AF_COORDINATOR_ACTOR` > error for mutations
