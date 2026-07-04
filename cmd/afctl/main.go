@@ -51,6 +51,8 @@ func main() {
 		runHealth(c)
 	case "protocol":
 		runProtocol()
+	case "init":
+		runInit(filtered[1:])
 	case "project":
 		runProject(c, filtered[1:])
 	case "repo":
@@ -83,6 +85,7 @@ Global flags:
 Commands:
   health                Check daemon health
   protocol              Print the agent protocol contract
+  init                  Initialize or update AGENTS.md with coordinator block
   project               Manage projects
     add                 Create a new project
     list                List all projects
