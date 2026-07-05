@@ -650,6 +650,11 @@ func runIssueDependencyAdd(ctx context.Context, c *client.Client, args []string)
 	if req.DependsOn == "" {
 		return fmt.Errorf("%s", "error: --depends-on is required")
 	}
+	act, err := resolveActor("")
+	if err != nil {
+		return err
+	}
+	req.Actor = act
 
 	if err := c.AddDependency(ctx, issueID, req); err != nil {
 		fail(err)
@@ -690,7 +695,16 @@ func runIssueDependencyRemove(ctx context.Context, c *client.Client, args []stri
 		return fmt.Errorf("%s", "error: --depends-on is required")
 	}
 
-	if err := c.RemoveDependency(ctx, issueID, dependsOn, kind); err != nil {
+	act, err := resolveActor("")
+	if err != nil {
+		return err
+	}
+
+	if err := c.RemoveDependency(ctx, issueID, core.RemoveDependencyRequest{
+		DependsOn: dependsOn,
+		Kind:      kind,
+		Actor:     act,
+	}); err != nil {
 		fail(err)
 	}
 	if jsonOutput {

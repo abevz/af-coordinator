@@ -50,6 +50,14 @@ type Issue struct {
 	ClosedAt       string `json:"closed_at,omitempty"`
 	CreatedAt      string `json:"created_at"`
 	UpdatedAt      string `json:"updated_at"`
+	Dependencies   []Dependency `json:"dependencies,omitempty"`
+}
+
+// Dependency represents a relationship to another issue.
+type Dependency struct {
+	IssueID     string `json:"issue_id"`
+	DependsOnID string `json:"depends_on_id"`
+	Kind        string `json:"kind"`
 }
 
 // IssueLease represents the current lease on an issue (included in responses).

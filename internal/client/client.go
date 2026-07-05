@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/abevz/af-coordinator/internal/core"
@@ -306,10 +307,17 @@ func (c *Client) AddDependency(ctx context.Context, issueID string, req core.Add
 }
 
 // RemoveDependency sends a DELETE /v1/issues/{issueID}/dependencies/{dependsOn} request.
-func (c *Client) RemoveDependency(ctx context.Context, issueID, dependsOn, kind string) error {
-	path := "/v1/issues/" + issueID + "/dependencies/" + dependsOn
-	if kind != "" {
-		path += "?kind=" + kind
+func (c *Client) RemoveDependency(ctx context.Context, issueID string, req core.RemoveDependencyRequest) error {
+	path := "/v1/issues/" + issueID + "/dependencies/" + req.DependsOn
+	query := url.Values{}
+	if req.Kind != "" {
+		query.Set("kind", req.Kind)
+	}
+	if req.Actor != "" {
+		query.Set("actor", req.Actor)
+	}
+	if len(query) > 0 {
+		path += "?" + query.Encode()
 	}
 	return c.doJSON(ctx, http.MethodDelete, path, nil, nil)
 }

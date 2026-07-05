@@ -146,6 +146,12 @@ func GetIssue(ctx context.Context, db *sql.DB, id string) (core.Issue, *core.Iss
 		return core.Issue{}, nil, err
 	}
 
+	populated, err := populateDependencies(ctx, db, []core.Issue{issue})
+	if err != nil {
+		return core.Issue{}, nil, err
+	}
+	issue = populated[0]
+
 	return issue, lease, nil
 }
 
@@ -217,6 +223,11 @@ func ListIssues(ctx context.Context, db *sql.DB, params core.IssueListParams) ([
 	}
 	if issues == nil {
 		issues = []core.Issue{}
+	} else {
+		issues, err = populateDependencies(ctx, db, issues)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return issues, nil
 }
@@ -269,6 +280,11 @@ func ListReadyIssues(ctx context.Context, db *sql.DB, projectID string) ([]core.
 	}
 	if issues == nil {
 		issues = []core.Issue{}
+	} else {
+		issues, err = populateDependencies(ctx, db, issues)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return issues, nil
 }
@@ -716,13 +732,18 @@ func CloseIssue(ctx context.Context, db *sql.DB, issueID string, req core.CloseI
 
 // AddDependency adds a dependency between two issues. For 'blocks' kind, it performs cycle detection.
 func AddDependency(ctx context.Context, db *sql.DB, issueID string, req core.AddDependencyRequest) error {
-	// Verify both issues exist.
+	// Verify both issues exist and resolve DependsOn
 	if _, _, err := GetIssue(ctx, db, issueID); err != nil {
 		return err
 	}
-	if _, _, err := GetIssue(ctx, db, req.DependsOn); err != nil {
+	dependsOnID, err := ResolveIssueID(ctx, db, req.DependsOn)
+	if err != nil {
 		return err
 	}
+	if _, _, err := GetIssue(ctx, db, dependsOnID); err != nil {
+		return err
+	}
+	req.DependsOn = dependsOnID
 
 	kind := req.Kind
 	if kind == "" {
@@ -781,6 +802,12 @@ func RemoveDependency(ctx context.Context, db *sql.DB, issueID, dependsOn, kind,
 	if kind == "" {
 		kind = "blocks"
 	}
+	
+	dependsOnID, err := ResolveIssueID(ctx, db, dependsOn)
+	if err != nil {
+		return err
+	}
+	dependsOn = dependsOnID
 
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
