@@ -72,6 +72,9 @@ func TestVersionSkew(t *testing.T) {
 			go http.Serve(l, mux)
 
 			runCmd := exec.Command(binPath, tt.args...)
+			// Run in a temp dir: `init` without --path writes AGENTS.md
+			// into the current directory.
+			runCmd.Dir = t.TempDir()
 			runCmd.Env = append(os.Environ(), "AF_COORDINATOR_SOCKET="+sockPath)
 			var stderr bytes.Buffer
 			runCmd.Stderr = &stderr
