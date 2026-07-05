@@ -23,8 +23,39 @@ func runIssueCreateForm(ctx context.Context, c *client.Client, args []string) er
 	}
 
 	projectOpts := make([]huh.Option[string], len(projects))
+	projectKeyByID := make(map[string]string)
 	for i, p := range projects {
 		projectOpts[i] = huh.NewOption(p.Key, p.Key)
+		projectKeyByID[p.ID] = p.Key
+	}
+
+	repos, err := c.ListRepos(ctx, "")
+	if err != nil {
+		return fmt.Errorf("fetch all repos: %w", err)
+	}
+	var allRepoOpts []huh.Option[string]
+	repoNameByID := make(map[string]string)
+	for _, r := range repos {
+		pKey := projectKeyByID[r.ProjectID]
+		allRepoOpts = append(allRepoOpts, huh.NewOption(fmt.Sprintf("[%s] %s", pKey, r.LogicalName), r.LogicalName))
+		repoNameByID[r.ID] = r.LogicalName
+	}
+	if len(allRepoOpts) == 0 {
+		allRepoOpts = append(allRepoOpts, huh.NewOption("No repos available", ""))
+	}
+
+	wts, err := c.ListWorktrees(ctx, "")
+	if err != nil {
+		return fmt.Errorf("fetch all worktrees: %w", err)
+	}
+	var allWtOpts []huh.Option[string]
+	for _, w := range wts {
+		rName := repoNameByID[w.RepositoryID]
+		label := fmt.Sprintf("[%s] %s (%s)", rName, w.Branch, w.ID[:8])
+		allWtOpts = append(allWtOpts, huh.NewOption(label, w.ID))
+	}
+	if len(allWtOpts) == 0 {
+		allWtOpts = append(allWtOpts, huh.NewOption("No worktrees available", ""))
 	}
 
 	var project, scope, repo, worktree, title, priorityStr string
@@ -62,85 +93,51 @@ func runIssueCreateForm(ctx context.Context, c *client.Client, args []string) er
 		}))
 	}
 
-	// Screen 1: Project & Scope & Title & Priority & (Actor)
 	err = huh.NewForm(
-		huh.NewGroup(fields1...).Title("Screen 1: Context & Basics"),
-	).WithTheme(huh.ThemeBase()).Run()
-	
-	if err != nil {
-		return err // User cancelled
-	}
-
-	// Dynamic fetching for repo/worktree
-	if scope == "repository" || scope == "worktree" {
-		repos, err := c.ListRepos(ctx, project)
-		if err != nil {
-			return fmt.Errorf("fetch repos: %w", err)
-		}
-		if len(repos) == 0 {
-			return fmt.Errorf("no repos found in project %s", project)
-		}
-		repoOpts := make([]huh.Option[string], len(repos))
-		for i, r := range repos {
-			repoOpts[i] = huh.NewOption(r.LogicalName, r.LogicalName)
-		}
-
-		err = huh.NewForm(
-			huh.NewGroup(
-				huh.NewSelect[string]().Title("Repository").Options(repoOpts...).Value(&repo),
-			).Title("Screen 1a: Select Repository"),
-		).WithTheme(huh.ThemeBase()).Run()
-		if err != nil {
-			return err
-		}
-
-		if scope == "worktree" {
-			wts, err := c.ListWorktrees(ctx, repo)
-			if err != nil {
-				return fmt.Errorf("fetch worktrees: %w", err)
-			}
-			if len(wts) == 0 {
-				return fmt.Errorf("no worktrees found in repo %s", repo)
-			}
-			wtOpts := make([]huh.Option[string], len(wts))
-			for i, w := range wts {
-				label := fmt.Sprintf("%s (%s)", w.Branch, w.ID[:8])
-				wtOpts[i] = huh.NewOption(label, w.ID)
-			}
-			err = huh.NewForm(
-				huh.NewGroup(
-					huh.NewSelect[string]().Title("Worktree").Options(wtOpts...).Value(&worktree),
-				).Title("Screen 1b: Select Worktree"),
-			).WithTheme(huh.ThemeBase()).Run()
-			if err != nil {
-				return err
-			}
-		}
-	}
-
-	// Screen 2: Details
-	err = huh.NewForm(
+		huh.NewGroup(fields1...).Title("Context & Basics"),
+		huh.NewGroup(
+			huh.NewSelect[string]().Title("Repository").Options(allRepoOpts...).Value(&repo).Validate(func(r string) error {
+				for _, rp := range repos {
+					if rp.LogicalName == r && projectKeyByID[rp.ProjectID] == project {
+						return nil
+					}
+				}
+				return fmt.Errorf("repository %s does not exist in project %s", r, project)
+			}),
+		).Title("Repository").WithHideFunc(func() bool {
+			return scope != "repository" && scope != "worktree"
+		}),
+		huh.NewGroup(
+			huh.NewSelect[string]().Title("Worktree").Options(allWtOpts...).Value(&worktree).Validate(func(w string) error {
+				for _, wt := range wts {
+					if wt.ID == w {
+						rName := repoNameByID[wt.RepositoryID]
+						if rName != repo {
+							return fmt.Errorf("worktree belongs to repo %s, not %s", rName, repo)
+						}
+						return nil
+					}
+				}
+				return fmt.Errorf("worktree not found")
+			}),
+		).Title("Worktree").WithHideFunc(func() bool {
+			return scope != "worktree"
+		}),
 		huh.NewGroup(
 			huh.NewText().Title("Description").Value(&description).Lines(5),
 			huh.NewInput().Title("Assignee (optional)").Value(&assignee),
-		).Title("Screen 2: Details"),
-	).WithTheme(huh.ThemeBase()).Run()
-	if err != nil {
-		return err
-	}
-
-	// Screen 3: Dependencies & Confirmation
-	err = huh.NewForm(
+		).Title("Details"),
 		huh.NewGroup(
-			huh.NewInput().Title("Depends On (comma separated short_ids, e.g. afc-1, utils-2)").Value(&dependsOnStr),
+			huh.NewInput().Title("Depends On (comma separated short_ids)").Value(&dependsOnStr),
 			huh.NewInput().Title("Artifact Link (relative path or UUID)").Value(&artifactLink),
-		).Title("Screen 3: Dependencies & Links"),
+		).Title("Dependencies & Links"),
 		huh.NewGroup(
 			huh.NewConfirm().Title("Create Issue?").Value(&confirm),
 		),
 	).WithTheme(huh.ThemeBase()).Run()
+
 	if err != nil {
-		return err
+		return err // User cancelled
 	}
 
 	if !confirm {
@@ -170,7 +167,6 @@ func runIssueCreateForm(ctx context.Context, c *client.Client, args []string) er
 
 	// Post-create steps
 	if assignee != "" {
-		// To safely update assignee without conflict, use the version from creation
 		_, err := c.UpdateIssue(ctx, issue.ID, core.UpdateIssueRequest{
 			Assignee:        assignee,
 			ExpectedVersion: issue.Version,
@@ -192,7 +188,7 @@ func runIssueCreateForm(ctx context.Context, c *client.Client, args []string) er
 			}
 			err := c.AddDependency(ctx, issue.ID, core.AddDependencyRequest{
 				DependsOn: dep,
-				Kind:      "blocks", // default for form
+				Kind:      "blocks",
 				Actor:     actor,
 			})
 			if err != nil {
