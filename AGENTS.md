@@ -258,7 +258,7 @@ The daemon you are modifying is the daemon that tracks your work — so:
 This repo is coordinated by [af-coordinator](https://github.com/abevz/af-coordinator).
 
 - **Read the protocol**: `afctl protocol` (or `~/github/af-coordinator/main/docs/agent-protocol-v1.md`)
-- **Export your identity**: `export AF_COORDINATOR_ACTOR=<agent-name>` — unique per concurrent instance; easiest is a session-PID suffix set once in the launcher (`antigravity-$$`).
+- **Identity**: `afctl` automatically infers your agent name and process PID from the process tree (e.g. `agy-4725`). You may optionally override this by exporting `AF_COORDINATOR_ACTOR=<agent-name>`.
 - **Session cycle**: `ready → claim → heartbeat → note → close`
 - **Never** edit files without an active claim.
 - **Never** touch the coordinator database.

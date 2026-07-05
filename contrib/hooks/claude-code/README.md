@@ -14,5 +14,5 @@
      }
    }
    ```
-2. Export `AF_COORDINATOR_ACTOR=<your-agent-name>` (unique per concurrent instance, e.g. session-PID suffix: `codex-$$`).
+2. **Optional**: Export `AF_COORDINATOR_ACTOR=<your-agent-name>` (unique per concurrent instance, e.g. session-PID suffix: `claude-code-$$`). If omitted, `afctl` will automatically infer the agent identity from the process tree.
 3. Set `AF_HOOK_MODE=block` to block instead of warn.
