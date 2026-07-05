@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -202,10 +204,45 @@ func resolveActor(flagVal string) (string, error) {
 	if defaultActor != "" {
 		return defaultActor, nil
 	}
+	if agent := getParentAgent(); agent != "" {
+		return agent, nil
+	}
 	if sysUser := os.Getenv("USER"); sysUser != "" {
 		return sysUser, nil
 	}
 	return "", fmt.Errorf("actor is required: set --actor flag or AF_COORDINATOR_ACTOR environment variable")
+}
+
+func getParentAgent() string {
+	pid := os.Getppid()
+	for pid > 1 {
+		statPath := fmt.Sprintf("/proc/%d/stat", pid)
+		data, err := os.ReadFile(statPath)
+		if err != nil {
+			break
+		}
+		s := string(data)
+		idx1 := strings.IndexByte(s, '(')
+		idx2 := strings.LastIndexByte(s, ')')
+		if idx1 != -1 && idx2 != -1 && idx2 > idx1 {
+			comm := s[idx1+1 : idx2]
+			// Skip common shells and daemons
+			if comm != "bash" && comm != "sh" && comm != "zsh" && comm != "tmux" && comm != "tmux: server" && comm != "su" && comm != "sudo" && comm != "sshd" && comm != "systemd" && comm != "init" {
+				return fmt.Sprintf("%s-%d", comm, pid)
+			}
+			parts := strings.Split(s[idx2+2:], " ")
+			if len(parts) >= 2 {
+				ppid, _ := strconv.Atoi(parts[1])
+				if ppid == 0 || ppid == pid {
+					break
+				}
+				pid = ppid
+				continue
+			}
+		}
+		break
+	}
+	return ""
 }
 
 // ─── Health ──────────────────────────────────────────────────────────────────
