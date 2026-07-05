@@ -165,6 +165,19 @@ curl -s -X POST --unix-socket $AFC_SOCK \
   http://localhost/v1/issues/afc-15/dependencies | jq
 ```
 
+### Add a link (Artifact)
+Link an external document, URL, or local path to the issue.
+```bash
+curl -s -X POST --unix-socket $AFC_SOCK \
+  -H "Content-Type: application/json" \
+  -d '{
+    "artifact": "https://github.com/my/repo/pull/1",
+    "relation": "implements",
+    "actor": "'"$AFC_ACTOR"'"
+  }' \
+  http://localhost/v1/issues/afc-15/links | jq
+```
+
 ### Read Audit Events
 Get the full chronological audit trail of an issue.
 ```bash
