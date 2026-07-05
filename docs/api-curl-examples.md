@@ -27,9 +27,12 @@ curl -s --unix-socket $AFC_SOCK http://localhost/v1/health | jq
 ## 2. Reading Issues
 
 ### List all issues
-Supports query parameters: `?project=afc&status=open`
+Supports query parameters: `?project=afc&status=open&type=bug`
 ```bash
 curl -s --unix-socket $AFC_SOCK "http://localhost/v1/issues?project=afc&status=open" | jq
+
+# Only bugs:
+curl -s --unix-socket $AFC_SOCK "http://localhost/v1/issues?project=afc&type=bug" | jq
 ```
 
 ### Get a single issue by Short ID
@@ -56,6 +59,7 @@ curl -s -X POST --unix-socket $AFC_SOCK \
   -d '{
     "project": "afc",
     "scope_kind": "project",
+    "issue_type": "bug",
     "title": "Investigate database locks",
     "description": "We are seeing intermittent SQLite locks.",
     "priority": 2,
@@ -142,7 +146,7 @@ curl -s -X POST --unix-socket $AFC_SOCK \
   -H "Content-Type: application/json" \
   -d '{
     "body": "Found a workaround for the bug.",
-    "actor": "'"$AFC_ACTOR"'"
+    "author": "'"$AFC_ACTOR"'"
   }' \
   http://localhost/v1/issues/afc-15/notes | jq
 ```
@@ -160,6 +164,19 @@ curl -s -X POST --unix-socket $AFC_SOCK \
   -d '{
     "depends_on": "afc-12",
     "kind": "blocks",
+    "actor": "'"$AFC_ACTOR"'"
+  }' \
+  http://localhost/v1/issues/afc-15/dependencies | jq
+```
+
+### Add a dependency (Parent)
+Mark `afc-15` as a child of `afc-10`.
+```bash
+curl -s -X POST --unix-socket $AFC_SOCK \
+  -H "Content-Type: application/json" \
+  -d '{
+    "depends_on": "afc-10",
+    "kind": "parent",
     "actor": "'"$AFC_ACTOR"'"
   }' \
   http://localhost/v1/issues/afc-15/dependencies | jq

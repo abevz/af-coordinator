@@ -40,8 +40,11 @@ Errors use one envelope:
 | 404  | `not_found`        | unknown project/repo/worktree/artifact/issue       |
 | 409  | `version_conflict` | `expected_version` does not match current version  |
 | 409  | `lease_held`       | another holder has an unexpired lease              |
+| 409  | `already_linked`   | artifact is already linked to the issue            |
+| 409  | `short_id_taken`   | an issue with this short_id already exists         |
 | 410  | `lease_expired`    | supplied `lease_token` is expired or unknown       |
 | 422  | `dependency_cycle` | a `blocks` edge would create a cycle               |
+| 500  | `internal_error`   | internal daemon/database failure                   |
 
 Clients handle `version_conflict` by rereading and retrying;
 `lease_held` by backing off or picking other ready work;
@@ -65,6 +68,7 @@ Clients handle `version_conflict` by rereading and retrying;
 - `GET  /v1/worktrees?repo=` — list
 - `POST /v1/artifact-roots` — register artifact root (`repo`, `root_path`,
   `kind`)
+- `GET  /v1/artifact-roots?repo=` — list registered artifact roots
 - `POST /v1/artifacts` — register artifact (`repo`, `relative_path`,
   `kind`, `title`). Performs an upsert: if the artifact already exists by
   `(repo, relative_path)`, updates `title` and `kind` without changing ID.
@@ -74,12 +78,15 @@ Clients handle `version_conflict` by rereading and retrying;
 
 - `POST /v1/issues` — create; daemon allocates `short_id`; body includes
   `project`, `scope_kind`, optional `repo`/`worktree`, `title`,
-  `description`, `priority`
+  `description`, `priority`, `issue_type` (`task` default, `bug`,
+  `feature`, `epic`, `chore`)
 - `GET  /v1/issues/{issue_id}` — fetch one, including current lease if any
-- `GET  /v1/issues?project=&repo=&worktree=&status=&assignee=` — query
-- `GET  /v1/issues/ready?project=&repo=` — computed ready view
-- `PATCH /v1/issues/{issue_id}` — metadata edit; requires
-  `expected_version`, plus `lease_token` if the issue is claimed
+- `GET  /v1/issues?project=&repo=&worktree=&status=&assignee=&type=` — query
+- `GET  /v1/issues/ready?project=&repo=` — computed ready view; excludes
+  epics (they are containers, not units of work)
+- `PATCH /v1/issues/{issue_id}` — edit metadata and status (`title`, `issue_type`,
+  `description`, `priority`, `assignee`, `status`); requires `expected_version`,
+  plus `lease_token` if the issue is claimed
 - `POST /v1/issues/{issue_id}/close` — requires `lease_token` +
   `expected_version`; body: `resolution` (`done` | `cancelled`), optional `note` (appends note and closes atomically)
 
@@ -87,7 +94,8 @@ Clients handle `version_conflict` by rereading and retrying;
 
 - `POST /v1/issues/{issue_id}/claim` — body: `holder`, `ttl_seconds`;
   returns `lease_token`, `expires_at`; fails `lease_held` if an unexpired
-  lease exists; moves the issue `open -> in_progress`
+  lease exists; moves the issue `open -> in_progress`; epics are rejected
+  with `validation_failed`
 - `POST /v1/issues/{issue_id}/heartbeat` — body: `lease_token`,
   `ttl_seconds`; extends `expires_at`; appends no event
 - `POST /v1/issues/{issue_id}/release` — body: `lease_token`; deletes the
@@ -101,11 +109,8 @@ Clients handle `version_conflict` by rereading and retrying;
   `relation`); `artifact` can be a UUID or a repository-relative path
 - `GET  /v1/issues/{issue_id}/links` — list linked artifacts
 - `POST /v1/issues/{issue_id}/dependencies` — add dependency
-  (`depends_on`, `kind`); rejects `blocks` cycles with `dependency_cycle`
+  (`depends_on`, `kind`); rejects `blocks` cycles with `dependency_cycle`.
+  Supported `kind` values: `blocks` (default), `parent`, `related`, `discovered-from`
 - `DELETE /v1/issues/{issue_id}/dependencies/{depends_on}?kind=` — remove
 - `GET  /v1/issues/{issue_id}/events` — activity timeline
 
-## Export
-
-- `GET /v1/export/issues?format=jsonl` — snapshot export; never part of
-  the write path

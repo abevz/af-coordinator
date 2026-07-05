@@ -232,10 +232,10 @@ cmd/af-coordinatord/   daemon entrypoint
 cmd/afctl/             CLI client
 docs/                  design docs
 internal/api/          transport layer
-internal/core/         domain logic
-internal/export/       JSONL / markdown / future mirrors
-internal/lease/        claim and lease logic
-internal/store/sqlite/ SQLite implementation
+internal/client/       Go client for the daemon API
+internal/config/       daemon configuration
+internal/core/         domain logic (validation, models, lease semantics)
+internal/store/sqlite/ SQLite implementation (including lease operations)
 migrations/            schema migrations
 ```
 

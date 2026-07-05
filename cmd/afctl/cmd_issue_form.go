@@ -58,9 +58,9 @@ func runIssueCreateForm(ctx context.Context, c *client.Client, args []string) er
 		allWtOpts = append(allWtOpts, huh.NewOption("No worktrees available", ""))
 	}
 
-	var project, scope, repo, worktree, title, priorityStr string
+	var project, scope, repo, worktree, title, priorityStr, issueType string
 	var description, assignee string
-	var dependsOnStr, artifactLink string
+	var blockedByStr, parentStr, artifactLink string
 	var confirm bool
 
 	fields1 := []huh.Field{
@@ -76,6 +76,13 @@ func runIssueCreateForm(ctx context.Context, c *client.Client, args []string) er
 			huh.NewOption("Repository", "repository"),
 			huh.NewOption("Worktree", "worktree"),
 		).Value(&scope),
+		huh.NewSelect[string]().Title("Type").Options(
+			huh.NewOption("Task", "task"),
+			huh.NewOption("Bug", "bug"),
+			huh.NewOption("Feature", "feature"),
+			huh.NewOption("Epic", "epic"),
+			huh.NewOption("Chore", "chore"),
+		).Value(&issueType),
 		huh.NewSelect[string]().Title("Priority").Options(
 			huh.NewOption("1 (High)", "1"),
 			huh.NewOption("2 (Normal)", "2"),
@@ -128,7 +135,8 @@ func runIssueCreateForm(ctx context.Context, c *client.Client, args []string) er
 			huh.NewInput().Title("Assignee (optional)").Value(&assignee),
 		).Title("Details"),
 		huh.NewGroup(
-			huh.NewInput().Title("Depends On (comma separated short_ids)").Value(&dependsOnStr),
+			huh.NewInput().Title("Blocked by (comma-separated short IDs, e.g. utils-5,afc-3)").Value(&blockedByStr),
+			huh.NewInput().Title("Parent issue (short ID, e.g. utils-10)").Value(&parentStr),
 			huh.NewInput().Title("Artifact Link (relative path or UUID)").Value(&artifactLink),
 		).Title("Dependencies & Links"),
 		huh.NewGroup(
@@ -150,6 +158,7 @@ func runIssueCreateForm(ctx context.Context, c *client.Client, args []string) er
 	req := core.CreateIssueRequest{
 		Project:     project,
 		ScopeKind:   scope,
+		IssueType:   issueType,
 		Repo:        repo,
 		Worktree:    worktree,
 		Title:       title,
@@ -179,8 +188,8 @@ func runIssueCreateForm(ctx context.Context, c *client.Client, args []string) er
 		}
 	}
 
-	if dependsOnStr != "" {
-		deps := strings.Split(dependsOnStr, ",")
+	if blockedByStr != "" {
+		deps := strings.Split(blockedByStr, ",")
 		for _, dep := range deps {
 			dep = strings.TrimSpace(dep)
 			if dep == "" {
@@ -192,10 +201,24 @@ func runIssueCreateForm(ctx context.Context, c *client.Client, args []string) er
 				Actor:     actor,
 			})
 			if err != nil {
-				fmt.Printf("Warning: failed to add dependency %s: %v\n", dep, err)
+				fmt.Printf("Warning: failed to add blocker %s: %v\n", dep, err)
 			} else {
-				fmt.Printf("Added dependency: %s\n", dep)
+				fmt.Printf("Added blocker: %s\n", dep)
 			}
+		}
+	}
+
+	if parentStr != "" {
+		parentStr = strings.TrimSpace(parentStr)
+		err := c.AddDependency(ctx, issue.ID, core.AddDependencyRequest{
+			DependsOn: parentStr,
+			Kind:      "parent",
+			Actor:     actor,
+		})
+		if err != nil {
+			fmt.Printf("Warning: failed to set parent %s: %v\n", parentStr, err)
+		} else {
+			fmt.Printf("Set parent: %s\n", parentStr)
 		}
 	}
 

@@ -53,7 +53,7 @@ func runIssue(ctx context.Context, c *client.Client, args []string) error {
 
 func runIssueCreate(ctx context.Context, c *client.Client, args []string) error {
 	if len(args) < 4 {
-		return fmt.Errorf("%s", "Usage: afctl issue create --project <key> --scope-kind <project|repository|worktree> --title <title> [--repo <repo>] [--worktree <worktree>] [--description <desc>] [--priority <n>]")
+		return fmt.Errorf("%s", "Usage: afctl issue create --project <key> --scope-kind <project|repository|worktree> --title <title> [--type <task|bug|feature|epic|chore>] [--repo <repo>] [--worktree <worktree>] [--description <desc>] [--priority <n>]")
 	}
 
 	var req core.CreateIssueRequest
@@ -67,6 +67,11 @@ func runIssueCreate(ctx context.Context, c *client.Client, args []string) error 
 		case "--scope-kind":
 			if i+1 < len(args) {
 				req.ScopeKind = args[i+1]
+				i++
+			}
+		case "--type":
+			if i+1 < len(args) {
+				req.IssueType = args[i+1]
 				i++
 			}
 		case "--title":
@@ -191,6 +196,7 @@ func runIssueList(ctx context.Context, c *client.Client, args []string) error {
 	worktree := ""
 	status := ""
 	assignee := ""
+	issueType := ""
 	limit := 0
 	offset := 0
 
@@ -221,6 +227,11 @@ func runIssueList(ctx context.Context, c *client.Client, args []string) error {
 				assignee = args[i+1]
 				i++
 			}
+		case "--type":
+			if i+1 < len(args) {
+				issueType = args[i+1]
+				i++
+			}
 		case "--limit":
 			if i+1 < len(args) {
 				fmt.Sscanf(args[i+1], "%d", &limit)
@@ -238,7 +249,7 @@ func runIssueList(ctx context.Context, c *client.Client, args []string) error {
 	_ = limit
 	_ = offset
 
-	issues, err := c.ListIssues(ctx, project, repo, worktree, status, assignee)
+	issues, err := c.ListIssues(ctx, project, repo, worktree, status, assignee, issueType)
 	if err != nil {
 		fail(err)
 	}
@@ -256,13 +267,18 @@ func runIssueList(ctx context.Context, c *client.Client, args []string) error {
 
 func runIssueReady(ctx context.Context, c *client.Client, args []string) error {
 	project := ""
+	repo := ""
 	for i := 0; i < len(args); i++ {
 		if args[i] == "--project" && i+1 < len(args) {
 			project = args[i+1]
+			i++
+		} else if args[i] == "--repo" && i+1 < len(args) {
+			repo = args[i+1]
+			i++
 		}
 	}
 
-	issues, err := c.ListReadyIssues(ctx, project)
+	issues, err := c.ListReadyIssues(ctx, project, repo)
 	if err != nil {
 		fail(err)
 	}
@@ -396,7 +412,7 @@ func runIssueRelease(ctx context.Context, c *client.Client, args []string) error
 
 func runIssueUpdate(ctx context.Context, c *client.Client, args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("%s", "Usage: afctl issue update <issue-id> [--title ...] [--description ...] [--priority N] [--assignee ...] [--status ...] --expected-version N [--lease-token ...]")
+		return fmt.Errorf("%s", "Usage: afctl issue update <issue-id> [--title ...] [--type <task|bug|feature|epic|chore>] [--description ...] [--priority N] [--assignee ...] [--status ...] --expected-version N [--lease-token ...]")
 	}
 
 	issueID := args[0]
@@ -408,6 +424,11 @@ func runIssueUpdate(ctx context.Context, c *client.Client, args []string) error 
 		case "--title":
 			if i+1 < len(args) {
 				req.Title = args[i+1]
+				i++
+			}
+		case "--type":
+			if i+1 < len(args) {
+				req.IssueType = args[i+1]
 				i++
 			}
 		case "--description":
@@ -586,7 +607,7 @@ func runIssueLink(ctx context.Context, c *client.Client, args []string) error {
 		if kind == "" {
 			kind = "spec"
 		}
-		
+
 		art, err := c.CreateArtifact(ctx, core.CreateArtifactRequest{
 			Repo:         repo,
 			RelativePath: path,
