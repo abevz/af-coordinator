@@ -519,7 +519,7 @@ func TestCreateArtifactRootRejectsInvalidKind(t *testing.T) {
 	}
 }
 
-func TestCreateDuplicateArtifact(t *testing.T) {
+func TestCreateArtifactUpsert(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
@@ -536,25 +536,34 @@ func TestCreateDuplicateArtifact(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = CreateArtifact(context.Background(), db, repo.ID, core.CreateArtifactRequest{
+	art1, err := CreateArtifact(context.Background(), db, repo.ID, core.CreateArtifactRequest{
 		Repo:         repo.ID,
 		Kind:         "sdd",
 		RelativePath: "docs/dup.md",
+		Title:        "Original",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	_, err = CreateArtifact(context.Background(), db, repo.ID, core.CreateArtifactRequest{
+	art2, err := CreateArtifact(context.Background(), db, repo.ID, core.CreateArtifactRequest{
 		Repo:         repo.ID,
-		Kind:         "sdd",
+		Kind:         "spec",
 		RelativePath: "docs/dup.md",
+		Title:        "Updated",
 	})
-	if err == nil {
-		t.Fatal("expected error for duplicate artifact path")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !isSQLiteConstraintError(err) {
-		t.Fatalf("expected a constraint error, got %T: %v", err, err)
+
+	if art1.ID != art2.ID {
+		t.Fatalf("expected upsert to return same ID: %s != %s", art1.ID, art2.ID)
+	}
+	if art2.Title != "Updated" {
+		t.Fatalf("expected updated title, got: %s", art2.Title)
+	}
+	if art2.Kind != "spec" {
+		t.Fatalf("expected updated kind, got: %s", art2.Kind)
 	}
 }
 

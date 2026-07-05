@@ -140,6 +140,7 @@ func runIssueGet(ctx context.Context, c *client.Client, args []string) error {
 
 	var events []core.Event
 	var notes []core.Note
+	var links []core.ArtifactRef
 
 	if fullView {
 		events, err = c.ListEvents(ctx, issueID)
@@ -148,6 +149,11 @@ func runIssueGet(ctx context.Context, c *client.Client, args []string) error {
 		}
 
 		notes, err = c.ListNotes(ctx, issueID)
+		if err != nil {
+			fail(err)
+		}
+
+		links, err = c.ListIssueLinks(ctx, issueID)
 		if err != nil {
 			fail(err)
 		}
@@ -160,6 +166,7 @@ func runIssueGet(ctx context.Context, c *client.Client, args []string) error {
 		if fullView {
 			resp["events"] = events
 			resp["notes"] = notes
+			resp["links"] = links
 		}
 		if lease != nil {
 			resp["lease"] = lease
@@ -169,7 +176,7 @@ func runIssueGet(ctx context.Context, c *client.Client, args []string) error {
 	}
 
 	if fullView {
-		printIssueFull(issue, lease, events, notes)
+		printIssueFull(issue, lease, events, notes, links)
 	} else {
 		printIssueDetailed(issue, lease)
 	}
@@ -519,17 +526,33 @@ func runIssueClose(ctx context.Context, c *client.Client, args []string) error {
 
 func runIssueLink(ctx context.Context, c *client.Client, args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("%s", "Usage: afctl issue link <issue-id> --artifact <artifact-id> [--relation implements|...]")
+		return fmt.Errorf("%s", "Usage: afctl issue link <issue-id> [--artifact <id-or-path> | --path <relative-path>] [--repo <name>] [--kind spec] [--relation implements]")
 	}
 
 	issueID := args[0]
 	var req core.LinkArtifactRequest
+	var path, repo, kind string
 
 	for i := 1; i < len(args); i++ {
 		switch args[i] {
 		case "--artifact":
 			if i+1 < len(args) {
 				req.Artifact = args[i+1]
+				i++
+			}
+		case "--path":
+			if i+1 < len(args) {
+				path = args[i+1]
+				i++
+			}
+		case "--repo":
+			if i+1 < len(args) {
+				repo = args[i+1]
+				i++
+			}
+		case "--kind":
+			if i+1 < len(args) {
+				kind = args[i+1]
 				i++
 			}
 		case "--relation":
@@ -540,8 +563,37 @@ func runIssueLink(ctx context.Context, c *client.Client, args []string) error {
 		}
 	}
 
-	if req.Artifact == "" {
-		return fmt.Errorf("%s", "error: --artifact is required")
+	if req.Artifact == "" && path == "" {
+		return fmt.Errorf("%s", "error: --artifact or --path is required")
+	}
+	if req.Artifact != "" && path != "" {
+		return fmt.Errorf("%s", "error: cannot specify both --artifact and --path")
+	}
+
+	if path != "" {
+		if repo == "" {
+			issue, _, err := c.GetIssue(ctx, issueID)
+			if err != nil {
+				return fmt.Errorf("failed to get issue: %w", err)
+			}
+			if issue.RepositoryID == "" {
+				return fmt.Errorf("error: issue is not repository-scoped, --repo is required with --path")
+			}
+			repo = issue.RepositoryID
+		}
+		if kind == "" {
+			kind = "spec"
+		}
+		
+		art, err := c.CreateArtifact(ctx, core.CreateArtifactRequest{
+			Repo:         repo,
+			RelativePath: path,
+			Kind:         kind,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to upsert artifact: %w", err)
+		}
+		req.Artifact = art.ID
 	}
 
 	if err := c.LinkArtifact(ctx, issueID, req); err != nil {

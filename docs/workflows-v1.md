@@ -115,3 +115,27 @@ Everything above holds with agents in the pool; the only change is that
   `afctl ls --assignee aleksey`) but is **advisory in v1**: the `ready`
   view ignores it, so agents still see assigned issues as claimable. To
   actually reserve an issue, park it (`deferred`) or hold a lease.
+
+## Attaching specs and documents
+
+When a feature involves a specification or design document, you can link the markdown file to the issue tracking it. The daemon tracks the file's repository path and ties it to the issue.
+
+```bash
+# Assuming utils-7 is a repository-scoped issue:
+afctl issue link utils-7 --path docs/specs/042-new-parser/design.md \
+  --kind spec --relation implements
+```
+
+If the document doesn't exist in the daemon's artifact registry yet, this command registers it (upserts it) and links it in one step.
+
+To see what documents are attached to an issue, use `--full`:
+
+```bash
+afctl show --full utils-7
+```
+
+If your issue is project-scoped, you must provide the repository context explicitly:
+
+```bash
+afctl issue link utils-7 --path docs/design.md --repo backend-repo --kind design
+```

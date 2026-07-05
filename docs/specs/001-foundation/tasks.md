@@ -200,7 +200,7 @@ Mechanical quality work, no behavior changes.
   - read-only: doctor diagnoses, never repairs; exit 0 all-ok, 1 any WARN
   - supports `--json`; table-driven tests for the check evaluators in
     `internal/` (cmd stays thin)
-- [ ] AFC-SDD-0058 Attach a document to an issue in one command
+- [x] AFC-SDD-0058 Attach a document to an issue in one command
   - operator could not figure out how to attach a spec to an issue —
     because today it is four steps with a UUID in the middle:
     artifact register → artifact list → copy uuid → issue link

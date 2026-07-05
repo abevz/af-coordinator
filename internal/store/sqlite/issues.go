@@ -860,13 +860,14 @@ func wouldCreateCycle(ctx context.Context, db *sql.DB, fromIssueID, toIssueID st
 
 // LinkArtifact links an artifact to an issue by inserting into issue_artifacts.
 func LinkArtifact(ctx context.Context, db *sql.DB, issueID string, req core.LinkArtifactRequest) (string, error) {
-	// Verify the issue exists.
-	if _, _, err := GetIssue(ctx, db, issueID); err != nil {
+	// Verify the issue exists to get its repository_id for path resolution.
+	issue, _, err := GetIssue(ctx, db, issueID)
+	if err != nil {
 		return "", err
 	}
 
-	// Resolve artifact by ID.
-	artifact, err := GetArtifact(ctx, db, req.Artifact)
+	// Resolve artifact by ID or relative path.
+	artifactID, err := ResolveArtifactID(ctx, db, issue.RepositoryID, req.Artifact)
 	if err != nil {
 		return "", err
 	}
@@ -881,7 +882,7 @@ func LinkArtifact(ctx context.Context, db *sql.DB, issueID string, req core.Link
 	_, err = db.ExecContext(ctx,
 		`INSERT INTO issue_artifacts (issue_id, artifact_id, relation, created_at)
 		 VALUES (?, ?, ?, ?)`,
-		issueID, artifact.ID, relation, now,
+		issueID, artifactID, relation, now,
 	)
 	if err != nil {
 		if isSQLiteConstraintError(err) {

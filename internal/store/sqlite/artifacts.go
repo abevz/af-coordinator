@@ -107,18 +107,24 @@ func CreateArtifact(ctx context.Context, db *sql.DB, repoID string, req core.Cre
 			fmt.Sprintf("invalid artifact kind: %q", req.Kind))
 	}
 
-	_, err := db.ExecContext(ctx,
+	var actualID, createdAt, updatedAt string
+	err := db.QueryRowContext(ctx,
 		`INSERT INTO artifacts (id, repository_id, worktree_id, artifact_root_id, kind, relative_path, title, external_key, status, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		 ON CONFLICT(repository_id, relative_path) DO UPDATE SET
+		   updated_at = excluded.updated_at,
+		   title = CASE WHEN excluded.title != '' THEN excluded.title ELSE artifacts.title END,
+		   kind = CASE WHEN excluded.kind != '' THEN excluded.kind ELSE artifacts.kind END
+		 RETURNING id, created_at, updated_at`,
 		id, repoID, nullableUUID(req.Worktree), nullableUUID(req.ArtifactRootID),
 		req.Kind, req.RelativePath, req.Title, req.ExternalKey, req.Status, now, now,
-	)
+	).Scan(&actualID, &createdAt, &updatedAt)
 	if err != nil {
-		return core.Artifact{}, fmt.Errorf("insert artifact: %w", err)
+		return core.Artifact{}, fmt.Errorf("upsert artifact: %w", err)
 	}
 
 	return core.Artifact{
-		ID:             id,
+		ID:             actualID,
 		RepositoryID:   repoID,
 		WorktreeID:     req.Worktree,
 		ArtifactRootID: req.ArtifactRootID,
@@ -127,8 +133,8 @@ func CreateArtifact(ctx context.Context, db *sql.DB, repoID string, req core.Cre
 		Title:          req.Title,
 		ExternalKey:    req.ExternalKey,
 		Status:         req.Status,
-		CreatedAt:      now,
-		UpdatedAt:      now,
+		CreatedAt:      createdAt,
+		UpdatedAt:      updatedAt,
 	}, nil
 }
 
@@ -225,4 +231,29 @@ func nullableUUID(s string) interface{} {
 		return nil
 	}
 	return s
+}
+
+// ResolveArtifactID resolves an artifact by UUID or relative path within a repository.
+func ResolveArtifactID(ctx context.Context, db *sql.DB, repoID, idOrPath string) (string, error) {
+	var id string
+	err := db.QueryRowContext(ctx, `SELECT id FROM artifacts WHERE id = ?`, idOrPath).Scan(&id)
+	if err == nil {
+		return id, nil
+	}
+	if err != sql.ErrNoRows {
+		return "", fmt.Errorf("resolve artifact by id: %w", err)
+	}
+
+	if repoID == "" {
+		return "", core.NewAPIError(core.ErrNotFound, "artifact not found or missing repository scope for path resolution")
+	}
+
+	err = db.QueryRowContext(ctx, `SELECT id FROM artifacts WHERE repository_id = ? AND relative_path = ?`, repoID, idOrPath).Scan(&id)
+	if err == sql.ErrNoRows {
+		return "", core.NewAPIError(core.ErrNotFound, "artifact not found: "+idOrPath)
+	}
+	if err != nil {
+		return "", fmt.Errorf("resolve artifact by path: %w", err)
+	}
+	return id, nil
 }

@@ -66,7 +66,8 @@ Clients handle `version_conflict` by rereading and retrying;
 - `POST /v1/artifact-roots` — register artifact root (`repo`, `root_path`,
   `kind`)
 - `POST /v1/artifacts` — register artifact (`repo`, `relative_path`,
-  `kind`, `title`)
+  `kind`, `title`). Performs an upsert: if the artifact already exists by
+  `(repo, relative_path)`, updates `title` and `kind` without changing ID.
 - `GET  /v1/artifacts?repo=&kind=` — list
 
 ## Issues
@@ -97,7 +98,8 @@ Clients handle `version_conflict` by rereading and retrying;
 - `POST /v1/issues/{issue_id}/notes` — append note (`author`, `body`)
 - `GET  /v1/issues/{issue_id}/notes` — list
 - `POST /v1/issues/{issue_id}/links` — link artifact (`artifact`,
-  `relation`)
+  `relation`); `artifact` can be a UUID or a repository-relative path
+- `GET  /v1/issues/{issue_id}/links` — list linked artifacts
 - `POST /v1/issues/{issue_id}/dependencies` — add dependency
   (`depends_on`, `kind`); rejects `blocks` cycles with `dependency_cycle`
 - `DELETE /v1/issues/{issue_id}/dependencies/{depends_on}?kind=` — remove

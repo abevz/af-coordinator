@@ -478,6 +478,28 @@ func handleLinkArtifact(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 	}
 }
 
+func handleListIssueLinks(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		issueID, ok := resolveIssueID(db, w, r)
+		if !ok {
+			return
+		}
+
+		links, err := sqlite.ListIssueArtifacts(r.Context(), db, issueID)
+		if err != nil {
+			if apiErr, ok := errAsAPIError(err); ok && apiErr.Code == core.ErrNotFound {
+				writeError(w, http.StatusNotFound, core.ErrNotFound, apiErr.Message)
+				return
+			}
+			logger.Error("failed to list issue links", "issue_id", issueID, "error", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "failed to list issue links")
+			return
+		}
+
+		writeJSON(w, http.StatusOK, map[string][]core.ArtifactRef{"links": links})
+	}
+}
+
 func handleCreateNote(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		issueID, ok := resolveIssueID(db, w, r)

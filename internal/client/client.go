@@ -289,6 +289,17 @@ func (c *Client) LinkArtifact(ctx context.Context, issueID string, req core.Link
 	return c.doJSON(ctx, http.MethodPost, "/v1/issues/"+issueID+"/links", req, nil)
 }
 
+// ListIssueLinks sends a GET /v1/issues/{issueID}/links request.
+func (c *Client) ListIssueLinks(ctx context.Context, issueID string) ([]core.ArtifactRef, error) {
+	var result struct {
+		Links []core.ArtifactRef `json:"links"`
+	}
+	if err := c.doJSON(ctx, http.MethodGet, "/v1/issues/"+issueID+"/links", nil, &result); err != nil {
+		return nil, err
+	}
+	return result.Links, nil
+}
+
 // AddDependency sends a POST /v1/issues/{issueID}/dependencies request.
 func (c *Client) AddDependency(ctx context.Context, issueID string, req core.AddDependencyRequest) error {
 	return c.doJSON(ctx, http.MethodPost, "/v1/issues/"+issueID+"/dependencies", req, nil)

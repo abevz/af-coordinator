@@ -390,3 +390,20 @@ Use this file to capture:
 ### Open issues
 
 - None.
+
+## AFC-SDD-0058 — Attach a document to an issue in one command
+
+### What shipped
+
+- **Store**: Added `ResolveArtifactID` to resolve by UUID or relative path. Updated `LinkArtifact` to use this new resolver and explicitly expect repository resolution via the issue.
+- **API**: Added `GET /v1/issues/{issue_id}/links` endpoint.
+- **Client**: Added `ListIssueLinks` method. Added `--path`, `--repo`, `--kind` flags to `afctl issue link` to perform artifact upsert natively.
+- **CLI**: `afctl issue get --full` (and `printIssueFull`) now prints a `Links:` section. `afctl issue link` handles `CreateArtifact` upserts smoothly in one step.
+- **Tests**: Replaced duplicate test with `TestCreateArtifactUpsert`.
+- **Docs**: Updated `api-v1.md` with upsert docs for `POST /v1/artifacts`. Added a recipe in `workflows-v1.md` for attaching specs to issues.
+
+### What was verified
+
+- `go test -buildvcs=false ./...` — all tests pass.
+- `make build-install` — successfully built `afctl` and daemon.
+- Manual logic validation on CLI flags ensuring mutual exclusion of `--artifact` and `--path`.

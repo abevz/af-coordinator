@@ -327,7 +327,7 @@ func printIssueDetailed(i core.Issue, l *core.IssueLease) {
 }
 
 // printIssueFull displays a single issue with all fields and full history.
-func printIssueFull(i core.Issue, l *core.IssueLease, events []core.Event, notes []core.Note) {
+func printIssueFull(i core.Issue, l *core.IssueLease, events []core.Event, notes []core.Note, links []core.ArtifactRef) {
 	fmt.Printf("ID:            %s\n", i.ID)
 	fmt.Printf("Short ID:      %s\n", i.ShortID)
 	fmt.Printf("Status:        %s %s\n", statusSymbol(i.Status), i.Status)
@@ -363,6 +363,13 @@ func printIssueFull(i core.Issue, l *core.IssueLease, events []core.Event, notes
 	}
 	fmt.Printf("Created:       %s\n", i.CreatedAt)
 	fmt.Printf("Updated:       %s\n", i.UpdatedAt)
+
+	if len(links) > 0 {
+		fmt.Printf("\nLinks:\n")
+		for _, link := range links {
+			fmt.Printf("  - %s (%s, %s)\n", link.RelativePath, link.Kind, link.Relation)
+		}
+	}
 
 	if len(events) > 0 {
 		fmt.Printf("\nHistory:\n")
