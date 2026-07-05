@@ -20,6 +20,8 @@ func runIssue(ctx context.Context, c *client.Client, args []string) error {
 	switch args[0] {
 	case "create":
 		return runIssueCreate(ctx, c, args[1:])
+	case "create-form":
+		return runIssueCreateForm(ctx, c, args[1:])
 	case "get":
 		return runIssueGet(ctx, c, args[1:])
 	case "list":
