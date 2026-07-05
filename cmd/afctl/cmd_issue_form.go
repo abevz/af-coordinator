@@ -65,7 +65,7 @@ func runIssueCreateForm(ctx context.Context, c *client.Client, args []string) er
 	// Screen 1: Project & Scope & Title & Priority & (Actor)
 	err = huh.NewForm(
 		huh.NewGroup(fields1...).Title("Screen 1: Context & Basics"),
-	).Run()
+	).WithTheme(huh.ThemeBase()).Run()
 	
 	if err != nil {
 		return err // User cancelled
@@ -89,7 +89,7 @@ func runIssueCreateForm(ctx context.Context, c *client.Client, args []string) er
 			huh.NewGroup(
 				huh.NewSelect[string]().Title("Repository").Options(repoOpts...).Value(&repo),
 			).Title("Screen 1a: Select Repository"),
-		).Run()
+		).WithTheme(huh.ThemeBase()).Run()
 		if err != nil {
 			return err
 		}
@@ -111,7 +111,7 @@ func runIssueCreateForm(ctx context.Context, c *client.Client, args []string) er
 				huh.NewGroup(
 					huh.NewSelect[string]().Title("Worktree").Options(wtOpts...).Value(&worktree),
 				).Title("Screen 1b: Select Worktree"),
-			).Run()
+			).WithTheme(huh.ThemeBase()).Run()
 			if err != nil {
 				return err
 			}
@@ -124,7 +124,7 @@ func runIssueCreateForm(ctx context.Context, c *client.Client, args []string) er
 			huh.NewText().Title("Description").Value(&description).Lines(5),
 			huh.NewInput().Title("Assignee (optional)").Value(&assignee),
 		).Title("Screen 2: Details"),
-	).Run()
+	).WithTheme(huh.ThemeBase()).Run()
 	if err != nil {
 		return err
 	}
@@ -138,7 +138,7 @@ func runIssueCreateForm(ctx context.Context, c *client.Client, args []string) er
 		huh.NewGroup(
 			huh.NewConfirm().Title("Create Issue?").Value(&confirm),
 		),
-	).Run()
+	).WithTheme(huh.ThemeBase()).Run()
 	if err != nil {
 		return err
 	}
