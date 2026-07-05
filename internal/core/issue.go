@@ -183,6 +183,8 @@ func ValidateStatusTransition(current, target string) error {
 		"in_progress": {"open", "blocked", "deferred", "done", "cancelled"},
 		"blocked":     {"open", "in_progress", "deferred", "done", "cancelled"},
 		"deferred":    {"open", "in_progress", "blocked", "done", "cancelled"},
+		"done":        {"open"},
+		"cancelled":   {"open"},
 	}
 	valid, ok := validTransitions[current]
 	if !ok {
