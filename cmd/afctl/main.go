@@ -202,6 +202,9 @@ func resolveActor(flagVal string) (string, error) {
 	if defaultActor != "" {
 		return defaultActor, nil
 	}
+	if sysUser := os.Getenv("USER"); sysUser != "" {
+		return sysUser, nil
+	}
 	return "", fmt.Errorf("actor is required: set --actor flag or AF_COORDINATOR_ACTOR environment variable")
 }
 
