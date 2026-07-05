@@ -391,6 +391,30 @@ Use this file to capture:
 
 - None.
 
+## AFC-SDD-0057 — afctl doctor: environment diagnostics
+
+### What shipped
+
+- **Core command** (`cmd/afctl/cmd_doctor.go`): `afctl doctor` CLI subcommand.
+- **Diagnostics package** (`internal/doctor/doctor.go`): Evaluators for daemon reachability, version skew, backup timer, backup integrity, binary duplicates (using SHA256 hashes to detect content drift), and config mismatches.
+- **Tests** (`internal/doctor/doctor_test.go`): Table-driven tests covering the check logic.
+- Updated `cmd/afctl/main.go` to wire the `doctor` command.
+
+### What was verified
+
+- `go build ./...` — compiles clean
+- `go test ./...` — all tests pass
+- `make build-install` — completed successfully
+- `afctl doctor` executed and verified its output correctly detects duplicate binaries and other warnings, exiting with code 1.
+
+### Discrepancies vs design
+
+- Duplicate binary detection computes SHA256 hashes of binaries to verify they are actually different versions, ensuring accurate reporting.
+
+### Open issues
+
+- None.
+
 ## AFC-SDD-0058 — Attach a document to an issue in one command
 
 ### What shipped

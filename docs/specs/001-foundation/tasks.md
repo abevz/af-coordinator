@@ -186,7 +186,7 @@ Mechanical quality work, no behavior changes.
     table-driven test per endpoint × {friendly id, uuid, unknown}
   - bonus: `show --full` prints events and notes but not artifact
     links — add a Links section
-- [ ] AFC-SDD-0057 `afctl doctor` — one command that catches "done in git, not on the host"
+- [x] AFC-SDD-0057 `afctl doctor` — one command that catches "done in git, not on the host"
   - motivation: three same-day incidents of shipped-but-not-armed —
     daemon not restarted after 0053 (notes silently dropped), stale
     afctl in a second PATH dir, backup timer written but never
