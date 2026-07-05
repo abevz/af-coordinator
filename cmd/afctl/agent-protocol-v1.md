@@ -8,7 +8,11 @@ Every agent session follows this cycle:
    ```
    afctl issue ready --json
    ```
-   Returns the highest-priority unclaimed, unblocked issue.
+   Returns the highest-priority unclaimed, unblocked issues. Epics never
+   appear here and cannot be claimed — work on their children instead.
+   The `issue_type` field (`task`, `bug`, `feature`, `chore`) tells you
+   what kind of work it is; a `bug` starts from reproduction, a `feature`
+   from the linked spec.
    Pick one and note its `short_id` (e.g. `afc-42`).
 
 2. **Claim it**
