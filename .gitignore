@@ -8,3 +8,5 @@
 *.out
 /af-coordinatord
 /afctl
+/.codewhale/
+/AGENTS.local.md
