@@ -103,6 +103,67 @@ show who has it.
 If you want the issue held for you, park it. If you don't mind whoever
 gets to it first, walk away — the system self-heals.
 
+## Issue types and epics
+
+Every issue has an `issue_type`: `task` (the default), `bug`, `feature`,
+`epic`, or `chore`. Type is classification, not workflow — status
+transitions, leases, and dependencies work identically for all types,
+with one exception: **epics**.
+
+```bash
+afctl issue create --project utils --scope-kind project \
+  --type bug --title "backup timer silently skips weekends" --priority 2
+
+afctl ls --type bug                    # everything filed as a bug
+afctl issue update utils-9 --type feature --expected-version N   # reclassify
+```
+
+Pick the type by what the work *is*, not by size: a `bug` fixes wrong
+behavior, a `feature` adds behavior, a `chore` keeps the lights on
+(deps, CI, cleanup), a `task` is anything else. Types are also the
+routing key for future agent pipelines (a bug agent reproduces first;
+a feature agent starts from the spec), so honest classification pays
+off later.
+
+### The epic flow
+
+An epic is a container, not a unit of work. Two rules are enforced by
+the daemon:
+
+- an epic **cannot be claimed** (`validation_failed`) — you work on its
+  children, never on the epic itself
+- an epic **never appears in `ready`** — the menu only offers real work
+
+The flow:
+
+```bash
+# 1. Create the umbrella
+afctl issue create --project utils --scope-kind project \
+  --type epic --title "Migrate backups to restic"
+
+# 2. Create children and attach them via a parent dependency
+afctl issue create --project utils --scope-kind project \
+  --type task --title "inventory current backup jobs"
+afctl issue dependency add utils-11 --depends-on utils-10 --kind parent
+
+# 3. Order the children with ordinary blocks dependencies where needed
+afctl issue dependency add utils-12 --depends-on utils-11 --kind blocks
+
+# 4. Track progress through the children
+afctl ls --project utils --status open     # what remains
+afctl show --full utils-10                 # epic with its trail
+
+# 5. When the last child is done, close the epic by hand
+afctl issue close utils-10 --resolution done --expected-version N \
+  --note "all children done; restic in production since afc-…"
+```
+
+`parent` links are structure only — they do not block anything. A child
+is claimable even if its siblings are open; use `blocks` when order
+actually matters. The daemon does not auto-close an epic when the last
+child closes: closing the umbrella is a deliberate human statement that
+the goal, not just the task list, is complete.
+
 ## Humans and agents on one backlog
 
 Everything above holds with agents in the pool; the only change is that
