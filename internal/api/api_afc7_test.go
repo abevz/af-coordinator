@@ -44,7 +44,7 @@ func TestAFC7LinkArtifactByShortID(t *testing.T) {
 			ShortID string `json:"short_id"`
 		} `json:"issue"`
 	}](t, resp)
-	
+
 	// Create a repo
 	_, err = db.Exec(
 		`INSERT INTO repositories (id, project_id, logical_name, canonical_git_dir, default_branch, created_at, updated_at)
@@ -167,7 +167,7 @@ func TestAFC7ListArtifactsLogicalRepo(t *testing.T) {
 	}
 
 	// List artifacts by logical repo name
-	resp, err = http.Get(server.URL+"/v1/artifacts?repo=main")
+	resp, err = http.Get(server.URL + "/v1/artifacts?repo=main")
 	if err != nil {
 		t.Fatal(err)
 	}

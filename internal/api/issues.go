@@ -93,11 +93,17 @@ func handleGetIssue(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 func handleListIssues(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		params := core.IssueListParams{
-			Project:  r.URL.Query().Get("project"),
-			Repo:     r.URL.Query().Get("repo"),
-			Worktree: r.URL.Query().Get("worktree"),
-			Status:   r.URL.Query().Get("status"),
-			Assignee: r.URL.Query().Get("assignee"),
+			Project:   r.URL.Query().Get("project"),
+			Repo:      r.URL.Query().Get("repo"),
+			Worktree:  r.URL.Query().Get("worktree"),
+			Status:    r.URL.Query().Get("status"),
+			Assignee:  r.URL.Query().Get("assignee"),
+			IssueType: r.URL.Query().Get("type"),
+		}
+		if params.IssueType != "" && !core.ValidIssueType(params.IssueType) {
+			writeError(w, http.StatusBadRequest, core.ErrValidationFailed,
+				"type must be one of: task, bug, feature, epic, chore")
+			return
 		}
 
 		issues, err := sqlite.ListIssues(r.Context(), db, params)
@@ -241,6 +247,7 @@ func handleReleaseLease(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 func handleListReadyIssues(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		projectFilter := r.URL.Query().Get("project")
+		repoFilter := r.URL.Query().Get("repo")
 
 		// Resolve project key to ID if provided.
 		var projectID string
@@ -259,7 +266,24 @@ func handleListReadyIssues(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 			projectID = proj.ID
 		}
 
-		issues, err := sqlite.ListReadyIssues(r.Context(), db, projectID)
+		// Resolve repo logical name to ID if provided.
+		var repoID string
+		if repoFilter != "" {
+			rp, err := sqlite.GetRepo(r.Context(), db, repoFilter)
+			if err != nil {
+				if apiErr, ok := errAsAPIError(err); ok && apiErr.Code == core.ErrNotFound {
+					writeError(w, http.StatusNotFound, core.ErrNotFound,
+						"repository not found: "+repoFilter)
+					return
+				}
+				logger.Error("failed to resolve repository for ready issues", "repo", repoFilter, "error", err)
+				writeError(w, http.StatusInternalServerError, "internal_error", "failed to resolve repository")
+				return
+			}
+			repoID = rp.ID
+		}
+
+		issues, err := sqlite.ListReadyIssues(r.Context(), db, projectID, repoID)
 		if err != nil {
 			logger.Error("failed to list ready issues", "error", err)
 			writeError(w, http.StatusInternalServerError, "internal_error", "failed to list ready issues")

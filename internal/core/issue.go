@@ -30,26 +30,40 @@ type Event struct {
 	CreatedAt   string `json:"created_at"`
 }
 
+// IssueTypes lists the valid values for an issue's issue_type.
+var IssueTypes = []string{"task", "bug", "feature", "epic", "chore"}
+
+// ValidIssueType reports whether t is a known issue type.
+func ValidIssueType(t string) bool {
+	for _, v := range IssueTypes {
+		if t == v {
+			return true
+		}
+	}
+	return false
+}
+
 // Issue represents a task or work item in a project.
 type Issue struct {
-	ID             string `json:"id"`
-	ShortID        string `json:"short_id"`
-	ProjectID      string `json:"project_id"`
-	RepositoryID   string `json:"repository_id,omitempty"`
-	WorktreeID     string `json:"worktree_id,omitempty"`
-	ScopeKind      string `json:"scope_kind"`
-	Title          string `json:"title"`
-	Description    string `json:"description,omitempty"`
-	Status         string `json:"status"`
-	Priority       int    `json:"priority"`
-	Assignee       string `json:"assignee,omitempty"`
-	Version        int    `json:"version"`
-	ClaimedAt      string `json:"claimed_at,omitempty"`
-	Holder         string `json:"holder,omitempty"`
-	LeaseExpiresAt string `json:"lease_expires_at,omitempty"`
-	ClosedAt       string `json:"closed_at,omitempty"`
-	CreatedAt      string `json:"created_at"`
-	UpdatedAt      string `json:"updated_at"`
+	ID             string       `json:"id"`
+	ShortID        string       `json:"short_id"`
+	ProjectID      string       `json:"project_id"`
+	RepositoryID   string       `json:"repository_id,omitempty"`
+	WorktreeID     string       `json:"worktree_id,omitempty"`
+	ScopeKind      string       `json:"scope_kind"`
+	IssueType      string       `json:"issue_type"`
+	Title          string       `json:"title"`
+	Description    string       `json:"description,omitempty"`
+	Status         string       `json:"status"`
+	Priority       int          `json:"priority"`
+	Assignee       string       `json:"assignee,omitempty"`
+	Version        int          `json:"version"`
+	ClaimedAt      string       `json:"claimed_at,omitempty"`
+	Holder         string       `json:"holder,omitempty"`
+	LeaseExpiresAt string       `json:"lease_expires_at,omitempty"`
+	ClosedAt       string       `json:"closed_at,omitempty"`
+	CreatedAt      string       `json:"created_at"`
+	UpdatedAt      string       `json:"updated_at"`
 	Dependencies   []Dependency `json:"dependencies,omitempty"`
 }
 
@@ -71,6 +85,7 @@ type IssueLease struct {
 type CreateIssueRequest struct {
 	Project     string `json:"project"`
 	ScopeKind   string `json:"scope_kind"`
+	IssueType   string `json:"issue_type,omitempty"`
 	Repo        string `json:"repo,omitempty"`
 	Worktree    string `json:"worktree,omitempty"`
 	Title       string `json:"title"`
@@ -81,11 +96,12 @@ type CreateIssueRequest struct {
 
 // IssueListParams represents query params for GET /v1/issues.
 type IssueListParams struct {
-	Project  string
-	Repo     string
-	Worktree string
-	Status   string
-	Assignee string
+	Project   string
+	Repo      string
+	Worktree  string
+	Status    string
+	Assignee  string
+	IssueType string
 }
 
 // ClaimRequest is the JSON body for POST /v1/issues/{issue_id}/claim.
@@ -114,6 +130,7 @@ type ReleaseRequest struct {
 // UpdateIssueRequest is the JSON body for PATCH /v1/issues/{issue_id}.
 type UpdateIssueRequest struct {
 	Title           string `json:"title,omitempty"`
+	IssueType       string `json:"issue_type,omitempty"`
 	Description     string `json:"description,omitempty"`
 	Priority        int    `json:"priority,omitempty"`
 	Assignee        string `json:"assignee,omitempty"`
@@ -173,6 +190,9 @@ func ValidateCreateIssue(req CreateIssueRequest) error {
 	}
 	if req.Title == "" {
 		errs = append(errs, "title is required")
+	}
+	if req.IssueType != "" && !ValidIssueType(req.IssueType) {
+		errs = append(errs, "issue_type must be one of: "+strings.Join(IssueTypes, ", "))
 	}
 	// For repo/worktree scope, repo is required
 	if req.ScopeKind != "project" && req.Repo == "" {

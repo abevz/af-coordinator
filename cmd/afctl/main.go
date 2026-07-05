@@ -289,6 +289,7 @@ func printIssue(i core.Issue) {
 		fmt.Printf("Worktree ID:  %s\n", i.WorktreeID)
 	}
 	fmt.Printf("Scope:        %s\n", i.ScopeKind)
+	fmt.Printf("Type:         %s\n", i.IssueType)
 	fmt.Printf("Title:        %s\n", i.Title)
 	if i.Description != "" {
 		fmt.Printf("Description:  %s\n", i.Description)
@@ -348,6 +349,7 @@ func printIssueDetailed(i core.Issue, l *core.IssueLease) {
 	fmt.Printf("ID:         %s\n", i.ID)
 	fmt.Printf("Short ID:   %s\n", i.ShortID)
 	fmt.Printf("Status:     %s %s\n", statusSymbol(i.Status), i.Status)
+	fmt.Printf("Type:       %s\n", i.IssueType)
 	fmt.Printf("Title:      %s\n", i.Title)
 	fmt.Printf("Priority:   %d\n", i.Priority)
 	if i.Assignee != "" {
@@ -371,6 +373,7 @@ func printIssueFull(i core.Issue, l *core.IssueLease, events []core.Event, notes
 	fmt.Printf("ID:            %s\n", i.ID)
 	fmt.Printf("Short ID:      %s\n", i.ShortID)
 	fmt.Printf("Status:        %s %s\n", statusSymbol(i.Status), i.Status)
+	fmt.Printf("Type:          %s\n", i.IssueType)
 	fmt.Printf("Title:         %s\n", i.Title)
 	if i.Description != "" {
 		fmt.Printf("Description:   %s\n", i.Description)
@@ -438,15 +441,16 @@ func printIssueFull(i core.Issue, l *core.IssueLease, events []core.Event, notes
 
 // printIssuesTable displays a list of issues in a fixed-width table format.
 func printIssuesTable(issues []core.Issue) {
-	fmt.Printf("%-10s %-12s %-12s %-50s %-12s %-12s\n", "ID", "SHORT", "STATUS", "TITLE", "ASSIGNEE", "CLAIMED")
-	fmt.Printf("%-10s %-12s %-12s %-50s %-12s %-12s\n", "---", "-----", "------", "-----", "-------", "-------")
+	fmt.Printf("%-10s %-12s %-12s %-8s %-50s %-12s %-12s\n", "ID", "SHORT", "STATUS", "TYPE", "TITLE", "ASSIGNEE", "CLAIMED")
+	fmt.Printf("%-10s %-12s %-12s %-8s %-50s %-12s %-12s\n", "---", "-----", "------", "----", "-----", "-------", "-------")
 	for _, i := range issues {
 		id := truncate(i.ID, 11) // 8 chars + "..."
 		title := truncate(i.Title, 50)
 		status := statusSymbol(i.Status) + " " + i.Status
+		issueType := truncate(i.IssueType, 8)
 		assignee := truncate(i.Assignee, 12)
 		claimed := truncate(i.Holder, 12)
-		fmt.Printf("%-10s %-12s %-12s %-50s %-12s %-12s\n", id, i.ShortID, status, title, assignee, claimed)
+		fmt.Printf("%-10s %-12s %-12s %-8s %-50s %-12s %-12s\n", id, i.ShortID, status, issueType, title, assignee, claimed)
 	}
 }
 

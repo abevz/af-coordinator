@@ -60,14 +60,18 @@ func CreateIssue(ctx context.Context, db *sql.DB, projectKey string, req core.Cr
 	if priority <= 0 {
 		priority = 3
 	}
+	issueType := req.IssueType
+	if issueType == "" {
+		issueType = "task"
+	}
 
 	_, err = tx.ExecContext(ctx,
 		`INSERT INTO issues (id, short_id, project_id, repository_id, worktree_id, scope_kind,
-		                    title, description, status, priority, assignee, version,
+		                    issue_type, title, description, status, priority, assignee, version,
 		                    claimed_at, closed_at, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', 1, NULL, NULL, ?, ?)`,
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', 1, NULL, NULL, ?, ?)`,
 		id, shortID, proj.ID, repoID, worktreeID, req.ScopeKind,
-		req.Title, req.Description, status, priority, now, now,
+		issueType, req.Title, req.Description, status, priority, now, now,
 	)
 	if err != nil {
 		return core.Issue{}, fmt.Errorf("insert issue: %w", err)
@@ -95,7 +99,7 @@ func CreateIssue(ctx context.Context, db *sql.DB, projectKey string, req core.Cr
 	}
 
 	return scanIssueRow(id, shortID, proj.ID, repoID, worktreeID, req.ScopeKind,
-		req.Title, req.Description, status, priority, "", 1, "", "", "", "", now, now), nil
+		issueType, req.Title, req.Description, status, priority, "", 1, "", "", "", "", now, now), nil
 }
 
 // ResolveIssueID resolves an issue by either its UUID id or short_id, returning the UUID id.
@@ -128,7 +132,7 @@ func GetIssue(ctx context.Context, db *sql.DB, id string) (core.Issue, *core.Iss
 
 	row := db.QueryRowContext(ctx,
 		`SELECT i.id, i.short_id, i.project_id, i.repository_id, i.worktree_id, i.scope_kind,
-		        i.title, i.description, i.status, i.priority, i.assignee, i.version,
+		        i.issue_type, i.title, i.description, i.status, i.priority, i.assignee, i.version,
 		        i.claimed_at, i.closed_at, i.created_at, i.updated_at,
 		        COALESCE(l.holder, ''), COALESCE(l.expires_at, '')
 		 FROM issues i
@@ -192,9 +196,13 @@ func ListIssues(ctx context.Context, db *sql.DB, params core.IssueListParams) ([
 		where = append(where, "i.assignee = ?")
 		args = append(args, params.Assignee)
 	}
+	if params.IssueType != "" {
+		where = append(where, "i.issue_type = ?")
+		args = append(args, params.IssueType)
+	}
 
 	query := `SELECT i.id, i.short_id, i.project_id, i.repository_id, i.worktree_id, i.scope_kind,
-	                 i.title, i.description, i.status, i.priority, i.assignee, i.version,
+	                 i.issue_type, i.title, i.description, i.status, i.priority, i.assignee, i.version,
 	                 i.claimed_at, i.closed_at, i.created_at, i.updated_at,
 	                 COALESCE(l.holder, ''), COALESCE(l.expires_at, '')
 	          FROM issues i
@@ -234,16 +242,17 @@ func ListIssues(ctx context.Context, db *sql.DB, params core.IssueListParams) ([
 
 // ListReadyIssues returns issues that are actionable (not terminal), not currently leased,
 // and not blocked by an unfinished blocks dependency.
-func ListReadyIssues(ctx context.Context, db *sql.DB, projectID string) ([]core.Issue, error) {
+func ListReadyIssues(ctx context.Context, db *sql.DB, projectID, repoID string) ([]core.Issue, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
 	args := []interface{}{now}
 	query := `SELECT i.id, i.short_id, i.project_id, i.repository_id, i.worktree_id, i.scope_kind,
-	                 i.title, i.description, i.status, i.priority, i.assignee, i.version,
+	                 i.issue_type, i.title, i.description, i.status, i.priority, i.assignee, i.version,
 	                 i.claimed_at, i.closed_at, i.created_at, i.updated_at,
 	                 COALESCE(l.holder, ''), COALESCE(l.expires_at, '')
 	          FROM issues i
 	          LEFT JOIN leases l ON l.issue_id = i.id AND l.expires_at > ?
 	          WHERE i.status NOT IN ('done', 'cancelled', 'deferred', 'blocked')
+	            AND i.issue_type != 'epic'
 	            AND i.id NOT IN (SELECT issue_id FROM leases WHERE expires_at > ?)
 	            AND NOT EXISTS (
 	                SELECT 1 FROM dependencies d
@@ -258,6 +267,10 @@ func ListReadyIssues(ctx context.Context, db *sql.DB, projectID string) ([]core.
 	if projectID != "" {
 		query += " AND i.project_id = ?"
 		args = append(args, projectID)
+	}
+	if repoID != "" {
+		query += " AND i.repository_id = ?"
+		args = append(args, repoID)
 	}
 	query += " ORDER BY i.priority, i.updated_at DESC"
 
@@ -298,15 +311,19 @@ func ClaimIssue(ctx context.Context, db *sql.DB, issueID, holder string, ttlSeco
 	defer func() { _ = tx.Rollback() }()
 
 	// Check issue exists and is open.
-	var status string
-	err = tx.QueryRowContext(ctx, `SELECT status FROM issues WHERE id = ?`, issueID).Scan(&status)
+	var status, issueType string
+	err = tx.QueryRowContext(ctx, `SELECT status, issue_type FROM issues WHERE id = ?`, issueID).Scan(&status, &issueType)
 	if err == sql.ErrNoRows {
 		return core.ClaimResponse{}, core.NewAPIError(core.ErrNotFound, "issue not found: "+issueID)
 	}
 	if err != nil {
 		return core.ClaimResponse{}, fmt.Errorf("select issue: %w", err)
 	}
-	if status != "open" {
+	if issueType == "epic" {
+		return core.ClaimResponse{}, core.NewAPIError(core.ErrValidationFailed,
+			"epics cannot be claimed; claim their child issues instead")
+	}
+	if status != "open" && status != "in_progress" {
 		return core.ClaimResponse{}, core.NewAPIError(core.ErrLeaseHeld,
 			"issue cannot be claimed from status: "+status)
 	}
@@ -324,6 +341,12 @@ func ClaimIssue(ctx context.Context, db *sql.DB, issueID, holder string, ttlSeco
 	if leaseCount > 0 {
 		return core.ClaimResponse{}, core.NewAPIError(core.ErrLeaseHeld,
 			"issue is already claimed: "+issueID)
+	}
+
+	// Delete any expired lease first to avoid constraint violation on insert.
+	_, err = tx.ExecContext(ctx, `DELETE FROM leases WHERE issue_id = ?`, issueID)
+	if err != nil {
+		return core.ClaimResponse{}, fmt.Errorf("delete expired lease: %w", err)
 	}
 
 	// Generate lease.
@@ -495,7 +518,7 @@ func scanIssue(s scanner) (core.Issue, error) {
 	var repoID, worktreeID, claimedAt, closedAt sql.NullString
 	var holder, leaseExpiresAt sql.NullString
 	err := s.Scan(&i.ID, &i.ShortID, &i.ProjectID, &repoID, &worktreeID,
-		&i.ScopeKind, &i.Title, &i.Description, &i.Status, &i.Priority,
+		&i.ScopeKind, &i.IssueType, &i.Title, &i.Description, &i.Status, &i.Priority,
 		&i.Assignee, &i.Version, &claimedAt, &closedAt,
 		&i.CreatedAt, &i.UpdatedAt, &holder, &leaseExpiresAt)
 	if err != nil {
@@ -567,6 +590,14 @@ func UpdateIssue(ctx context.Context, db *sql.DB, issueID string, req core.Updat
 		sets = append(sets, "title = ?")
 		args = append(args, req.Title)
 	}
+	if req.IssueType != "" {
+		if !core.ValidIssueType(req.IssueType) {
+			return core.Issue{}, core.NewAPIError(core.ErrValidationFailed,
+				"issue_type must be one of: "+strings.Join(core.IssueTypes, ", "))
+		}
+		sets = append(sets, "issue_type = ?")
+		args = append(args, req.IssueType)
+	}
 	if req.Description != "" {
 		sets = append(sets, "description = ?")
 		args = append(args, req.Description)
@@ -636,6 +667,9 @@ func buildChangedFields(req core.UpdateIssueRequest) []string {
 	var changed []string
 	if req.Title != "" {
 		changed = append(changed, "title")
+	}
+	if req.IssueType != "" {
+		changed = append(changed, "issue_type")
 	}
 	if req.Description != "" {
 		changed = append(changed, "description")
@@ -802,7 +836,7 @@ func RemoveDependency(ctx context.Context, db *sql.DB, issueID, dependsOn, kind,
 	if kind == "" {
 		kind = "blocks"
 	}
-	
+
 	dependsOnID, err := ResolveIssueID(ctx, db, dependsOn)
 	if err != nil {
 		return err
@@ -1082,13 +1116,14 @@ func isSQLiteConstraintError(err error) bool {
 
 // scanIssueRow builds an Issue struct from raw fields (used by CreateIssue to avoid a second query).
 func scanIssueRow(id, shortID, projectID string, repoID, worktreeID interface{},
-	scopeKind, title, description, status string, priority int,
+	scopeKind, issueType, title, description, status string, priority int,
 	assignee string, version int, claimedAt, closedAt, holder, leaseExpiresAt, createdAt, updatedAt string) core.Issue {
 	i := core.Issue{
 		ID:          id,
 		ShortID:     shortID,
 		ProjectID:   projectID,
 		ScopeKind:   scopeKind,
+		IssueType:   issueType,
 		Title:       title,
 		Description: description,
 		Status:      status,

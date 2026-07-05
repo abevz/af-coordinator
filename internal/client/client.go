@@ -10,6 +10,8 @@ import (
 	"net/url"
 	"time"
 
+	"strings"
+
 	"github.com/abevz/af-coordinator/internal/core"
 )
 
@@ -217,7 +219,7 @@ func (c *Client) GetIssue(ctx context.Context, issueID string) (core.Issue, *cor
 }
 
 // ListIssues sends a GET /v1/issues request with optional query params.
-func (c *Client) ListIssues(ctx context.Context, project, repo, worktree, status, assignee string) ([]core.Issue, error) {
+func (c *Client) ListIssues(ctx context.Context, project, repo, worktree, status, assignee, issueType string) ([]core.Issue, error) {
 	path := "/v1/issues"
 	sep := "?"
 	appendParam := func(key, val string) {
@@ -231,6 +233,7 @@ func (c *Client) ListIssues(ctx context.Context, project, repo, worktree, status
 	appendParam("worktree", worktree)
 	appendParam("status", status)
 	appendParam("assignee", assignee)
+	appendParam("type", issueType)
 
 	var result struct {
 		Issues []core.Issue `json:"issues"`
@@ -356,11 +359,18 @@ func (c *Client) ListEvents(ctx context.Context, issueID string) ([]core.Event, 
 	return result.Events, nil
 }
 
-// ListReadyIssues sends a GET /v1/issues/ready request with an optional project filter.
-func (c *Client) ListReadyIssues(ctx context.Context, project string) ([]core.Issue, error) {
+// ListReadyIssues sends a GET /v1/issues/ready request with optional project and repo filters.
+func (c *Client) ListReadyIssues(ctx context.Context, project, repo string) ([]core.Issue, error) {
 	path := "/v1/issues/ready"
+	var params []string
 	if project != "" {
-		path += "?project=" + project
+		params = append(params, "project="+project)
+	}
+	if repo != "" {
+		params = append(params, "repo="+repo)
+	}
+	if len(params) > 0 {
+		path += "?" + strings.Join(params, "&")
 	}
 
 	var result struct {

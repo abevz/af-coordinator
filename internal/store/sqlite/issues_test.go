@@ -291,6 +291,47 @@ func TestClaimIssueAlreadyClaimed(t *testing.T) {
 	}
 }
 
+func TestClaimIssueWithExpiredLease(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Expired lease claim"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Claim it first.
+	_, err = ClaimIssue(context.Background(), db, issue.ID, "agent-1", 3600)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Manually expire the lease in the DB and keep the status as 'in_progress'.
+	_, err = db.Exec(
+		`UPDATE leases SET expires_at = ? WHERE issue_id = ?`,
+		time.Now().UTC().Add(-time.Hour).Format(time.RFC3339),
+		issue.ID,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Second claim (by agent-2) should now succeed because the lease has expired,
+	// even though the status is still 'in_progress'.
+	resp, err := ClaimIssue(context.Background(), db, issue.ID, "agent-2", 3600)
+	if err != nil {
+		t.Fatalf("expected claim on expired lease to succeed, got: %v", err)
+	}
+	if resp.LeaseToken == "" {
+		t.Error("expected new lease token to be returned")
+	}
+}
+
 func TestClaimIssueNonexistent(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
@@ -444,7 +485,7 @@ func TestListReadyIssues(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ready, err := ListReadyIssues(context.Background(), db, "")
+	ready, err := ListReadyIssues(context.Background(), db, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -477,7 +518,7 @@ func TestListReadyIssuesExcludesLeased(t *testing.T) {
 	}
 
 	// ListReadyIssues should exclude leased issues.
-	ready, err := ListReadyIssues(context.Background(), db, "")
+	ready, err := ListReadyIssues(context.Background(), db, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -502,7 +543,7 @@ func TestListReadyIssuesByProject(t *testing.T) {
 	CreateIssue(context.Background(), db, "p1", core.CreateIssueRequest{ScopeKind: "project", Title: "P1 issue"})
 	CreateIssue(context.Background(), db, "p2", core.CreateIssueRequest{ScopeKind: "project", Title: "P2 issue"})
 
-	ready, err := ListReadyIssues(context.Background(), db, p1.ID)
+	ready, err := ListReadyIssues(context.Background(), db, p1.ID, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -541,7 +582,7 @@ func TestListReadyIssuesWithExpiredLease(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ready, err := ListReadyIssues(context.Background(), db, "")
+	ready, err := ListReadyIssues(context.Background(), db, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -618,7 +659,7 @@ func TestListReadyIssuesWithLease(t *testing.T) {
 	}
 
 	// List ready issues: only i1 (unclaimed) should appear.
-	ready, err := ListReadyIssues(context.Background(), db, "")
+	ready, err := ListReadyIssues(context.Background(), db, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1876,5 +1917,173 @@ func TestDependencyCycleDetection(t *testing.T) {
 	}
 	if apiErr.Code != core.ErrDependencyCycle {
 		t.Errorf("expected code %q, got %q", core.ErrDependencyCycle, apiErr.Code)
+	}
+}
+
+func TestCreateIssueDefaultType(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Default type"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if issue.IssueType != "task" {
+		t.Errorf("expected issue_type 'task', got %q", issue.IssueType)
+	}
+
+	got, _, err := GetIssue(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.IssueType != "task" {
+		t.Errorf("expected persisted issue_type 'task', got %q", got.IssueType)
+	}
+}
+
+func TestCreateIssueWithType(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "A bug", IssueType: "bug"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if issue.IssueType != "bug" {
+		t.Errorf("expected issue_type 'bug', got %q", issue.IssueType)
+	}
+}
+
+func TestListIssuesFilterByType(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "A task"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bug, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "A bug", IssueType: "bug"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	issues, err := ListIssues(context.Background(), db, core.IssueListParams{IssueType: "bug"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(issues) != 1 {
+		t.Fatalf("expected 1 bug, got %d", len(issues))
+	}
+	if issues[0].ID != bug.ID {
+		t.Errorf("expected bug %q, got %q", bug.ID, issues[0].ID)
+	}
+}
+
+func TestReadyExcludesEpics(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Big epic", IssueType: "epic"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Small task"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	issues, err := ListReadyIssues(context.Background(), db, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(issues) != 1 {
+		t.Fatalf("expected 1 ready issue, got %d", len(issues))
+	}
+	if issues[0].ID != task.ID {
+		t.Errorf("expected task %q to be ready, got %q", task.ID, issues[0].ID)
+	}
+}
+
+func TestClaimEpicRejected(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	epic, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Big epic", IssueType: "epic"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = ClaimIssue(context.Background(), db, epic.ID, "agent-1", 60)
+	if err == nil {
+		t.Fatal("expected error claiming an epic")
+	}
+	var apiErr core.APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("expected APIError, got %T: %v", err, err)
+	}
+	if apiErr.Code != core.ErrValidationFailed {
+		t.Errorf("expected code %q, got %q", core.ErrValidationFailed, apiErr.Code)
+	}
+}
+
+func TestUpdateIssueType(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Reclassify me"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	updated, err := UpdateIssue(context.Background(), db, issue.ID, core.UpdateIssueRequest{
+		IssueType:       "bug",
+		ExpectedVersion: issue.Version,
+		Actor:           "tester",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.IssueType != "bug" {
+		t.Errorf("expected issue_type 'bug', got %q", updated.IssueType)
+	}
+
+	// Invalid type is rejected.
+	_, err = UpdateIssue(context.Background(), db, issue.ID, core.UpdateIssueRequest{
+		IssueType:       "story",
+		ExpectedVersion: updated.Version,
+		Actor:           "tester",
+	})
+	if err == nil {
+		t.Fatal("expected error for invalid issue_type")
 	}
 }

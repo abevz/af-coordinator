@@ -142,6 +142,11 @@ scope columns (`repository` requires `repository_id`, `worktree` requires
 `worktree_id`). If an FK is nulled by `on delete set null`, the daemon
 downgrades `scope_kind` accordingly in the same transaction.
 
+`issue_type` classifies the work item (`task` default, `bug`, `feature`,
+`epic`, `chore`). Epics are containers: children reference them via a
+`parent` dependency; the daemon rejects claims on epics and excludes them
+from the ready view. Added in migration `0002_issue_type.sql`.
+
 ```sql
 create table issues (
   id text primary key,
@@ -151,6 +156,8 @@ create table issues (
   worktree_id text references worktrees(id) on delete set null,
   scope_kind text not null
     check (scope_kind in ('project', 'repository', 'worktree')),
+  issue_type text not null default 'task'
+    check (issue_type in ('task', 'bug', 'feature', 'epic', 'chore')),
   title text not null,
   description text not null default '',
   status text not null

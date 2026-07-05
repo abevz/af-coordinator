@@ -118,9 +118,9 @@ func TestClientCoverage(t *testing.T) {
 	_, _ = c.ListArtifacts(ctx, "test-repo")
 
 	_, _ = c.CreateIssue(ctx, core.CreateIssueRequest{})
-	_, _ = c.ListIssues(ctx, "project", "test", "open", "assignee", "reporter")
+	_, _ = c.ListIssues(ctx, "project", "test", "open", "assignee", "reporter", "bug")
 	_, _, _ = c.GetIssue(ctx, "i1")
-	_, _ = c.ListReadyIssues(ctx, "test")
+	_, _ = c.ListReadyIssues(ctx, "test", "")
 
 	_, _ = c.ClaimIssue(ctx, "i1", "actor", 10)
 	_, _ = c.HeartbeatLease(ctx, "i1", "token", 10)
@@ -132,7 +132,7 @@ func TestClientCoverage(t *testing.T) {
 	_, _ = c.ListEvents(ctx, "i1")
 
 	_ = c.AddDependency(ctx, "i1", core.AddDependencyRequest{})
-	_ = c.RemoveDependency(ctx, "i1", "i2", "kind")
+	_ = c.RemoveDependency(ctx, "i1", core.RemoveDependencyRequest{DependsOn: "i2", Kind: "kind"})
 	_ = c.LinkArtifact(ctx, "i1", core.LinkArtifactRequest{})
 
 	_, _ = c.UpdateIssue(ctx, "i1", core.UpdateIssueRequest{})
