@@ -33,18 +33,18 @@ func runIssueCreateForm(ctx context.Context, c *client.Client, args []string) er
 	var confirm bool
 
 	fields1 := []huh.Field{
-		huh.NewSelect[string]().Title("Project").Options(projectOpts...).Value(&project),
-		huh.NewSelect[string]().Title("Scope").Options(
-			huh.NewOption("Project", "project"),
-			huh.NewOption("Repository", "repository"),
-			huh.NewOption("Worktree", "worktree"),
-		).Value(&scope),
 		huh.NewInput().Title("Title").Value(&title).Validate(func(s string) error {
 			if strings.TrimSpace(s) == "" {
 				return fmt.Errorf("title is required")
 			}
 			return nil
 		}),
+		huh.NewSelect[string]().Title("Project").Options(projectOpts...).Value(&project),
+		huh.NewSelect[string]().Title("Scope").Options(
+			huh.NewOption("Project", "project"),
+			huh.NewOption("Repository", "repository"),
+			huh.NewOption("Worktree", "worktree"),
+		).Value(&scope),
 		huh.NewSelect[string]().Title("Priority").Options(
 			huh.NewOption("1 (High)", "1"),
 			huh.NewOption("2 (Normal)", "2"),
