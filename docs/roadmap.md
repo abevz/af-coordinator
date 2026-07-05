@@ -1,0 +1,61 @@
+# Roadmap
+
+Direction for af-coordinator beyond v1. The operational source of truth for
+this work is the coordinator itself (project `afc`); this document records
+the intent and the reasoning so the issues stay short.
+
+## Target: Aion Forge integration (epic `afc-24`)
+
+af-coordinator becomes the local tracker / control surface for the
+[Aion Forge](https://github.com/abevz/aion-forge) agent factory:
+
+```text
+issue (af-coordinator) -> Temporal workflow -> isolated runner -> branch/PR -> checks -> merge -> issue closed
+```
+
+Division of responsibility stays strict:
+
+- af-coordinator is the single write authority over issue state
+  (status, leases, notes, audit trail)
+- Temporal owns execution truth (retries, workflow progress, runner state)
+- the coordinator stores references to execution (workflow IDs, PR URLs),
+  never execution state itself
+
+Planned work, in priority order:
+
+| Issue | Type | What |
+|---|---|---|
+| `afc-25` | feature | Events watch API: `GET /v1/events?since=` with long-poll, so consumers react to new ready issues without tight polling |
+| `afc-26` | feature | `external_key` on issues: mirror to GitHub/Gitea, store Temporal workflow ID |
+| `afc-27` | feature | Structured resolution: PR/commit references on close |
+| `afc-28` | feature | MCP server wrapper over the daemon API for Claude-based agents |
+| `afc-29` | feature | JSONL export (`internal/export`), backup + interim bridge |
+| `afc-30` | bug | Dependency responses mix UUID and short_id |
+
+## Issue classification (done)
+
+`issue_type` shipped in migration `0002`: `task` (default), `bug`,
+`feature`, `epic`, `chore`.
+
+Design decisions, recorded here so they are not re-litigated:
+
+- a single type column instead of free-form labels; labels wait until a
+  concrete need appears
+- `epic` is a container, not a unit of work: it cannot be claimed and is
+  excluded from the ready view; children attach via the existing `parent`
+  dependency kind
+- type is the routing key for future agent pipelines
+  (bug -> bugfix flow, feature -> SDD flow, chore -> lightweight flow)
+
+## Non-goals (unchanged from v1)
+
+- web UI
+- distributed cluster mode / multi-node replication
+- GitHub as source of truth
+- embedded scripting
+
+## Working agreement
+
+New roadmap items start as issues in project `afc` (`afctl issue create
+--project afc --type ...`). This file is updated only when direction
+changes, not per issue.

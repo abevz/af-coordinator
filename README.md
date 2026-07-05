@@ -248,6 +248,7 @@ migrations/            schema migrations
 - [Workflows v1](docs/workflows-v1.md)
 - [SDD workflow v1](docs/sdd-workflow-v1.md)
 - [Foundation spec packet](docs/specs/001-foundation/README.md)
+- [Roadmap](docs/roadmap.md) — direction beyond v1; operational tracking lives in project `afc` inside the coordinator itself
 
 ## Known limitations
 
