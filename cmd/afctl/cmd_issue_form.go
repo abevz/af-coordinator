@@ -58,7 +58,9 @@ func runIssueCreateForm(ctx context.Context, c *client.Client, args []string) er
 		allWtOpts = append(allWtOpts, huh.NewOption("No worktrees available", ""))
 	}
 
-	var project, scope, repo, worktree, title, priorityStr, issueType string
+	var project, scope, repo, worktree, title, issueType string
+	// Preselect the API default (priority 3) instead of huh's first option.
+	priorityStr := "3"
 	var description, assignee string
 	var blockedByStr, parentStr, artifactLink string
 	var confirm bool
@@ -84,10 +86,10 @@ func runIssueCreateForm(ctx context.Context, c *client.Client, args []string) er
 			huh.NewOption("Chore", "chore"),
 		).Value(&issueType),
 		huh.NewSelect[string]().Title("Priority").Options(
-			huh.NewOption("1 (High)", "1"),
-			huh.NewOption("2 (Normal)", "2"),
-			huh.NewOption("3 (Low)", "3"),
-			huh.NewOption("4 (Lowest)", "4"),
+			huh.NewOption("1 (Urgent)", "1"),
+			huh.NewOption("2 (High)", "2"),
+			huh.NewOption("3 (Normal)", "3"),
+			huh.NewOption("4 (Low)", "4"),
 		).Value(&priorityStr),
 	}
 
