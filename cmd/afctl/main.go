@@ -64,6 +64,8 @@ func main() {
 	switch filtered[0] {
 	case "health":
 		err = runHealth(ctx, c)
+	case "doctor":
+		err = runDoctor(ctx, c, cfg, filtered[1:])
 	case "protocol":
 		runProtocol()
 	case "init":
@@ -102,6 +104,7 @@ Global flags:
 
 Commands:
   health                Check daemon health
+  doctor                Run environment diagnostics
   protocol              Print the agent protocol contract
   init                  Initialize or update AGENTS.md with coordinator block
   project               Manage projects
