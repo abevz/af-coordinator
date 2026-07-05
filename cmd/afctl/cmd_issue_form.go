@@ -12,10 +12,7 @@ import (
 )
 
 func runIssueCreateForm(ctx context.Context, c *client.Client, args []string) error {
-	actor, err := resolveActor("")
-	if err != nil {
-		return fmt.Errorf("error: %v\n", err)
-	}
+	actor, _ := resolveActor("")
 
 	projects, err := c.ListProjects(ctx)
 	if err != nil {
@@ -35,28 +32,39 @@ func runIssueCreateForm(ctx context.Context, c *client.Client, args []string) er
 	var dependsOnStr, artifactLink string
 	var confirm bool
 
-	// Screen 1: Project & Scope & Title & Priority
+	fields1 := []huh.Field{
+		huh.NewSelect[string]().Title("Project").Options(projectOpts...).Value(&project),
+		huh.NewSelect[string]().Title("Scope").Options(
+			huh.NewOption("Project", "project"),
+			huh.NewOption("Repository", "repository"),
+			huh.NewOption("Worktree", "worktree"),
+		).Value(&scope),
+		huh.NewInput().Title("Title").Value(&title).Validate(func(s string) error {
+			if strings.TrimSpace(s) == "" {
+				return fmt.Errorf("title is required")
+			}
+			return nil
+		}),
+		huh.NewSelect[string]().Title("Priority").Options(
+			huh.NewOption("1 (High)", "1"),
+			huh.NewOption("2 (Normal)", "2"),
+			huh.NewOption("3 (Low)", "3"),
+			huh.NewOption("4 (Lowest)", "4"),
+		).Value(&priorityStr),
+	}
+
+	if actor == "" {
+		fields1 = append(fields1, huh.NewInput().Title("Actor").Value(&actor).Validate(func(s string) error {
+			if strings.TrimSpace(s) == "" {
+				return fmt.Errorf("actor is required")
+			}
+			return nil
+		}))
+	}
+
+	// Screen 1: Project & Scope & Title & Priority & (Actor)
 	err = huh.NewForm(
-		huh.NewGroup(
-			huh.NewSelect[string]().Title("Project").Options(projectOpts...).Value(&project),
-			huh.NewSelect[string]().Title("Scope").Options(
-				huh.NewOption("Project", "project"),
-				huh.NewOption("Repository", "repository"),
-				huh.NewOption("Worktree", "worktree"),
-			).Value(&scope),
-			huh.NewInput().Title("Title").Value(&title).Validate(func(s string) error {
-				if strings.TrimSpace(s) == "" {
-					return fmt.Errorf("title is required")
-				}
-				return nil
-			}),
-			huh.NewSelect[string]().Title("Priority").Options(
-				huh.NewOption("1 (High)", "1"),
-				huh.NewOption("2 (Normal)", "2"),
-				huh.NewOption("3 (Low)", "3"),
-				huh.NewOption("4 (Lowest)", "4"),
-			).Value(&priorityStr),
-		).Title("Screen 1: Context & Basics"),
+		huh.NewGroup(fields1...).Title("Screen 1: Context & Basics"),
 	).Run()
 	
 	if err != nil {
