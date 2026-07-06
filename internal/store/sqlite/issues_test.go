@@ -1964,6 +1964,59 @@ func TestCreateIssueWithType(t *testing.T) {
 	}
 }
 
+func TestAcceptanceCriteriaRoundTrip(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	if _, err := CreateProject(context.Background(), db, "test", "Test", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create with acceptance criteria; it must persist and be returned.
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{
+		ScopeKind:          "project",
+		Title:              "With acceptance",
+		AcceptanceCriteria: "- go test ./... passes\n- docs updated",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if issue.AcceptanceCriteria != "- go test ./... passes\n- docs updated" {
+		t.Errorf("create: acceptance_criteria not returned, got %q", issue.AcceptanceCriteria)
+	}
+
+	got, _, err := GetIssue(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.AcceptanceCriteria != issue.AcceptanceCriteria {
+		t.Errorf("get: acceptance_criteria not persisted, got %q", got.AcceptanceCriteria)
+	}
+
+	// Update under optimistic version; the field must change.
+	updated, err := UpdateIssue(context.Background(), db, issue.ID, core.UpdateIssueRequest{
+		AcceptanceCriteria: "- new criterion",
+		ExpectedVersion:    issue.Version,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.AcceptanceCriteria != "- new criterion" {
+		t.Errorf("update: acceptance_criteria not updated, got %q", updated.AcceptanceCriteria)
+	}
+
+	// A create without the field leaves it empty (omitted in JSON).
+	plain, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{
+		ScopeKind: "project", Title: "No acceptance",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plain.AcceptanceCriteria != "" {
+		t.Errorf("create without acceptance: expected empty, got %q", plain.AcceptanceCriteria)
+	}
+}
+
 func TestListIssuesFilterByType(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)

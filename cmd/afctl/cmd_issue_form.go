@@ -61,7 +61,7 @@ func runIssueCreateForm(ctx context.Context, c *client.Client, args []string) er
 	var project, scope, repo, worktree, title, issueType string
 	// Preselect the API default (priority 3) instead of huh's first option.
 	priorityStr := "3"
-	var description, assignee string
+	var description, acceptance, assignee string
 	var blockedByStr, parentStr, artifactLink string
 	var confirm bool
 
@@ -134,6 +134,7 @@ func runIssueCreateForm(ctx context.Context, c *client.Client, args []string) er
 		}),
 		huh.NewGroup(
 			huh.NewText().Title("Description").Value(&description).Lines(5),
+			huh.NewText().Title("Acceptance criteria (optional)").Value(&acceptance).Lines(4),
 			huh.NewInput().Title("Assignee (optional)").Value(&assignee),
 		).Title("Details"),
 		huh.NewGroup(
@@ -158,15 +159,16 @@ func runIssueCreateForm(ctx context.Context, c *client.Client, args []string) er
 	priority, _ := strconv.Atoi(priorityStr)
 
 	req := core.CreateIssueRequest{
-		Project:     project,
-		ScopeKind:   scope,
-		IssueType:   issueType,
-		Repo:        repo,
-		Worktree:    worktree,
-		Title:       title,
-		Description: description,
-		Priority:    priority,
-		Actor:       actor,
+		Project:            project,
+		ScopeKind:          scope,
+		IssueType:          issueType,
+		Repo:               repo,
+		Worktree:           worktree,
+		Title:              title,
+		Description:        description,
+		AcceptanceCriteria: acceptance,
+		Priority:           priority,
+		Actor:              actor,
 	}
 
 	issue, err := c.CreateIssue(ctx, req)
