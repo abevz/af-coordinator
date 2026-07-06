@@ -107,6 +107,9 @@ Clients handle `version_conflict` by rereading and retrying;
 - `GET  /v1/issues/{issue_id}/notes` — list
 - `POST /v1/issues/{issue_id}/links` — link artifact (`artifact`,
   `relation`); `artifact` can be a UUID or a repository-relative path
+- `DELETE /v1/issues/{issue_id}/links?artifact=&relation=&actor=` — remove a
+  link; `artifact` is a UUID or repository-relative path, optional `relation`
+  narrows to one relation (omit to remove all); `404 not_found` if absent
 - `GET  /v1/issues/{issue_id}/links` — list linked artifacts
 - `POST /v1/issues/{issue_id}/dependencies` — add dependency
   (`depends_on`, `kind`); rejects `blocks` cycles with `dependency_cycle`.

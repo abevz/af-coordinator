@@ -293,6 +293,19 @@ func (c *Client) LinkArtifact(ctx context.Context, issueID string, req core.Link
 	return c.doJSON(ctx, http.MethodPost, "/v1/issues/"+issueID+"/links", req, nil)
 }
 
+// UnlinkArtifact sends a DELETE /v1/issues/{issueID}/links request.
+func (c *Client) UnlinkArtifact(ctx context.Context, issueID string, req core.UnlinkArtifactRequest) error {
+	query := url.Values{}
+	query.Set("artifact", req.Artifact)
+	if req.Relation != "" {
+		query.Set("relation", req.Relation)
+	}
+	if req.Actor != "" {
+		query.Set("actor", req.Actor)
+	}
+	return c.doJSON(ctx, http.MethodDelete, "/v1/issues/"+issueID+"/links?"+query.Encode(), nil, nil)
+}
+
 // ListIssueLinks sends a GET /v1/issues/{issueID}/links request.
 func (c *Client) ListIssueLinks(ctx context.Context, issueID string) ([]core.ArtifactRef, error) {
 	var result struct {

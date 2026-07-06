@@ -2140,3 +2140,56 @@ func TestUpdateIssueType(t *testing.T) {
 		t.Fatal("expected error for invalid issue_type")
 	}
 }
+
+func TestUnlinkArtifact(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	if _, err := CreateProject(context.Background(), db, "test", "Test", ""); err != nil {
+		t.Fatal(err)
+	}
+	repo, _, err := CreateRepo(context.Background(), db, "test", core.CreateRepoRequest{
+		Project:         "test",
+		LogicalName:     "repo",
+		CanonicalGitDir: "/repos/repo.git",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{
+		ScopeKind: "repository", Title: "Unlink test", Repo: repo.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifact, err := CreateArtifact(context.Background(), db, repo.ID, core.CreateArtifactRequest{
+		Repo: repo.ID, Kind: "sdd", RelativePath: "docs/spec.md",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LinkArtifact(context.Background(), db, issue.ID, core.LinkArtifactRequest{Artifact: artifact.ID}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Unlink by relative path (resolved against the issue's repo).
+	if err := UnlinkArtifact(context.Background(), db, issue.ID, "docs/spec.md", "", "tester"); err != nil {
+		t.Fatal(err)
+	}
+	refs, err := ListIssueArtifacts(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(refs) != 0 {
+		t.Fatalf("expected 0 refs after unlink, got %d", len(refs))
+	}
+
+	// Unlinking a non-existent link is a not-found error.
+	err = UnlinkArtifact(context.Background(), db, issue.ID, artifact.ID, "", "tester")
+	if err == nil {
+		t.Fatal("expected not-found error unlinking an absent link")
+	}
+	if apiErr, ok := err.(core.APIError); !ok || apiErr.Code != core.ErrNotFound {
+		t.Errorf("expected ErrNotFound, got %v", err)
+	}
+}

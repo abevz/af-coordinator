@@ -40,6 +40,8 @@ func runIssue(ctx context.Context, c *client.Client, args []string) error {
 		return runIssueClose(ctx, c, args[1:])
 	case "link":
 		return runIssueLink(ctx, c, args[1:])
+	case "unlink":
+		return runIssueUnlink(ctx, c, args[1:])
 	case "dependency":
 		return runIssueDependency(ctx, c, args[1:])
 	case "note":
@@ -637,6 +639,50 @@ func runIssueLink(ctx context.Context, c *client.Client, args []string) error {
 		return nil
 	}
 	fmt.Println("Artifact linked.")
+	return nil
+}
+
+func runIssueUnlink(ctx context.Context, c *client.Client, args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("%s", "Usage: afctl issue unlink <issue-id> (--path <relative-path> | --artifact <id-or-path>) [--relation implements]")
+	}
+
+	issueID := args[0]
+	var req core.UnlinkArtifactRequest
+
+	for i := 1; i < len(args); i++ {
+		switch args[i] {
+		case "--path", "--artifact":
+			if i+1 < len(args) {
+				req.Artifact = args[i+1]
+				i++
+			}
+		case "--relation":
+			if i+1 < len(args) {
+				req.Relation = args[i+1]
+				i++
+			}
+		}
+	}
+
+	if req.Artifact == "" {
+		return fmt.Errorf("%s", "error: --path or --artifact is required")
+	}
+
+	act, err := resolveActor("")
+	if err != nil {
+		return err
+	}
+	req.Actor = act
+
+	if err := c.UnlinkArtifact(ctx, issueID, req); err != nil {
+		fail(err)
+	}
+	if jsonOutput {
+		fmt.Println(`{"status":"ok"}`)
+		return nil
+	}
+	fmt.Println("Artifact unlinked.")
 	return nil
 }
 

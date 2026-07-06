@@ -172,6 +172,13 @@ type LinkArtifactRequest struct {
 	Relation string `json:"relation,omitempty"` // default: "implements"
 }
 
+// UnlinkArtifactRequest holds the query params for DELETE /v1/issues/{issue_id}/links.
+type UnlinkArtifactRequest struct {
+	Artifact string // artifact ID or relative path
+	Relation string // if empty, removes every relation to the artifact
+	Actor    string
+}
+
 // ArtifactRef is a linked artifact with relation info.
 type ArtifactRef struct {
 	ID           string `json:"id"`
