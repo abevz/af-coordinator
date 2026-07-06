@@ -164,6 +164,33 @@ actually matters. The daemon does not auto-close an epic when the last
 child closes: closing the umbrella is a deliberate human statement that
 the goal, not just the task list, is complete.
 
+## Acceptance criteria
+
+Every issue can carry `acceptance_criteria` — the checkable conditions
+for calling it done, separate from the `description`. This is the
+queryable counterpart to the `## Verification` section of an SDD leaf:
+keep the criteria here (not buried in prose) so "is this really done?"
+has one place to look before you close.
+
+```bash
+# On create
+afctl issue create --project utils --scope-kind project \
+  --title "rotate backup keys" --priority 2 \
+  --acceptance $'- new keys in vault\n- old keys revoked\n- restore test passes'
+
+# Add or revise later (optimistic version, like any metadata edit)
+afctl issue update utils-7 --expected-version N \
+  --acceptance $'- new keys in vault\n- old keys revoked'
+
+# Prefer the guided form for multi-line entry
+afctl issue create-form            # includes an "Acceptance criteria" field
+```
+
+Criteria render in `afctl show <id> --full` (and the daily-check board's
+Issue Details pane). Free text — a Markdown bullet list is the norm.
+When an issue implements a spec, mirror the leaf's Verification section
+here so the tracker and the spec agree.
+
 ## Humans and agents on one backlog
 
 Everything above holds with agents in the pool; the only change is that

@@ -78,15 +78,15 @@ Clients handle `version_conflict` by rereading and retrying;
 
 - `POST /v1/issues` — create; daemon allocates `short_id`; body includes
   `project`, `scope_kind`, optional `repo`/`worktree`, `title`,
-  `description`, `priority`, `issue_type` (`task` default, `bug`,
-  `feature`, `epic`, `chore`)
+  `description`, `acceptance_criteria`, `priority`, `issue_type`
+  (`task` default, `bug`, `feature`, `epic`, `chore`)
 - `GET  /v1/issues/{issue_id}` — fetch one, including current lease if any
 - `GET  /v1/issues?project=&repo=&worktree=&status=&assignee=&type=` — query
 - `GET  /v1/issues/ready?project=&repo=` — computed ready view; excludes
   epics (they are containers, not units of work)
 - `PATCH /v1/issues/{issue_id}` — edit metadata and status (`title`, `issue_type`,
-  `description`, `priority`, `assignee`, `status`); requires `expected_version`,
-  plus `lease_token` if the issue is claimed
+  `description`, `acceptance_criteria`, `priority`, `assignee`, `status`); requires
+  `expected_version`, plus `lease_token` if the issue is claimed
 - `POST /v1/issues/{issue_id}/close` — requires `lease_token` +
   `expected_version`; body: `resolution` (`done` | `cancelled`), optional `note` (appends note and closes atomically)
 

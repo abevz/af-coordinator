@@ -62,6 +62,7 @@ curl -s -X POST --unix-socket $AFC_SOCK \
     "issue_type": "bug",
     "title": "Investigate database locks",
     "description": "We are seeing intermittent SQLite locks.",
+    "acceptance_criteria": "- Root cause identified\n- Repro no longer locks under concurrent writers",
     "priority": 2,
     "actor": "'"$AFC_ACTOR"'"
   }' \
@@ -69,7 +70,7 @@ curl -s -X POST --unix-socket $AFC_SOCK \
 ```
 
 ### Update an issue (PATCH)
-Use this to update descriptions, titles, or priorities. If the issue is `in_progress`, you must also provide the `lease_token`.
+Use this to update descriptions, acceptance criteria, titles, or priorities. If the issue is `in_progress`, you must also provide the `lease_token`.
 ```bash
 curl -s -X PATCH --unix-socket $AFC_SOCK \
   -H "Content-Type: application/json" \
