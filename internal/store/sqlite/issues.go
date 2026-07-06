@@ -995,6 +995,60 @@ func ListIssueArtifacts(ctx context.Context, db *sql.DB, issueID string) ([]core
 	return refs, nil
 }
 
+// UnlinkArtifact removes an artifact link from an issue. When relation is empty
+// it removes every relation to that artifact; otherwise only the matching one.
+func UnlinkArtifact(ctx context.Context, db *sql.DB, issueID, artifact, relation, actor string) error {
+	issue, _, err := GetIssue(ctx, db, issueID)
+	if err != nil {
+		return err
+	}
+
+	artifactID, err := ResolveArtifactID(ctx, db, issue.RepositoryID, artifact)
+	if err != nil {
+		return err
+	}
+
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var result sql.Result
+	if relation != "" {
+		result, err = tx.ExecContext(ctx,
+			`DELETE FROM issue_artifacts WHERE issue_id = ? AND artifact_id = ? AND relation = ?`,
+			issueID, artifactID, relation)
+	} else {
+		result, err = tx.ExecContext(ctx,
+			`DELETE FROM issue_artifacts WHERE issue_id = ? AND artifact_id = ?`,
+			issueID, artifactID)
+	}
+	if err != nil {
+		return fmt.Errorf("delete issue_artifact: %w", err)
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("rows affected: %w", err)
+	}
+	if rows == 0 {
+		return core.NewAPIError(core.ErrNotFound, "artifact link not found")
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	_, err = tx.ExecContext(ctx,
+		`INSERT INTO events (id, issue_id, actor, event_type, payload_json, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
+		uuid.New().String(), issueID, actor, "artifact_unlinked",
+		fmt.Sprintf(`{"artifact":"%s","relation":"%s"}`, artifact, relation), now)
+	if err != nil {
+		return fmt.Errorf("insert event: %w", err)
+	}
+
+	return tx.Commit()
+}
+
 // CreateNote inserts a new note on an issue.
 func CreateNote(ctx context.Context, db *sql.DB, issueID string, req core.CreateNoteRequest) (core.Note, error) {
 	// Verify issue exists.
