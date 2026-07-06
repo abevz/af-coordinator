@@ -45,26 +45,27 @@ func ValidIssueType(t string) bool {
 
 // Issue represents a task or work item in a project.
 type Issue struct {
-	ID             string       `json:"id"`
-	ShortID        string       `json:"short_id"`
-	ProjectID      string       `json:"project_id"`
-	RepositoryID   string       `json:"repository_id,omitempty"`
-	WorktreeID     string       `json:"worktree_id,omitempty"`
-	ScopeKind      string       `json:"scope_kind"`
-	IssueType      string       `json:"issue_type"`
-	Title          string       `json:"title"`
-	Description    string       `json:"description,omitempty"`
-	Status         string       `json:"status"`
-	Priority       int          `json:"priority"`
-	Assignee       string       `json:"assignee,omitempty"`
-	Version        int          `json:"version"`
-	ClaimedAt      string       `json:"claimed_at,omitempty"`
-	Holder         string       `json:"holder,omitempty"`
-	LeaseExpiresAt string       `json:"lease_expires_at,omitempty"`
-	ClosedAt       string       `json:"closed_at,omitempty"`
-	CreatedAt      string       `json:"created_at"`
-	UpdatedAt      string       `json:"updated_at"`
-	Dependencies   []Dependency `json:"dependencies,omitempty"`
+	ID                 string       `json:"id"`
+	ShortID            string       `json:"short_id"`
+	ProjectID          string       `json:"project_id"`
+	RepositoryID       string       `json:"repository_id,omitempty"`
+	WorktreeID         string       `json:"worktree_id,omitempty"`
+	ScopeKind          string       `json:"scope_kind"`
+	IssueType          string       `json:"issue_type"`
+	Title              string       `json:"title"`
+	Description        string       `json:"description,omitempty"`
+	AcceptanceCriteria string       `json:"acceptance_criteria,omitempty"`
+	Status             string       `json:"status"`
+	Priority           int          `json:"priority"`
+	Assignee           string       `json:"assignee,omitempty"`
+	Version            int          `json:"version"`
+	ClaimedAt          string       `json:"claimed_at,omitempty"`
+	Holder             string       `json:"holder,omitempty"`
+	LeaseExpiresAt     string       `json:"lease_expires_at,omitempty"`
+	ClosedAt           string       `json:"closed_at,omitempty"`
+	CreatedAt          string       `json:"created_at"`
+	UpdatedAt          string       `json:"updated_at"`
+	Dependencies       []Dependency `json:"dependencies,omitempty"`
 }
 
 // Dependency represents a relationship to another issue.
@@ -83,15 +84,16 @@ type IssueLease struct {
 
 // CreateIssueRequest is the JSON body for POST /v1/issues.
 type CreateIssueRequest struct {
-	Project     string `json:"project"`
-	ScopeKind   string `json:"scope_kind"`
-	IssueType   string `json:"issue_type,omitempty"`
-	Repo        string `json:"repo,omitempty"`
-	Worktree    string `json:"worktree,omitempty"`
-	Title       string `json:"title"`
-	Description string `json:"description,omitempty"`
-	Priority    int    `json:"priority,omitempty"`
-	Actor       string `json:"actor,omitempty"`
+	Project            string `json:"project"`
+	ScopeKind          string `json:"scope_kind"`
+	IssueType          string `json:"issue_type,omitempty"`
+	Repo               string `json:"repo,omitempty"`
+	Worktree           string `json:"worktree,omitempty"`
+	Title              string `json:"title"`
+	Description        string `json:"description,omitempty"`
+	AcceptanceCriteria string `json:"acceptance_criteria,omitempty"`
+	Priority           int    `json:"priority,omitempty"`
+	Actor              string `json:"actor,omitempty"`
 }
 
 // IssueListParams represents query params for GET /v1/issues.
@@ -129,15 +131,16 @@ type ReleaseRequest struct {
 
 // UpdateIssueRequest is the JSON body for PATCH /v1/issues/{issue_id}.
 type UpdateIssueRequest struct {
-	Title           string `json:"title,omitempty"`
-	IssueType       string `json:"issue_type,omitempty"`
-	Description     string `json:"description,omitempty"`
-	Priority        int    `json:"priority,omitempty"`
-	Assignee        string `json:"assignee,omitempty"`
-	Status          string `json:"status,omitempty"`
-	ExpectedVersion int    `json:"expected_version"`
-	LeaseToken      string `json:"lease_token,omitempty"`
-	Actor           string `json:"actor,omitempty"`
+	Title              string `json:"title,omitempty"`
+	IssueType          string `json:"issue_type,omitempty"`
+	Description        string `json:"description,omitempty"`
+	AcceptanceCriteria string `json:"acceptance_criteria,omitempty"`
+	Priority           int    `json:"priority,omitempty"`
+	Assignee           string `json:"assignee,omitempty"`
+	Status             string `json:"status,omitempty"`
+	ExpectedVersion    int    `json:"expected_version"`
+	LeaseToken         string `json:"lease_token,omitempty"`
+	Actor              string `json:"actor,omitempty"`
 }
 
 // CloseIssueRequest is the JSON body for POST /v1/issues/{issue_id}/close.

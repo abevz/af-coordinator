@@ -297,6 +297,9 @@ func printIssue(i core.Issue) {
 	if i.Description != "" {
 		fmt.Printf("Description:  %s\n", i.Description)
 	}
+	if i.AcceptanceCriteria != "" {
+		fmt.Printf("Acceptance:   %s\n", i.AcceptanceCriteria)
+	}
 	fmt.Printf("Status:       %s\n", i.Status)
 	fmt.Printf("Priority:     %d\n", i.Priority)
 	if i.Assignee != "" {
@@ -380,6 +383,9 @@ func printIssueFull(i core.Issue, l *core.IssueLease, events []core.Event, notes
 	fmt.Printf("Title:         %s\n", i.Title)
 	if i.Description != "" {
 		fmt.Printf("Description:   %s\n", i.Description)
+	}
+	if i.AcceptanceCriteria != "" {
+		fmt.Printf("Acceptance:    %s\n", i.AcceptanceCriteria)
 	}
 	fmt.Printf("Priority:      %d\n", i.Priority)
 	if i.Assignee != "" {

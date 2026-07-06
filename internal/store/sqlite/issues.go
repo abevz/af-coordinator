@@ -67,11 +67,11 @@ func CreateIssue(ctx context.Context, db *sql.DB, projectKey string, req core.Cr
 
 	_, err = tx.ExecContext(ctx,
 		`INSERT INTO issues (id, short_id, project_id, repository_id, worktree_id, scope_kind,
-		                    issue_type, title, description, status, priority, assignee, version,
+		                    issue_type, title, description, acceptance_criteria, status, priority, assignee, version,
 		                    claimed_at, closed_at, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', 1, NULL, NULL, ?, ?)`,
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', 1, NULL, NULL, ?, ?)`,
 		id, shortID, proj.ID, repoID, worktreeID, req.ScopeKind,
-		issueType, req.Title, req.Description, status, priority, now, now,
+		issueType, req.Title, req.Description, req.AcceptanceCriteria, status, priority, now, now,
 	)
 	if err != nil {
 		return core.Issue{}, fmt.Errorf("insert issue: %w", err)
@@ -99,7 +99,7 @@ func CreateIssue(ctx context.Context, db *sql.DB, projectKey string, req core.Cr
 	}
 
 	return scanIssueRow(id, shortID, proj.ID, repoID, worktreeID, req.ScopeKind,
-		issueType, req.Title, req.Description, status, priority, "", 1, "", "", "", "", now, now), nil
+		issueType, req.Title, req.Description, req.AcceptanceCriteria, status, priority, "", 1, "", "", "", "", now, now), nil
 }
 
 // ResolveIssueID resolves an issue by either its UUID id or short_id, returning the UUID id.
@@ -132,7 +132,7 @@ func GetIssue(ctx context.Context, db *sql.DB, id string) (core.Issue, *core.Iss
 
 	row := db.QueryRowContext(ctx,
 		`SELECT i.id, i.short_id, i.project_id, i.repository_id, i.worktree_id, i.scope_kind,
-		        i.issue_type, i.title, i.description, i.status, i.priority, i.assignee, i.version,
+		        i.issue_type, i.title, i.description, i.acceptance_criteria, i.status, i.priority, i.assignee, i.version,
 		        i.claimed_at, i.closed_at, i.created_at, i.updated_at,
 		        COALESCE(l.holder, ''), COALESCE(l.expires_at, '')
 		 FROM issues i
@@ -202,7 +202,7 @@ func ListIssues(ctx context.Context, db *sql.DB, params core.IssueListParams) ([
 	}
 
 	query := `SELECT i.id, i.short_id, i.project_id, i.repository_id, i.worktree_id, i.scope_kind,
-	                 i.issue_type, i.title, i.description, i.status, i.priority, i.assignee, i.version,
+	                 i.issue_type, i.title, i.description, i.acceptance_criteria, i.status, i.priority, i.assignee, i.version,
 	                 i.claimed_at, i.closed_at, i.created_at, i.updated_at,
 	                 COALESCE(l.holder, ''), COALESCE(l.expires_at, '')
 	          FROM issues i
@@ -246,7 +246,7 @@ func ListReadyIssues(ctx context.Context, db *sql.DB, projectID, repoID string) 
 	now := time.Now().UTC().Format(time.RFC3339)
 	args := []interface{}{now}
 	query := `SELECT i.id, i.short_id, i.project_id, i.repository_id, i.worktree_id, i.scope_kind,
-	                 i.issue_type, i.title, i.description, i.status, i.priority, i.assignee, i.version,
+	                 i.issue_type, i.title, i.description, i.acceptance_criteria, i.status, i.priority, i.assignee, i.version,
 	                 i.claimed_at, i.closed_at, i.created_at, i.updated_at,
 	                 COALESCE(l.holder, ''), COALESCE(l.expires_at, '')
 	          FROM issues i
@@ -518,7 +518,7 @@ func scanIssue(s scanner) (core.Issue, error) {
 	var repoID, worktreeID, claimedAt, closedAt sql.NullString
 	var holder, leaseExpiresAt sql.NullString
 	err := s.Scan(&i.ID, &i.ShortID, &i.ProjectID, &repoID, &worktreeID,
-		&i.ScopeKind, &i.IssueType, &i.Title, &i.Description, &i.Status, &i.Priority,
+		&i.ScopeKind, &i.IssueType, &i.Title, &i.Description, &i.AcceptanceCriteria, &i.Status, &i.Priority,
 		&i.Assignee, &i.Version, &claimedAt, &closedAt,
 		&i.CreatedAt, &i.UpdatedAt, &holder, &leaseExpiresAt)
 	if err != nil {
@@ -602,6 +602,10 @@ func UpdateIssue(ctx context.Context, db *sql.DB, issueID string, req core.Updat
 		sets = append(sets, "description = ?")
 		args = append(args, req.Description)
 	}
+	if req.AcceptanceCriteria != "" {
+		sets = append(sets, "acceptance_criteria = ?")
+		args = append(args, req.AcceptanceCriteria)
+	}
 	if req.Priority > 0 {
 		sets = append(sets, "priority = ?")
 		args = append(args, req.Priority)
@@ -673,6 +677,9 @@ func buildChangedFields(req core.UpdateIssueRequest) []string {
 	}
 	if req.Description != "" {
 		changed = append(changed, "description")
+	}
+	if req.AcceptanceCriteria != "" {
+		changed = append(changed, "acceptance_criteria")
 	}
 	if req.Priority > 0 {
 		changed = append(changed, "priority")
@@ -1116,22 +1123,23 @@ func isSQLiteConstraintError(err error) bool {
 
 // scanIssueRow builds an Issue struct from raw fields (used by CreateIssue to avoid a second query).
 func scanIssueRow(id, shortID, projectID string, repoID, worktreeID interface{},
-	scopeKind, issueType, title, description, status string, priority int,
+	scopeKind, issueType, title, description, acceptanceCriteria, status string, priority int,
 	assignee string, version int, claimedAt, closedAt, holder, leaseExpiresAt, createdAt, updatedAt string) core.Issue {
 	i := core.Issue{
-		ID:          id,
-		ShortID:     shortID,
-		ProjectID:   projectID,
-		ScopeKind:   scopeKind,
-		IssueType:   issueType,
-		Title:       title,
-		Description: description,
-		Status:      status,
-		Priority:    priority,
-		Assignee:    assignee,
-		Version:     version,
-		CreatedAt:   createdAt,
-		UpdatedAt:   updatedAt,
+		ID:                 id,
+		ShortID:            shortID,
+		ProjectID:          projectID,
+		ScopeKind:          scopeKind,
+		IssueType:          issueType,
+		Title:              title,
+		Description:        description,
+		AcceptanceCriteria: acceptanceCriteria,
+		Status:             status,
+		Priority:           priority,
+		Assignee:           assignee,
+		Version:            version,
+		CreatedAt:          createdAt,
+		UpdatedAt:          updatedAt,
 	}
 	if rid, ok := repoID.(string); ok {
 		i.RepositoryID = rid

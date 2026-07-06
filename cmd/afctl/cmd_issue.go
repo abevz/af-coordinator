@@ -53,7 +53,7 @@ func runIssue(ctx context.Context, c *client.Client, args []string) error {
 
 func runIssueCreate(ctx context.Context, c *client.Client, args []string) error {
 	if len(args) < 4 {
-		return fmt.Errorf("%s", "Usage: afctl issue create --project <key> --scope-kind <project|repository|worktree> --title <title> [--type <task|bug|feature|epic|chore>] [--repo <repo>] [--worktree <worktree>] [--description <desc>] [--priority <n>]")
+		return fmt.Errorf("%s", "Usage: afctl issue create --project <key> --scope-kind <project|repository|worktree> --title <title> [--type <task|bug|feature|epic|chore>] [--repo <repo>] [--worktree <worktree>] [--description <desc>] [--acceptance <criteria>] [--priority <n>]")
 	}
 
 	var req core.CreateIssueRequest
@@ -92,6 +92,11 @@ func runIssueCreate(ctx context.Context, c *client.Client, args []string) error 
 		case "--description":
 			if i+1 < len(args) {
 				req.Description = args[i+1]
+				i++
+			}
+		case "--acceptance":
+			if i+1 < len(args) {
+				req.AcceptanceCriteria = args[i+1]
 				i++
 			}
 		case "--priority":
@@ -412,7 +417,7 @@ func runIssueRelease(ctx context.Context, c *client.Client, args []string) error
 
 func runIssueUpdate(ctx context.Context, c *client.Client, args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("%s", "Usage: afctl issue update <issue-id> [--title ...] [--type <task|bug|feature|epic|chore>] [--description ...] [--priority N] [--assignee ...] [--status ...] --expected-version N [--lease-token ...]")
+		return fmt.Errorf("%s", "Usage: afctl issue update <issue-id> [--title ...] [--type <task|bug|feature|epic|chore>] [--description ...] [--acceptance ...] [--priority N] [--assignee ...] [--status ...] --expected-version N [--lease-token ...]")
 	}
 
 	issueID := args[0]
@@ -434,6 +439,11 @@ func runIssueUpdate(ctx context.Context, c *client.Client, args []string) error 
 		case "--description":
 			if i+1 < len(args) {
 				req.Description = args[i+1]
+				i++
+			}
+		case "--acceptance":
+			if i+1 < len(args) {
+				req.AcceptanceCriteria = args[i+1]
 				i++
 			}
 		case "--priority":
