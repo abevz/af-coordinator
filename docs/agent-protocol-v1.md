@@ -13,6 +13,9 @@ Every agent session follows this cycle:
    The `issue_type` field (`task`, `bug`, `feature`, `chore`) tells you
    what kind of work it is; a `bug` starts from reproduction, a `feature`
    from the linked spec.
+   The `acceptance_criteria` field, when present, lists the conditions the
+   issue must meet before you close it — treat it as the definition of done
+   and verify each item.
    Pick one and note its `short_id` (e.g. `afc-42`).
 
 2. **Claim it**

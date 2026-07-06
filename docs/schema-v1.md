@@ -147,6 +147,12 @@ downgrades `scope_kind` accordingly in the same transaction.
 `parent` dependency; the daemon rejects claims on epics and excludes them
 from the ready view. Added in migration `0002_issue_type.sql`.
 
+`acceptance_criteria` holds the checkable conditions for calling the issue
+done — the queryable counterpart to the `## Verification` section of an SDD
+leaf. It is optional free text (Markdown, typically a bullet list) and is
+distinct from `description` so criteria are not smuggled into prose. Added
+in migration `0003_acceptance_criteria.sql`.
+
 ```sql
 create table issues (
   id text primary key,
@@ -160,6 +166,7 @@ create table issues (
     check (issue_type in ('task', 'bug', 'feature', 'epic', 'chore')),
   title text not null,
   description text not null default '',
+  acceptance_criteria text not null default '',
   status text not null
     check (status in ('open', 'in_progress', 'blocked', 'deferred', 'done', 'cancelled')),
   priority integer not null default 3,
@@ -322,7 +329,7 @@ Operations require different levels of proof, not one blanket rule:
 | Operation                                   | Requires                          |
 |---------------------------------------------|-----------------------------------|
 | status transition, close, work-in-progress edits | valid `lease_token` + `expected_version` |
-| metadata edit of an unclaimed issue (title, priority, description) | `expected_version` only |
+| metadata edit of an unclaimed issue (title, priority, description, acceptance_criteria) | `expected_version` only |
 | append note, link artifact                   | neither (append-only)             |
 
 Common rules:
