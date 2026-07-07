@@ -1036,12 +1036,20 @@ func UnlinkArtifact(ctx context.Context, db *sql.DB, issueID, artifact, relation
 		return core.NewAPIError(core.ErrNotFound, "artifact link not found")
 	}
 
+	payload, err := json.Marshal(map[string]string{
+		"artifact": artifact,
+		"relation": relation,
+	})
+	if err != nil {
+		return fmt.Errorf("marshal event payload: %w", err)
+	}
+
 	now := time.Now().UTC().Format(time.RFC3339)
 	_, err = tx.ExecContext(ctx,
 		`INSERT INTO events (id, issue_id, actor, event_type, payload_json, created_at)
 		 VALUES (?, ?, ?, ?, ?, ?)`,
 		uuid.New().String(), issueID, actor, "artifact_unlinked",
-		fmt.Sprintf(`{"artifact":"%s","relation":"%s"}`, artifact, relation), now)
+		string(payload), now)
 	if err != nil {
 		return fmt.Errorf("insert event: %w", err)
 	}

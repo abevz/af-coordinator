@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -43,6 +44,77 @@ func TestCreateIssue(t *testing.T) {
 	}
 	if issue.ProjectID != p.ID {
 		t.Errorf("expected project_id %q, got %q", p.ID, issue.ProjectID)
+	}
+}
+
+func TestUnlinkArtifactEventPayloadIsJSONEscaped(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	if _, err := CreateProject(context.Background(), db, "test", "Test", ""); err != nil {
+		t.Fatal(err)
+	}
+	repo, _, err := CreateRepo(context.Background(), db, "test", core.CreateRepoRequest{
+		Project:         "test",
+		LogicalName:     "repo",
+		CanonicalGitDir: "/repos/repo.git",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{
+		ScopeKind: "repository", Title: "Unlink JSON test", Repo: repo.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	artifactPath := "docs/spec\"\\\n.md"
+	relation := "implements\"\\\ncustom"
+	artifact, err := CreateArtifact(context.Background(), db, repo.ID, core.CreateArtifactRequest{
+		Repo: repo.ID, Kind: "sdd", RelativePath: artifactPath,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LinkArtifact(context.Background(), db, issue.ID, core.LinkArtifactRequest{
+		Artifact: artifact.ID,
+		Relation: relation,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := UnlinkArtifact(context.Background(), db, issue.ID, artifactPath, relation, "tester"); err != nil {
+		t.Fatal(err)
+	}
+
+	events, err := ListEvents(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payloadJSON string
+	for _, event := range events {
+		if event.EventType == "artifact_unlinked" {
+			payloadJSON = event.PayloadJSON
+			break
+		}
+	}
+	if payloadJSON == "" {
+		t.Fatal("expected artifact_unlinked event")
+	}
+	if !json.Valid([]byte(payloadJSON)) {
+		t.Fatalf("expected valid JSON payload, got %q", payloadJSON)
+	}
+
+	var payload map[string]string
+	if err := json.Unmarshal([]byte(payloadJSON), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload["artifact"] != artifactPath {
+		t.Errorf("artifact payload = %q, want %q", payload["artifact"], artifactPath)
+	}
+	if payload["relation"] != relation {
+		t.Errorf("relation payload = %q, want %q", payload["relation"], relation)
 	}
 }
 

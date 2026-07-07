@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/abevz/af-coordinator/internal/client"
 	"github.com/abevz/af-coordinator/internal/core"
@@ -650,18 +651,29 @@ func runIssueUnlink(ctx context.Context, c *client.Client, args []string) error 
 	issueID := args[0]
 	var req core.UnlinkArtifactRequest
 
+	flagValue := func(i int) (string, error) {
+		if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
+			return "", fmt.Errorf("error: %s requires a value", args[i])
+		}
+		return args[i+1], nil
+	}
+
 	for i := 1; i < len(args); i++ {
 		switch args[i] {
 		case "--path", "--artifact":
-			if i+1 < len(args) {
-				req.Artifact = args[i+1]
-				i++
+			value, err := flagValue(i)
+			if err != nil {
+				return err
 			}
+			req.Artifact = value
+			i++
 		case "--relation":
-			if i+1 < len(args) {
-				req.Relation = args[i+1]
-				i++
+			value, err := flagValue(i)
+			if err != nil {
+				return err
 			}
+			req.Relation = value
+			i++
 		}
 	}
 
