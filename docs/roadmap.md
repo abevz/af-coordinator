@@ -25,12 +25,13 @@ Planned work, in priority order:
 
 | Issue | Type | What |
 |---|---|---|
+| `afc-30` | bug | Dependency response identity semantics: stop mixing UUID and short_id in dependency payloads; return explicit fields and cover the contract with regression tests |
+| `afc-36` | bug | Scope repository resolution by project: remove ambiguous unscoped logical-name resolution before broader multi-project use |
 | `afc-25` | feature | Events watch API: `GET /v1/events?since=` with long-poll, so consumers react to new ready issues without tight polling |
-| `afc-26` | feature | `external_key` on issues: mirror to GitHub/Gitea, store Temporal workflow ID |
+| `afc-26` | feature | External issue references on issues: start with mirrored issue keys / workflow IDs while keeping coordinator issue status authoritative |
 | `afc-27` | feature | Structured resolution: PR/commit references on close |
-| `afc-28` | feature | MCP server wrapper over the daemon API for Claude-based agents |
 | `afc-29` | feature | JSONL export (`internal/export`), backup + interim bridge |
-| `afc-30` | bug | Dependency responses mix UUID and short_id |
+| `afc-28` | feature | MCP server wrapper over the daemon API for Claude-based agents |
 
 ## Issue classification (done)
 
