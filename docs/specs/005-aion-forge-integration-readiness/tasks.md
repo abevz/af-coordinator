@@ -1,29 +1,23 @@
 # Tasks
 
-- [x] AFC-SDD-0062 Align active SDD metadata with the completed beads migration
-  - update `docs/specs/003-beads-migration/README.md` status
-  - update `AGENTS.md` active packet guidance
-  - create this packet as the next active SDD home
-- [ ] AFC-SDD-0063 Fix dependency response identity semantics (`afc-30`)
-  - define explicit UUID and short id response fields
-  - add API and CLI regression tests for dependency responses
-- [ ] AFC-SDD-0064 Scope repository resolution by project
-  - remove ambiguous unscoped logical-name resolution from multi-project paths
-  - keep id-based lookup behavior for exact UUID references
-- [ ] AFC-SDD-0065 Add events watch API (`afc-25`)
-  - define `GET /v1/events?since=` cursor semantics
-  - support bounded long-poll behavior
-  - add event contract tests for payload JSON
-- [ ] AFC-SDD-0066 Add external issue references (`afc-26`)
-  - store mirrored issue keys and Temporal workflow ids as references
-  - keep coordinator issue status as the write authority
-- [ ] AFC-SDD-0067 Add structured close resolution (`afc-27`)
-  - support PR URL, commit SHA, and external execution reference metadata
-  - require regression tests for close output and event payloads
-- [ ] AFC-SDD-0068 Add JSONL export (`afc-29`)
-  - export issues, notes, events, dependencies, artifacts, and references
-  - keep export read-only and daemon/store backed
-- [ ] AFC-SDD-0069 Add MCP wrapper over the daemon API (`afc-28`)
-  - no direct SQLite access
-  - expose only stable coordinator operations
-  - document setup and failure modes for local agents
+Task IDs are the live af-coordinator short IDs in project `afc`. One ID scheme,
+not two. Use `afctl issue get afc-<N>` for current status, claims, dependencies,
+notes, and closure audit.
+
+## Parent epic
+
+**`afc-24`** (epic, P2, open) - Aion Forge integration readiness
+
+## Leaves
+
+| ID | Type | Pri | Status | Blocked by | Title | Scope |
+|----|------|-----|--------|------------|-------|-------|
+| `afc-35` | chore | P2 | done | - | Refresh SDD active packet metadata | Updated packet 003 status, moved active packet guidance to 005, and created this packet. |
+| `afc-37` | chore | P2 | done | - | Align 005 SDD task IDs with afc issue IDs | Replace the previous parallel spec-task names with the live `afc-N` IDs. |
+| `afc-30` | bug | P1 | open | - | Dependency response identity semantics | Define explicit UUID and short id response fields; add API and CLI regression tests. |
+| `afc-36` | bug | P1 | open | - | Scope repository resolution by project | Remove ambiguous unscoped logical-name resolution from multi-project paths; keep exact UUID lookup. |
+| `afc-25` | feature | P2 | open | - | Events watch API | Define `GET /v1/events?since=` cursor semantics, bounded long-poll behavior, and event payload contract tests. |
+| `afc-26` | feature | P2 | open | - | External issue references | Store mirrored issue keys and Temporal workflow IDs as references while coordinator issue status stays authoritative. |
+| `afc-27` | feature | P3 | open | - | Structured close resolution | Support PR URL, commit SHA, and external execution reference metadata in close output and events. |
+| `afc-29` | feature | P3 | open | - | JSONL export | Export issues, notes, events, dependencies, artifacts, and references through read-only daemon/store-backed code. |
+| `afc-28` | feature | P3 | open | - | MCP wrapper over daemon API | Expose stable coordinator operations through MCP without direct SQLite access. |
