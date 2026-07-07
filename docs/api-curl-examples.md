@@ -60,8 +60,9 @@ Dependencies in the issue payload expose UUID and short ID explicitly:
 }
 ```
 
-### Get the next "ready" issue
-Returns the highest-priority open issue that has no unresolved blockers.
+### List "ready" issues
+Returns actionable issues that are not leased and not blocked by unfinished
+`blocks` dependencies.
 ```bash
 curl -s --unix-socket $AFC_SOCK "http://localhost/v1/issues/ready?project=afc" | jq
 

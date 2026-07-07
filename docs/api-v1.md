@@ -11,6 +11,29 @@ curl --unix-socket ~/.local/state/af-coordinator/af-coordinator.sock \
   http://localhost/v1/health
 ```
 
+## Implementation layout
+
+The API stack is intentionally thin and split into five layers:
+
+- daemon entrypoint: `cmd/af-coordinatord/main.go`
+- route registration and JSON helpers: `internal/api/daemon.go`,
+  `internal/api/errors.go`
+- endpoint handlers: `internal/api/projects.go`, `repos.go`, `worktrees.go`,
+  `artifacts.go`, `issues.go`
+- typed client over the unix socket: `internal/client/client.go`
+- persistence and most business rules: `internal/store/sqlite/*.go`
+
+The effective call path is:
+
+```text
+afctl or curl
+  -> internal/client (for afctl)
+  -> Unix socket HTTP API
+  -> internal/api handlers
+  -> internal/store/sqlite
+  -> SQLite
+```
+
 ## Conventions
 
 - all bodies are JSON
@@ -54,6 +77,71 @@ Clients handle `version_conflict` by rereading and retrying;
 
 - `GET /healthz` — liveness, also `GET /v1/health`
 
+## Endpoint map
+
+This is the compact route-to-implementation inventory for the current daemon.
+
+### `internal/api/projects.go`
+
+- `POST /v1/projects` -> `handleCreateProject` -> `sqlite.CreateProject`
+- `GET /v1/projects` -> `handleListProjects` -> `sqlite.ListProjects`
+
+### `internal/api/repos.go`
+
+- `POST /v1/repos` -> `handleCreateRepo` -> `sqlite.CreateRepo`
+- `GET /v1/repos?project=` -> `handleListRepos` ->
+  `sqlite.ListReposByProjectKey` / `sqlite.ListRepos`
+
+### `internal/api/worktrees.go`
+
+- `POST /v1/worktrees` -> `handleRegisterWorktree` -> `sqlite.UpsertWorktree`
+- `GET /v1/worktrees?repo=` -> `handleListWorktrees` ->
+  `sqlite.ListWorktrees`
+
+### `internal/api/artifacts.go`
+
+- `POST /v1/artifact-roots` -> `handleCreateArtifactRoot` ->
+  `sqlite.CreateArtifactRoot`
+- `GET /v1/artifact-roots?repo=` -> `handleListArtifactRoots` ->
+  `sqlite.ListArtifactRoots`
+- `POST /v1/artifacts` -> `handleCreateArtifact` -> `sqlite.CreateArtifact`
+- `GET /v1/artifacts?repo=` -> `handleListArtifacts` ->
+  `sqlite.ListArtifacts`
+
+### `internal/api/issues.go`
+
+- `POST /v1/issues` -> `handleCreateIssue` -> `sqlite.CreateIssue`
+- `GET /v1/issues/{issue_id}` -> `handleGetIssue` -> `sqlite.GetIssue`
+- `GET /v1/issues?...` -> `handleListIssues` -> `sqlite.ListIssues`
+- `GET /v1/issues/ready?project=&repo=` -> `handleListReadyIssues` ->
+  `sqlite.ListReadyIssues`
+- `POST /v1/issues/{issue_id}/claim` -> `handleClaimIssue` ->
+  `sqlite.ClaimIssue`
+- `POST /v1/issues/{issue_id}/heartbeat` -> `handleHeartbeatLease` ->
+  `sqlite.HeartbeatLease`
+- `POST /v1/issues/{issue_id}/release` -> `handleReleaseLease` ->
+  `sqlite.ReleaseLease`
+- `PATCH /v1/issues/{issue_id}` -> `handleUpdateIssue` ->
+  `sqlite.UpdateIssue`
+- `POST /v1/issues/{issue_id}/close` -> `handleCloseIssue` ->
+  `sqlite.CloseIssue`
+- `POST /v1/issues/{issue_id}/dependencies` -> `handleAddDependency` ->
+  `sqlite.AddDependency`
+- `DELETE /v1/issues/{issue_id}/dependencies/{depends_on}?kind=` ->
+  `handleRemoveDependency` -> `sqlite.RemoveDependency`
+- `POST /v1/issues/{issue_id}/links` -> `handleLinkArtifact` ->
+  `sqlite.LinkArtifact`
+- `DELETE /v1/issues/{issue_id}/links?artifact=&relation=&actor=` ->
+  `handleUnlinkArtifact` -> `sqlite.UnlinkArtifact`
+- `GET /v1/issues/{issue_id}/links` -> `handleListIssueLinks` ->
+  `sqlite.ListIssueLinks`
+- `POST /v1/issues/{issue_id}/notes` -> `handleCreateNote` ->
+  `sqlite.CreateNote`
+- `GET /v1/issues/{issue_id}/notes` -> `handleListNotes` ->
+  `sqlite.ListNotes`
+- `GET /v1/issues/{issue_id}/events` -> `handleListEvents` ->
+  `sqlite.ListEvents`
+
 ## Registry
 
 - `POST /v1/projects` — create project (`key`, `name`, `description`);
@@ -72,7 +160,7 @@ Clients handle `version_conflict` by rereading and retrying;
 - `POST /v1/artifacts` — register artifact (`repo`, `relative_path`,
   `kind`, `title`). Performs an upsert: if the artifact already exists by
   `(repo, relative_path)`, updates `title` and `kind` without changing ID.
-- `GET  /v1/artifacts?repo=&kind=` — list
+- `GET  /v1/artifacts?repo=` — list
 
 ## Issues
 
@@ -81,9 +169,13 @@ Clients handle `version_conflict` by rereading and retrying;
   `description`, `acceptance_criteria`, `priority`, `issue_type`
   (`task` default, `bug`, `feature`, `epic`, `chore`)
 - `GET  /v1/issues/{issue_id}` — fetch one, including current lease if any
+- dependency payloads inside issue responses use explicit identity fields:
+  `issue_id`, `issue_short_id`, `depends_on_id`, `depends_on_short_id`
 - `GET  /v1/issues?project=&repo=&worktree=&status=&assignee=&type=` — query
 - `GET  /v1/issues/ready?project=&repo=` — computed ready view; excludes
-  epics (they are containers, not units of work)
+  epics (they are containers, not units of work). When `repo` is given
+  alongside `project`, repository logical-name resolution is scoped to that
+  project; without `project`, prefer repository UUIDs over ambiguous names.
 - `PATCH /v1/issues/{issue_id}` — edit metadata and status (`title`, `issue_type`,
   `description`, `acceptance_criteria`, `priority`, `assignee`, `status`); requires
   `expected_version`, plus `lease_token` if the issue is claimed
@@ -116,4 +208,3 @@ Clients handle `version_conflict` by rereading and retrying;
   Supported `kind` values: `blocks` (default), `parent`, `related`, `discovered-from`
 - `DELETE /v1/issues/{issue_id}/dependencies/{depends_on}?kind=` — remove
 - `GET  /v1/issues/{issue_id}/events` — activity timeline
-
