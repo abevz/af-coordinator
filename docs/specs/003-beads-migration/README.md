@@ -1,7 +1,6 @@
 # 003 — Beads migration pilot
 
-Status: not started. Blocked by packet 002 (agents need the protocol and
-enforcement before a live repo depends on the coordinator).
+Status: completed. See `review.md` for the migration and soak outcome.
 
 Intent: migrate `~/github/utils` off Beads/shared Dolt as the v1
 acceptance test:
@@ -17,5 +16,6 @@ Success criterion (from README/architecture): over the following weeks
 the daemon needs less babysitting than `beads-dolt.service` did. If it
 does not, v1 has failed its acceptance test and we say so in review.md.
 
-Write `requirements.md`, `design.md`, and `tasks.md` before touching the
-utils repo.
+Historical note: this packet was originally blocked by packet 002 because
+agents needed the protocol and enforcement before a live repo depended on the
+coordinator. That blocker was resolved before implementation.

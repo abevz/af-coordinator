@@ -1,0 +1,29 @@
+# Tasks
+
+- [x] AFC-SDD-0062 Align active SDD metadata with the completed beads migration
+  - update `docs/specs/003-beads-migration/README.md` status
+  - update `AGENTS.md` active packet guidance
+  - create this packet as the next active SDD home
+- [ ] AFC-SDD-0063 Fix dependency response identity semantics (`afc-30`)
+  - define explicit UUID and short id response fields
+  - add API and CLI regression tests for dependency responses
+- [ ] AFC-SDD-0064 Scope repository resolution by project
+  - remove ambiguous unscoped logical-name resolution from multi-project paths
+  - keep id-based lookup behavior for exact UUID references
+- [ ] AFC-SDD-0065 Add events watch API (`afc-25`)
+  - define `GET /v1/events?since=` cursor semantics
+  - support bounded long-poll behavior
+  - add event contract tests for payload JSON
+- [ ] AFC-SDD-0066 Add external issue references (`afc-26`)
+  - store mirrored issue keys and Temporal workflow ids as references
+  - keep coordinator issue status as the write authority
+- [ ] AFC-SDD-0067 Add structured close resolution (`afc-27`)
+  - support PR URL, commit SHA, and external execution reference metadata
+  - require regression tests for close output and event payloads
+- [ ] AFC-SDD-0068 Add JSONL export (`afc-29`)
+  - export issues, notes, events, dependencies, artifacts, and references
+  - keep export read-only and daemon/store backed
+- [ ] AFC-SDD-0069 Add MCP wrapper over the daemon API (`afc-28`)
+  - no direct SQLite access
+  - expose only stable coordinator operations
+  - document setup and failure modes for local agents
