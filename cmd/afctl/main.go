@@ -416,6 +416,17 @@ func printIssueFull(i core.Issue, l *core.IssueLease, events []core.Event, notes
 	fmt.Printf("Created:       %s\n", i.CreatedAt)
 	fmt.Printf("Updated:       %s\n", i.UpdatedAt)
 
+	if len(i.Dependencies) > 0 {
+		fmt.Printf("\nDependencies:\n")
+		for _, dep := range i.Dependencies {
+			label := dep.DependsOnShortID
+			if label == "" {
+				label = dep.DependsOnID
+			}
+			fmt.Printf("  - %s %s [%s]\n", dep.Kind, label, dep.DependsOnID)
+		}
+	}
+
 	if len(links) > 0 {
 		fmt.Printf("\nLinks:\n")
 		for _, link := range links {

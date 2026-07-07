@@ -144,6 +144,83 @@ func TestGetRepoByLogicalName(t *testing.T) {
 	}
 }
 
+func TestGetRepoRejectsAmbiguousLogicalName(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	for _, key := range []string{"p1", "p2"} {
+		if _, err := CreateProject(context.Background(), db, key, key, ""); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := CreateRepo(context.Background(), db, key, core.CreateRepoRequest{
+			Project:         key,
+			LogicalName:     "shared",
+			CanonicalGitDir: "/repos/" + key + "-shared.git",
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	_, err := GetRepo(context.Background(), db, "shared")
+	if err == nil {
+		t.Fatal("expected error for ambiguous logical name")
+	}
+	var apiErr core.APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("expected APIError, got %T: %v", err, err)
+	}
+	if apiErr.Code != core.ErrValidationFailed {
+		t.Fatalf("expected code %q, got %q", core.ErrValidationFailed, apiErr.Code)
+	}
+}
+
+func TestGetRepoInProjectByLogicalName(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	p1, err := CreateProject(context.Background(), db, "p1", "Project 1", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p2, err := CreateProject(context.Background(), db, "p2", "Project 2", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	repo1, _, err := CreateRepo(context.Background(), db, "p1", core.CreateRepoRequest{
+		Project:         "p1",
+		LogicalName:     "shared",
+		CanonicalGitDir: "/repos/p1-shared.git",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo2, _, err := CreateRepo(context.Background(), db, "p2", core.CreateRepoRequest{
+		Project:         "p2",
+		LogicalName:     "shared",
+		CanonicalGitDir: "/repos/p2-shared.git",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got1, err := GetRepoInProject(context.Background(), db, p1.ID, "shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got1.ID != repo1.ID {
+		t.Fatalf("expected repo %q, got %q", repo1.ID, got1.ID)
+	}
+
+	got2, err := GetRepoInProject(context.Background(), db, p2.ID, "shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got2.ID != repo2.ID {
+		t.Fatalf("expected repo %q, got %q", repo2.ID, got2.ID)
+	}
+}
+
 func TestGetRepoNotFound(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)

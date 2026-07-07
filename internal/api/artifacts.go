@@ -26,9 +26,7 @@ func handleCreateArtifactRoot(db *sql.DB, logger *slog.Logger) http.HandlerFunc 
 		// Resolve repo ID from the body.
 		repo, err := sqlite.GetRepo(r.Context(), db, req.Repo)
 		if err != nil {
-			if apiErr, ok := errAsAPIError(err); ok && apiErr.Code == core.ErrNotFound {
-				writeError(w, http.StatusNotFound, core.ErrNotFound,
-					"repository not found: "+req.Repo)
+			if writeRepoLookupError(w, err, req.Repo) {
 				return
 			}
 			logger.Error("failed to resolve repo for artifact root", "repo", req.Repo, "error", err)
@@ -63,9 +61,7 @@ func handleListArtifactRoots(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 			// Verify the repo exists first.
 			repo, err := sqlite.GetRepo(r.Context(), db, repoFilter)
 			if err != nil {
-				if apiErr, ok := errAsAPIError(err); ok && apiErr.Code == core.ErrNotFound {
-					writeError(w, http.StatusNotFound, core.ErrNotFound,
-						"repository not found: "+repoFilter)
+				if writeRepoLookupError(w, err, repoFilter) {
 					return
 				}
 				logger.Error("failed to resolve repo for artifact root list", "repo", repoFilter, "error", err)
@@ -103,9 +99,7 @@ func handleCreateArtifact(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 		// Resolve repo ID from the body.
 		repo, err := sqlite.GetRepo(r.Context(), db, req.Repo)
 		if err != nil {
-			if apiErr, ok := errAsAPIError(err); ok && apiErr.Code == core.ErrNotFound {
-				writeError(w, http.StatusNotFound, core.ErrNotFound,
-					"repository not found: "+req.Repo)
+			if writeRepoLookupError(w, err, req.Repo) {
 				return
 			}
 			logger.Error("failed to resolve repo for artifact", "repo", req.Repo, "error", err)
@@ -140,9 +134,7 @@ func handleListArtifacts(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 			// Verify the repo exists first.
 			repo, err := sqlite.GetRepo(r.Context(), db, repoFilter)
 			if err != nil {
-				if apiErr, ok := errAsAPIError(err); ok && apiErr.Code == core.ErrNotFound {
-					writeError(w, http.StatusNotFound, core.ErrNotFound,
-						"repository not found: "+repoFilter)
+				if writeRepoLookupError(w, err, repoFilter) {
 					return
 				}
 				logger.Error("failed to resolve repo for artifact list", "repo", repoFilter, "error", err)

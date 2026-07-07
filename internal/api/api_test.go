@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"github.com/abevz/af-coordinator/internal/core"
 	"github.com/abevz/af-coordinator/internal/store/sqlite"
 	"github.com/abevz/af-coordinator/migrations"
 
@@ -477,6 +478,76 @@ func TestGetIssue(t *testing.T) {
 	}
 }
 
+func TestGetIssueIncludesExplicitDependencyIdentifiers(t *testing.T) {
+	server, db := newTestServer(t)
+
+	if _, err := sqlite.CreateProject(context.Background(), db, "test", "Test", ""); err != nil {
+		t.Fatal(err)
+	}
+	source, err := sqlite.CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{
+		ScopeKind: "project",
+		Title:     "Source",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err := sqlite.CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{
+		ScopeKind: "project",
+		Title:     "Target",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sqlite.AddDependency(context.Background(), db, source.ID, core.AddDependencyRequest{
+		DependsOn: target.ID,
+		Kind:      "blocks",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	resp, err := http.Get(server.URL + "/v1/issues/" + source.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Issue struct {
+			Dependencies []struct {
+				IssueID          string `json:"issue_id"`
+				IssueShortID     string `json:"issue_short_id"`
+				DependsOnID      string `json:"depends_on_id"`
+				DependsOnShortID string `json:"depends_on_short_id"`
+				Kind             string `json:"kind"`
+			} `json:"dependencies"`
+		} `json:"issue"`
+	}
+	result = decodeJSON[struct {
+		Issue struct {
+			Dependencies []struct {
+				IssueID          string `json:"issue_id"`
+				IssueShortID     string `json:"issue_short_id"`
+				DependsOnID      string `json:"depends_on_id"`
+				DependsOnShortID string `json:"depends_on_short_id"`
+				Kind             string `json:"kind"`
+			} `json:"dependencies"`
+		} `json:"issue"`
+	}](t, resp)
+
+	if len(result.Issue.Dependencies) != 1 {
+		t.Fatalf("expected 1 dependency, got %d", len(result.Issue.Dependencies))
+	}
+	dep := result.Issue.Dependencies[0]
+	if dep.IssueID != source.ID || dep.IssueShortID != source.ShortID {
+		t.Fatalf("unexpected source dependency identity: %+v", dep)
+	}
+	if dep.DependsOnID != target.ID || dep.DependsOnShortID != target.ShortID {
+		t.Fatalf("unexpected dependency target identity: %+v", dep)
+	}
+}
+
 func TestGetIssueLeaseTokenLeak(t *testing.T) {
 	server, db := newTestServer(t)
 
@@ -773,6 +844,76 @@ func TestHealthz(t *testing.T) {
 	}
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200 OK, got %d", resp.StatusCode)
+	}
+}
+
+func TestListReadyIssuesScopesRepoByProject(t *testing.T) {
+	server, db := newTestServer(t)
+
+	if _, err := sqlite.CreateProject(context.Background(), db, "p1", "Project 1", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sqlite.CreateProject(context.Background(), db, "p2", "Project 2", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	repo1, _, err := sqlite.CreateRepo(context.Background(), db, "p1", core.CreateRepoRequest{
+		Project:         "p1",
+		LogicalName:     "shared",
+		CanonicalGitDir: "/repos/p1-shared.git",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo2, _, err := sqlite.CreateRepo(context.Background(), db, "p2", core.CreateRepoRequest{
+		Project:         "p2",
+		LogicalName:     "shared",
+		CanonicalGitDir: "/repos/p2-shared.git",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := sqlite.CreateIssue(context.Background(), db, "p1", core.CreateIssueRequest{
+		ScopeKind: "repository",
+		Repo:      repo1.ID,
+		Title:     "P1 issue",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	want, err := sqlite.CreateIssue(context.Background(), db, "p2", core.CreateIssueRequest{
+		ScopeKind: "repository",
+		Repo:      repo2.ID,
+		Title:     "P2 issue",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resp, err := http.Get(server.URL + "/v1/issues/ready?project=p2&repo=shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Issues []struct {
+			ID string `json:"id"`
+		} `json:"issues"`
+	}
+	result = decodeJSON[struct {
+		Issues []struct {
+			ID string `json:"id"`
+		} `json:"issues"`
+	}](t, resp)
+
+	if len(result.Issues) != 1 {
+		t.Fatalf("expected 1 ready issue, got %d", len(result.Issues))
+	}
+	if result.Issues[0].ID != want.ID {
+		t.Fatalf("expected issue %q, got %q", want.ID, result.Issues[0].ID)
 	}
 }
 

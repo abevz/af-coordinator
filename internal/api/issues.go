@@ -35,6 +35,10 @@ func handleCreateIssue(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 					writeError(w, http.StatusNotFound, core.ErrNotFound, apiErr.Message)
 					return
 				}
+				if apiErr.Code == core.ErrValidationFailed {
+					writeError(w, http.StatusBadRequest, core.ErrValidationFailed, apiErr.Message)
+					return
+				}
 			}
 			if isUniqueConstraintError(err) {
 				writeError(w, http.StatusConflict, "short_id_taken",
@@ -108,9 +112,15 @@ func handleListIssues(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 
 		issues, err := sqlite.ListIssues(r.Context(), db, params)
 		if err != nil {
-			if apiErr, ok := errAsAPIError(err); ok && apiErr.Code == core.ErrNotFound {
-				writeError(w, http.StatusNotFound, core.ErrNotFound, apiErr.Message)
-				return
+			if apiErr, ok := errAsAPIError(err); ok {
+				switch apiErr.Code {
+				case core.ErrNotFound:
+					writeError(w, http.StatusNotFound, core.ErrNotFound, apiErr.Message)
+					return
+				case core.ErrValidationFailed:
+					writeError(w, http.StatusBadRequest, core.ErrValidationFailed, apiErr.Message)
+					return
+				}
 			}
 			logger.Error("failed to list issues", "error", err)
 			writeError(w, http.StatusInternalServerError, "internal_error", "failed to list issues")
@@ -269,11 +279,17 @@ func handleListReadyIssues(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 		// Resolve repo logical name to ID if provided.
 		var repoID string
 		if repoFilter != "" {
-			rp, err := sqlite.GetRepo(r.Context(), db, repoFilter)
+			var (
+				rp  core.Repository
+				err error
+			)
+			if projectID != "" {
+				rp, err = sqlite.GetRepoInProject(r.Context(), db, projectID, repoFilter)
+			} else {
+				rp, err = sqlite.GetRepo(r.Context(), db, repoFilter)
+			}
 			if err != nil {
-				if apiErr, ok := errAsAPIError(err); ok && apiErr.Code == core.ErrNotFound {
-					writeError(w, http.StatusNotFound, core.ErrNotFound,
-						"repository not found: "+repoFilter)
+				if writeRepoLookupError(w, err, repoFilter) {
 					return
 				}
 				logger.Error("failed to resolve repository for ready issues", "repo", repoFilter, "error", err)

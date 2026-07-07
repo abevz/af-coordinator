@@ -23,6 +23,23 @@ func CreateIssue(ctx context.Context, db *sql.DB, projectKey string, req core.Cr
 	now := time.Now().UTC().Format(time.RFC3339)
 	id := uuid.New().String()
 
+	// Resolve repository and worktree references.
+	var repoID, worktreeID interface{} = nil, nil
+	if req.Repo != "" {
+		repo, err := GetRepoInProject(ctx, db, proj.ID, req.Repo)
+		if err != nil {
+			return core.Issue{}, fmt.Errorf("resolve repo: %w", err)
+		}
+		repoID = repo.ID
+	}
+	if req.Worktree != "" {
+		wt, err := GetWorktree(ctx, db, req.Worktree)
+		if err != nil {
+			return core.Issue{}, fmt.Errorf("resolve worktree: %w", err)
+		}
+		worktreeID = wt.ID
+	}
+
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return core.Issue{}, fmt.Errorf("begin tx: %w", err)
@@ -37,23 +54,6 @@ func CreateIssue(ctx context.Context, db *sql.DB, projectKey string, req core.Cr
 	}
 
 	shortID := fmt.Sprintf("%s-%d", proj.Key, seq)
-
-	// Resolve repository and worktree references.
-	var repoID, worktreeID interface{} = nil, nil
-	if req.Repo != "" {
-		repo, err := GetRepo(ctx, db, req.Repo)
-		if err != nil {
-			return core.Issue{}, fmt.Errorf("resolve repo: %w", err)
-		}
-		repoID = repo.ID
-	}
-	if req.Worktree != "" {
-		wt, err := GetWorktree(ctx, db, req.Worktree)
-		if err != nil {
-			return core.Issue{}, fmt.Errorf("resolve worktree: %w", err)
-		}
-		worktreeID = wt.ID
-	}
 
 	status := "open"
 	priority := req.Priority
@@ -163,17 +163,19 @@ func GetIssue(ctx context.Context, db *sql.DB, id string) (core.Issue, *core.Iss
 func ListIssues(ctx context.Context, db *sql.DB, params core.IssueListParams) ([]core.Issue, error) {
 	var where []string
 	args := []interface{}{time.Now().UTC().Format(time.RFC3339)}
+	var projectID string
 
 	if params.Project != "" {
 		proj, err := GetProjectByKey(ctx, db, params.Project)
 		if err != nil {
 			return nil, fmt.Errorf("resolve project: %w", err)
 		}
+		projectID = proj.ID
 		where = append(where, "i.project_id = ?")
-		args = append(args, proj.ID)
+		args = append(args, projectID)
 	}
 	if params.Repo != "" {
-		repo, err := GetRepo(ctx, db, params.Repo)
+		repo, err := GetRepoInProject(ctx, db, projectID, params.Repo)
 		if err != nil {
 			return nil, fmt.Errorf("resolve repo: %w", err)
 		}

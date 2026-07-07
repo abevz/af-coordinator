@@ -70,9 +70,11 @@ type Issue struct {
 
 // Dependency represents a relationship to another issue.
 type Dependency struct {
-	IssueID     string `json:"issue_id"`
-	DependsOnID string `json:"depends_on_id"`
-	Kind        string `json:"kind"`
+	IssueID          string `json:"issue_id"`
+	IssueShortID     string `json:"issue_short_id"`
+	DependsOnID      string `json:"depends_on_id"`
+	DependsOnShortID string `json:"depends_on_short_id"`
+	Kind             string `json:"kind"`
 }
 
 // IssueLease represents the current lease on an issue (included in responses).

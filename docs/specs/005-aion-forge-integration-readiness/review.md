@@ -45,3 +45,40 @@ Status: active
 
 - Keep `tasks.md` aligned with `afctl issue list --project afc` when new leaves
   are added or closed.
+
+## 2026-07-07 - Contract fixes for dependency identity and repo scoping
+
+### What shipped
+
+- Fixed dependency responses so they expose explicit UUID and short-id fields:
+  `issue_id`, `issue_short_id`, `depends_on_id`, and
+  `depends_on_short_id`.
+- Scoped issue repository resolution by project when project context is known,
+  while preserving exact UUID lookup.
+- Rejected ambiguous unscoped repository logical-name lookups with a validation
+  error instead of silently selecting one repository.
+- Updated the full `afctl issue get --full` output to show dependency short IDs
+  and UUIDs together.
+- Moved repository/worktree resolution ahead of `CreateIssue` transaction start
+  so single-connection SQLite test/server setups do not deadlock on repo
+  lookups.
+
+### What was verified
+
+- `go test ./internal/store/sqlite ./internal/api ./cmd/afctl`
+- `go test ./...`
+- `make build`
+- Added store regression tests for:
+  - explicit dependency identifier fields on `GetIssue`
+  - ambiguous unscoped repository logical names
+  - project-scoped repository resolution in `CreateIssue`, `ListIssues`, and
+    ready-issue filtering
+- Added API regression tests for:
+  - explicit dependency identifier fields on `GET /v1/issues/{issue_id}`
+  - project-scoped repository resolution on `GET /v1/issues/ready`
+- Added a CLI regression test for `afctl issue get --full` dependency output.
+
+### Open items
+
+- `afc-25`, `afc-26`, `afc-27`, `afc-28`, and `afc-29` remain open in this
+  packet.

@@ -180,6 +180,51 @@ func TestGetIssue(t *testing.T) {
 	}
 }
 
+func TestGetIssueIncludesExplicitDependencyIdentifiers(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	if _, err := CreateProject(context.Background(), db, "test", "Test", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	source, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Source"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Target"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := AddDependency(context.Background(), db, source.ID, core.AddDependencyRequest{
+		DependsOn: target.ID,
+		Kind:      "blocks",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	got, _, err := GetIssue(context.Background(), db, source.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Dependencies) != 1 {
+		t.Fatalf("expected 1 dependency, got %d", len(got.Dependencies))
+	}
+	dep := got.Dependencies[0]
+	if dep.IssueID != source.ID {
+		t.Fatalf("issue_id = %q, want %q", dep.IssueID, source.ID)
+	}
+	if dep.IssueShortID != source.ShortID {
+		t.Fatalf("issue_short_id = %q, want %q", dep.IssueShortID, source.ShortID)
+	}
+	if dep.DependsOnID != target.ID {
+		t.Fatalf("depends_on_id = %q, want %q", dep.DependsOnID, target.ID)
+	}
+	if dep.DependsOnShortID != target.ShortID {
+		t.Fatalf("depends_on_short_id = %q, want %q", dep.DependsOnShortID, target.ShortID)
+	}
+}
+
 func TestGetIssueByShortID(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
@@ -284,6 +329,65 @@ func TestListIssuesFilterByStatus(t *testing.T) {
 	}
 	if len(issues) != 1 {
 		t.Errorf("expected 1 open issue, got %d", len(issues))
+	}
+}
+
+func TestListIssuesFilterByProjectScopedRepo(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	if _, err := CreateProject(context.Background(), db, "p1", "Project 1", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := CreateProject(context.Background(), db, "p2", "Project 2", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	repo1, _, err := CreateRepo(context.Background(), db, "p1", core.CreateRepoRequest{
+		Project:         "p1",
+		LogicalName:     "shared",
+		CanonicalGitDir: "/repos/p1-shared.git",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo2, _, err := CreateRepo(context.Background(), db, "p2", core.CreateRepoRequest{
+		Project:         "p2",
+		LogicalName:     "shared",
+		CanonicalGitDir: "/repos/p2-shared.git",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := CreateIssue(context.Background(), db, "p1", core.CreateIssueRequest{
+		ScopeKind: "repository",
+		Repo:      repo1.ID,
+		Title:     "P1 issue",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	want, err := CreateIssue(context.Background(), db, "p2", core.CreateIssueRequest{
+		ScopeKind: "repository",
+		Repo:      repo2.ID,
+		Title:     "P2 issue",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	issues, err := ListIssues(context.Background(), db, core.IssueListParams{
+		Project: "p2",
+		Repo:    "shared",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(issues) != 1 {
+		t.Fatalf("expected 1 issue, got %d", len(issues))
+	}
+	if issues[0].ID != want.ID {
+		t.Fatalf("expected issue %q, got %q", want.ID, issues[0].ID)
 	}
 }
 
@@ -627,6 +731,63 @@ func TestListReadyIssuesByProject(t *testing.T) {
 	}
 }
 
+func TestListReadyIssuesByProjectAndScopedRepo(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	if _, err := CreateProject(context.Background(), db, "p1", "Project 1", ""); err != nil {
+		t.Fatal(err)
+	}
+	p2, err := CreateProject(context.Background(), db, "p2", "Project 2", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	repo1, _, err := CreateRepo(context.Background(), db, "p1", core.CreateRepoRequest{
+		Project:         "p1",
+		LogicalName:     "shared",
+		CanonicalGitDir: "/repos/p1-shared.git",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo2, _, err := CreateRepo(context.Background(), db, "p2", core.CreateRepoRequest{
+		Project:         "p2",
+		LogicalName:     "shared",
+		CanonicalGitDir: "/repos/p2-shared.git",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := CreateIssue(context.Background(), db, "p1", core.CreateIssueRequest{
+		ScopeKind: "repository",
+		Repo:      repo1.ID,
+		Title:     "P1 shared",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	want, err := CreateIssue(context.Background(), db, "p2", core.CreateIssueRequest{
+		ScopeKind: "repository",
+		Repo:      repo2.ID,
+		Title:     "P2 shared",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ready, err := ListReadyIssues(context.Background(), db, p2.ID, repo2.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ready) != 1 {
+		t.Fatalf("expected 1 ready issue, got %d", len(ready))
+	}
+	if ready[0].ID != want.ID {
+		t.Fatalf("expected issue %q, got %q", want.ID, ready[0].ID)
+	}
+}
+
 func TestListReadyIssuesWithExpiredLease(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
@@ -696,6 +857,46 @@ func TestCreateIssueWithRepoScope(t *testing.T) {
 	}
 	if issue.ProjectID == "" {
 		t.Error("expected non-empty project_id")
+	}
+}
+
+func TestCreateIssueWithRepoScopeUsesProjectScopedRepo(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	if _, err := CreateProject(context.Background(), db, "p1", "Project 1", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := CreateProject(context.Background(), db, "p2", "Project 2", ""); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err := CreateRepo(context.Background(), db, "p1", core.CreateRepoRequest{
+		Project:         "p1",
+		LogicalName:     "shared",
+		CanonicalGitDir: "/repos/p1-shared.git",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo2, _, err := CreateRepo(context.Background(), db, "p2", core.CreateRepoRequest{
+		Project:         "p2",
+		LogicalName:     "shared",
+		CanonicalGitDir: "/repos/p2-shared.git",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	issue, err := CreateIssue(context.Background(), db, "p2", core.CreateIssueRequest{
+		ScopeKind: "repository",
+		Repo:      "shared",
+		Title:     "Scoped repo issue",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if issue.RepositoryID != repo2.ID {
+		t.Fatalf("expected repository_id %q, got %q", repo2.ID, issue.RepositoryID)
 	}
 }
 

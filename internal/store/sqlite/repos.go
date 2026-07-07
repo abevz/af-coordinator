@@ -83,11 +83,28 @@ func CreateRepo(ctx context.Context, db *sql.DB, projectKey string, req core.Cre
 
 // GetRepo retrieves a repository by ID or logical name.
 func GetRepo(ctx context.Context, db *sql.DB, idOrName string) (core.Repository, error) {
-	row := db.QueryRowContext(ctx,
-		`SELECT id, project_id, logical_name, canonical_git_dir, default_branch, hosting_kind, hosting_slug, created_at, updated_at
-		 FROM repositories WHERE id = ? OR logical_name = ?`, idOrName, idOrName,
-	)
-	return scanRepo(row)
+	if repo, ok, err := lookupRepoByID(ctx, db, idOrName); err != nil {
+		return core.Repository{}, err
+	} else if ok {
+		return repo, nil
+	}
+
+	return lookupRepoByLogicalName(ctx, db, "", idOrName)
+}
+
+// GetRepoInProject retrieves a repository by exact UUID or by logical name scoped to a project.
+func GetRepoInProject(ctx context.Context, db *sql.DB, projectID, idOrName string) (core.Repository, error) {
+	if projectID == "" {
+		return GetRepo(ctx, db, idOrName)
+	}
+
+	if repo, ok, err := lookupRepoByID(ctx, db, idOrName); err != nil {
+		return core.Repository{}, err
+	} else if ok {
+		return repo, nil
+	}
+
+	return lookupRepoByLogicalName(ctx, db, projectID, idOrName)
 }
 
 // ListRepos lists repositories optionally filtered by project ID.
@@ -137,14 +154,75 @@ func ListReposByProjectKey(ctx context.Context, db *sql.DB, projectKey string) (
 	return ListRepos(ctx, db, proj.ID)
 }
 
+func lookupRepoByID(ctx context.Context, db *sql.DB, id string) (core.Repository, bool, error) {
+	row := db.QueryRowContext(ctx,
+		`SELECT id, project_id, logical_name, canonical_git_dir, default_branch, hosting_kind, hosting_slug, created_at, updated_at
+		 FROM repositories WHERE id = ?`, id,
+	)
+	repo, err := scanRepoFields(row)
+	if err == sql.ErrNoRows {
+		return core.Repository{}, false, nil
+	}
+	if err != nil {
+		return core.Repository{}, false, fmt.Errorf("scan repo by id: %w", err)
+	}
+	return repo, true, nil
+}
+
+func lookupRepoByLogicalName(ctx context.Context, db *sql.DB, projectID, logicalName string) (core.Repository, error) {
+	query := `SELECT id, project_id, logical_name, canonical_git_dir, default_branch, hosting_kind, hosting_slug, created_at, updated_at
+		FROM repositories WHERE logical_name = ?`
+	args := []any{logicalName}
+	if projectID != "" {
+		query = `SELECT id, project_id, logical_name, canonical_git_dir, default_branch, hosting_kind, hosting_slug, created_at, updated_at
+			FROM repositories WHERE project_id = ? AND logical_name = ?`
+		args = []any{projectID, logicalName}
+	}
+	query += ` ORDER BY id`
+
+	rows, err := db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return core.Repository{}, fmt.Errorf("query repo by logical_name: %w", err)
+	}
+	defer rows.Close()
+
+	var repos []core.Repository
+	for rows.Next() {
+		repo, err := scanRepoFields(rows)
+		if err != nil {
+			return core.Repository{}, fmt.Errorf("scan repo by logical_name: %w", err)
+		}
+		repos = append(repos, repo)
+	}
+	if err := rows.Err(); err != nil {
+		return core.Repository{}, fmt.Errorf("iterate repos by logical_name: %w", err)
+	}
+	if len(repos) == 0 {
+		return core.Repository{}, core.NewAPIError(core.ErrNotFound, "repository not found: "+logicalName)
+	}
+	if len(repos) > 1 {
+		return core.Repository{}, core.NewAPIError(core.ErrValidationFailed,
+			"repository name is ambiguous; specify the repository UUID or add a project filter: "+logicalName)
+	}
+	return repos[0], nil
+}
+
 func scanRepo(s scanner) (core.Repository, error) {
-	var r core.Repository
-	err := s.Scan(&r.ID, &r.ProjectID, &r.LogicalName, &r.CanonicalGitDir, &r.DefaultBranch, &r.HostingKind, &r.HostingSlug, &r.CreatedAt, &r.UpdatedAt)
+	r, err := scanRepoFields(s)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return core.Repository{}, core.NewAPIError(core.ErrNotFound, "repository not found")
 		}
 		return core.Repository{}, fmt.Errorf("scan repo: %w", err)
+	}
+	return r, nil
+}
+
+func scanRepoFields(s scanner) (core.Repository, error) {
+	var r core.Repository
+	err := s.Scan(&r.ID, &r.ProjectID, &r.LogicalName, &r.CanonicalGitDir, &r.DefaultBranch, &r.HostingKind, &r.HostingSlug, &r.CreatedAt, &r.UpdatedAt)
+	if err != nil {
+		return core.Repository{}, err
 	}
 	return r, nil
 }

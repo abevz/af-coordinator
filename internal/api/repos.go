@@ -90,3 +90,21 @@ func errAsAPIError(err error) (core.APIError, bool) {
 	}
 	return core.APIError{}, false
 }
+
+func writeRepoLookupError(w http.ResponseWriter, err error, repo string) bool {
+	apiErr, ok := errAsAPIError(err)
+	if !ok {
+		return false
+	}
+
+	switch apiErr.Code {
+	case core.ErrNotFound:
+		writeError(w, http.StatusNotFound, core.ErrNotFound, "repository not found: "+repo)
+		return true
+	case core.ErrValidationFailed:
+		writeError(w, http.StatusBadRequest, core.ErrValidationFailed, apiErr.Message)
+		return true
+	default:
+		return false
+	}
+}

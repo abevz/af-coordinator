@@ -26,9 +26,7 @@ func handleRegisterWorktree(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 		// Resolve repo ID from the body.
 		repo, err := sqlite.GetRepo(r.Context(), db, req.Repo)
 		if err != nil {
-			if apiErr, ok := errAsAPIError(err); ok && apiErr.Code == core.ErrNotFound {
-				writeError(w, http.StatusNotFound, core.ErrNotFound,
-					"repository not found: "+req.Repo)
+			if writeRepoLookupError(w, err, req.Repo) {
 				return
 			}
 			logger.Error("failed to resolve repo for worktree", "repo", req.Repo, "error", err)
@@ -62,9 +60,7 @@ func handleListWorktrees(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 		if repoFilter != "" {
 			// Verify the repo exists first.
 			if _, err := sqlite.GetRepo(r.Context(), db, repoFilter); err != nil {
-				if apiErr, ok := errAsAPIError(err); ok && apiErr.Code == core.ErrNotFound {
-					writeError(w, http.StatusNotFound, core.ErrNotFound,
-						"repository not found: "+repoFilter)
+				if writeRepoLookupError(w, err, repoFilter) {
 					return
 				}
 				logger.Error("failed to resolve repo for worktree list", "repo", repoFilter, "error", err)

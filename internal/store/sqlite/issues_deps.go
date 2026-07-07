@@ -29,8 +29,9 @@ func populateDependencies(ctx context.Context, db *sql.DB, issues []core.Issue) 
 	}
 
 	query := fmt.Sprintf(`
-		SELECT d.issue_id, target.short_id, d.kind
+		SELECT source.id, source.short_id, target.id, target.short_id, d.kind
 		FROM dependencies d
+		JOIN issues source ON source.id = d.issue_id
 		JOIN issues target ON target.id = d.depends_on_issue_id
 		WHERE d.issue_id IN (%s)
 	`, strings.Join(placeholders, ","))
@@ -42,15 +43,17 @@ func populateDependencies(ctx context.Context, db *sql.DB, issues []core.Issue) 
 	defer rows.Close()
 
 	for rows.Next() {
-		var issueID, dependsOnShortID, kind string
-		if err := rows.Scan(&issueID, &dependsOnShortID, &kind); err != nil {
+		var issueID, issueShortID, dependsOnID, dependsOnShortID, kind string
+		if err := rows.Scan(&issueID, &issueShortID, &dependsOnID, &dependsOnShortID, &kind); err != nil {
 			return nil, fmt.Errorf("scan dependency: %w", err)
 		}
 		if idx, ok := idMap[issueID]; ok {
 			issues[idx].Dependencies = append(issues[idx].Dependencies, core.Dependency{
-				IssueID:     issueID,
-				DependsOnID: dependsOnShortID,
-				Kind:        kind,
+				IssueID:          issueID,
+				IssueShortID:     issueShortID,
+				DependsOnID:      dependsOnID,
+				DependsOnShortID: dependsOnShortID,
+				Kind:             kind,
 			})
 		}
 	}
