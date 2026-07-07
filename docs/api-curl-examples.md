@@ -40,11 +40,37 @@ curl -s --unix-socket $AFC_SOCK "http://localhost/v1/issues?project=afc&type=bug
 curl -s --unix-socket $AFC_SOCK http://localhost/v1/issues/afc-15 | jq
 ```
 
+Dependencies in the issue payload expose UUID and short ID explicitly:
+
+```json
+{
+  "issue": {
+    "id": "9342e277-7d81-4eca-bad2-b31bccc67c86",
+    "short_id": "afc-15",
+    "dependencies": [
+      {
+        "issue_id": "9342e277-7d81-4eca-bad2-b31bccc67c86",
+        "issue_short_id": "afc-15",
+        "depends_on_id": "9f03193f-3044-42a2-ae9c-a4756ec1f78d",
+        "depends_on_short_id": "afc-12",
+        "kind": "blocks"
+      }
+    ]
+  }
+}
+```
+
 ### Get the next "ready" issue
 Returns the highest-priority open issue that has no unresolved blockers.
 ```bash
 curl -s --unix-socket $AFC_SOCK "http://localhost/v1/issues/ready?project=afc" | jq
+
+# Scope repository lookup by project when logical names are reused across projects:
+curl -s --unix-socket $AFC_SOCK "http://localhost/v1/issues/ready?project=afc&repo=main" | jq
 ```
+
+If you do not provide `project`, use the repository UUID rather than an
+ambiguous logical name.
 
 ---
 
