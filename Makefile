@@ -14,11 +14,11 @@ lint:
 	golangci-lint run --disable errcheck,staticcheck
 
 build:
-	$(GO) build ./...
+	$(GO) build -buildvcs=false ./...
 
 build-install:
-	$(GO) build -o $(BINDIR)/af-coordinatord ./cmd/af-coordinatord/
-	$(GO) build -o $(BINDIR)/afctl ./cmd/afctl/
+	$(GO) build -buildvcs=false -o $(BINDIR)/af-coordinatord ./cmd/af-coordinatord/
+	$(GO) build -buildvcs=false -o $(BINDIR)/afctl ./cmd/afctl/
 
 test:
 	$(GO) test -race ./...
