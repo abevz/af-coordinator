@@ -718,27 +718,27 @@ func buildChangedFields(req core.UpdateIssueRequest) []string {
 }
 
 // CloseIssue closes an issue by setting its status to 'done' or 'cancelled'.
-func CloseIssue(ctx context.Context, db *sql.DB, issueID string, req core.CloseIssueRequest) error {
+func CloseIssue(ctx context.Context, db *sql.DB, issueID string, req core.CloseIssueRequest) (core.CloseIssueResult, error) {
 	issue, lease, err := GetIssue(ctx, db, issueID)
 	if err != nil {
-		return err
+		return core.CloseIssueResult{}, err
 	}
 
 	// Version check.
 	if req.ExpectedVersion != issue.Version {
-		return core.NewAPIError(core.ErrConflict,
+		return core.CloseIssueResult{}, core.NewAPIError(core.ErrConflict,
 			fmt.Sprintf("expected version %d, current version is %d", req.ExpectedVersion, issue.Version))
 	}
 
 	// Lease check.
 	if lease != nil && lease.LeaseToken != req.LeaseToken {
-		return core.NewAPIError(core.ErrLeaseExpired,
+		return core.CloseIssueResult{}, core.NewAPIError(core.ErrLeaseExpired,
 			"issue is leased and lease_token does not match")
 	}
 
 	// Resolution validation.
 	if req.Resolution != "done" && req.Resolution != "cancelled" {
-		return core.NewAPIError(core.ErrValidationFailed,
+		return core.CloseIssueResult{}, core.NewAPIError(core.ErrValidationFailed,
 			"resolution must be 'done' or 'cancelled'")
 	}
 
@@ -746,7 +746,7 @@ func CloseIssue(ctx context.Context, db *sql.DB, issueID string, req core.CloseI
 
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("begin tx: %w", err)
+		return core.CloseIssueResult{}, fmt.Errorf("begin tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
@@ -755,7 +755,7 @@ func CloseIssue(ctx context.Context, db *sql.DB, issueID string, req core.CloseI
 		req.Resolution, now, now, issueID,
 	)
 	if err != nil {
-		return fmt.Errorf("update issue: %w", err)
+		return core.CloseIssueResult{}, fmt.Errorf("update issue: %w", err)
 	}
 
 	// Remove any active lease on this issue.
@@ -769,7 +769,7 @@ func CloseIssue(ctx context.Context, db *sql.DB, issueID string, req core.CloseI
 			noteID, issueID, req.Actor, req.Note, now,
 		)
 		if err != nil {
-			return fmt.Errorf("insert note: %w", err)
+			return core.CloseIssueResult{}, fmt.Errorf("insert note: %w", err)
 		}
 
 		_, err = tx.ExecContext(ctx,
@@ -777,22 +777,53 @@ func CloseIssue(ctx context.Context, db *sql.DB, issueID string, req core.CloseI
 			uuid.New().String(), issueID, req.Actor, "note_added", `{}`, now,
 		)
 		if err != nil {
-			return fmt.Errorf("insert note event: %w", err)
+			return core.CloseIssueResult{}, fmt.Errorf("insert note event: %w", err)
 		}
 	}
 
 	// Append close event.
-	payload := fmt.Sprintf(`{"changed":["status","closed_at"],"resolution":"%s"}`, req.Resolution)
+	payload := map[string]any{
+		"changed":    []string{"status", "closed_at"},
+		"resolution": req.Resolution,
+	}
+	if req.Branch != "" {
+		payload["branch"] = req.Branch
+	}
+	if req.PRURL != "" {
+		payload["pr_url"] = req.PRURL
+	}
+	if req.CommitSHA != "" {
+		payload["commit_sha"] = req.CommitSHA
+	}
+	if issue.ExternalKey != "" {
+		payload["external_key"] = issue.ExternalKey
+	}
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return core.CloseIssueResult{}, fmt.Errorf("marshal close payload: %w", err)
+	}
 	_, err = tx.ExecContext(ctx,
 		`INSERT INTO events (id, issue_id, actor, event_type, payload_json, created_at)
 		 VALUES (?, ?, ?, ?, ?, ?)`,
-		uuid.New().String(), issueID, req.Actor, "issue_closed", payload, now,
+		uuid.New().String(), issueID, req.Actor, "issue_closed", string(payloadBytes), now,
 	)
 	if err != nil {
-		return fmt.Errorf("insert event: %w", err)
+		return core.CloseIssueResult{}, fmt.Errorf("insert event: %w", err)
 	}
 
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return core.CloseIssueResult{}, err
+	}
+
+	return core.CloseIssueResult{
+		Status:      "closed",
+		Resolution:  req.Resolution,
+		Branch:      req.Branch,
+		PRURL:       req.PRURL,
+		CommitSHA:   req.CommitSHA,
+		ExternalKey: issue.ExternalKey,
+		ClosedAt:    now,
+	}, nil
 }
 
 // AddDependency adds a dependency between two issues. For 'blocks' kind, it performs cycle detection.

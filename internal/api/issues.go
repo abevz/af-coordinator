@@ -376,7 +376,7 @@ func handleCloseIssue(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 			return
 		}
 
-		err := sqlite.CloseIssue(r.Context(), db, issueID, req)
+		result, err := sqlite.CloseIssue(r.Context(), db, issueID, req)
 		if err != nil {
 			if apiErr, ok := errAsAPIError(err); ok {
 				switch apiErr.Code {
@@ -399,7 +399,7 @@ func handleCloseIssue(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 			return
 		}
 
-		writeJSON(w, http.StatusOK, map[string]string{"status": "closed"})
+		writeJSON(w, http.StatusOK, result)
 	}
 }
 

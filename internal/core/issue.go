@@ -158,10 +158,24 @@ type UpdateIssueRequest struct {
 // CloseIssueRequest is the JSON body for POST /v1/issues/{issue_id}/close.
 type CloseIssueRequest struct {
 	Resolution      string `json:"resolution"`
+	Branch          string `json:"branch,omitempty"`
+	PRURL           string `json:"pr_url,omitempty"`
+	CommitSHA       string `json:"commit_sha,omitempty"`
 	ExpectedVersion int    `json:"expected_version"`
 	LeaseToken      string `json:"lease_token"`
 	Actor           string `json:"actor,omitempty"`
 	Note            string `json:"note,omitempty"`
+}
+
+// CloseIssueResult is returned after a successful close.
+type CloseIssueResult struct {
+	Status      string `json:"status"`
+	Resolution  string `json:"resolution"`
+	Branch      string `json:"branch,omitempty"`
+	PRURL       string `json:"pr_url,omitempty"`
+	CommitSHA   string `json:"commit_sha,omitempty"`
+	ExternalKey string `json:"external_key,omitempty"`
+	ClosedAt    string `json:"closed_at"`
 }
 
 // AddDependencyRequest is the JSON body for POST /v1/issues/{issue_id}/dependencies.

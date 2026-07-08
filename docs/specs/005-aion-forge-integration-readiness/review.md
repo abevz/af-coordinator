@@ -145,3 +145,36 @@ Status: active
 ### Open items
 
 - `afc-27`, `afc-28`, and `afc-29` remain open in this packet.
+
+## 2026-07-08 - afc-27 structured close metadata
+
+### What shipped
+
+- Extended `POST /v1/issues/{issue_id}/close` to accept structured close
+  metadata: `branch`, `pr_url`, and `commit_sha`.
+- Changed the close API response to return the structured close metadata,
+  `resolution`, and `closed_at` instead of a bare status string.
+- Persisted structured close metadata in the `issue_closed` event payload.
+- When an issue already has an `external_key`, included it in the close response
+  and `issue_closed` event so the audit trail points to the external execution
+  reference as well.
+- Switched `issue_closed` event payload generation to typed JSON marshaling.
+- Updated agent protocol and workflow examples so common close commands show the
+  structured refs explicitly.
+
+### What was verified
+
+- `go test ./internal/store/sqlite ./internal/api ./internal/client ./cmd/afctl`
+- Added store regression tests for:
+  - structured close metadata in the returned close result
+  - valid JSON `issue_closed` payloads containing `branch`, `pr_url`, and
+    `commit_sha`
+  - inclusion of issue `external_key` in close result and event payload
+- Added API regression tests for:
+  - `POST /v1/issues/{issue_id}/close` returning structured close metadata and
+    `closed_at`
+- Added client regression coverage for structured close responses.
+
+### Open items
+
+- `afc-28` and `afc-29` remain open in this packet.

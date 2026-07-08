@@ -517,7 +517,7 @@ func runIssueUpdate(ctx context.Context, c *client.Client, args []string) error 
 
 func runIssueClose(ctx context.Context, c *client.Client, args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("%s", "Usage: afctl issue close <issue-id> --resolution done|cancelled --expected-version N --lease-token ... [--note \"what was done\"]")
+		return fmt.Errorf("%s", "Usage: afctl issue close <issue-id> --resolution done|cancelled --expected-version N --lease-token ... [--branch <name>] [--pr-url <url>] [--commit-sha <sha>] [--note \"what was done\"]")
 	}
 
 	issueID := args[0]
@@ -529,6 +529,21 @@ func runIssueClose(ctx context.Context, c *client.Client, args []string) error {
 		case "--resolution":
 			if i+1 < len(args) {
 				req.Resolution = args[i+1]
+				i++
+			}
+		case "--branch":
+			if i+1 < len(args) {
+				req.Branch = args[i+1]
+				i++
+			}
+		case "--pr-url":
+			if i+1 < len(args) {
+				req.PRURL = args[i+1]
+				i++
+			}
+		case "--commit-sha":
+			if i+1 < len(args) {
+				req.CommitSHA = args[i+1]
 				i++
 			}
 		case "--expected-version":
@@ -565,14 +580,27 @@ func runIssueClose(ctx context.Context, c *client.Client, args []string) error {
 	}
 	req.Actor = actor
 
-	if err := c.CloseIssue(ctx, issueID, req); err != nil {
+	result, err := c.CloseIssue(ctx, issueID, req)
+	if err != nil {
 		fail(err)
 	}
 	if jsonOutput {
-		fmt.Println(`{"status":"ok"}`)
+		json.NewEncoder(os.Stdout).Encode(result)
 		return nil
 	}
 	fmt.Println("Issue closed.")
+	if result.Branch != "" {
+		fmt.Printf("Branch:      %s\n", result.Branch)
+	}
+	if result.PRURL != "" {
+		fmt.Printf("PR URL:      %s\n", result.PRURL)
+	}
+	if result.CommitSHA != "" {
+		fmt.Printf("Commit SHA:  %s\n", result.CommitSHA)
+	}
+	if result.ExternalKey != "" {
+		fmt.Printf("External:    %s\n", result.ExternalKey)
+	}
 	return nil
 }
 

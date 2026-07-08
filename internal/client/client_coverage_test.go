@@ -130,7 +130,7 @@ func TestClientCoverage(t *testing.T) {
 	_, _ = c.ClaimIssue(ctx, "i1", "actor", 10)
 	_, _ = c.HeartbeatLease(ctx, "i1", "token", 10)
 	_ = c.ReleaseLease(ctx, "i1", "token")
-	_ = c.CloseIssue(ctx, "i1", core.CloseIssueRequest{})
+	_, _ = c.CloseIssue(ctx, "i1", core.CloseIssueRequest{})
 
 	_, _ = c.CreateNote(ctx, "i1", "actor", "note")
 	_, _ = c.ListNotes(ctx, "i1")

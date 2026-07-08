@@ -156,6 +156,9 @@ curl -s -X POST --unix-socket $AFC_SOCK \
   -H "Content-Type: application/json" \
   -d '{
     "resolution": "done",
+    "branch": "codex/afc-27",
+    "pr_url": "https://github.com/abevz/af-coordinator/pull/27",
+    "commit_sha": "ba6d011",
     "expected_version": 2,
     "lease_token": "'"$TOKEN"'",
     "actor": "'"$AFC_ACTOR"'",

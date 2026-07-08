@@ -18,6 +18,6 @@ notes, and closure audit.
 | `afc-36` | bug | P1 | done | - | Scope repository resolution by project | Remove ambiguous unscoped logical-name resolution from multi-project paths; keep exact UUID lookup. |
 | `afc-25` | feature | P2 | done | - | Events watch API | Added global `GET /v1/events` with opaque `since` cursor, `limit`, bounded `wait_ms` long-poll, and contract tests for pagination and payload JSON validity. |
 | `afc-26` | feature | P2 | done | - | External issue references | Added optional `external_key` on issues with exact-match query filtering so mirrored issue keys and Temporal workflow IDs can be stored as references while coordinator status stays authoritative. |
-| `afc-27` | feature | P3 | open | - | Structured close resolution | Support PR URL, commit SHA, and external execution reference metadata in close output and events. |
+| `afc-27` | feature | P3 | done | - | Structured close resolution | Added structured close metadata (`branch`, `pr_url`, `commit_sha`) in close request/response and `issue_closed` events, and included issue `external_key` there when present. |
 | `afc-29` | feature | P3 | open | - | JSONL export | Export issues, notes, events, dependencies, artifacts, and references through read-only daemon/store-backed code. |
 | `afc-28` | feature | P3 | open | - | MCP wrapper over daemon API | Expose stable coordinator operations through MCP without direct SQLite access. |

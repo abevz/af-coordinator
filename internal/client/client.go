@@ -299,8 +299,12 @@ func (c *Client) UpdateIssue(ctx context.Context, issueID string, req core.Updat
 }
 
 // CloseIssue sends a POST /v1/issues/{issueID}/close request.
-func (c *Client) CloseIssue(ctx context.Context, issueID string, req core.CloseIssueRequest) error {
-	return c.doJSON(ctx, http.MethodPost, "/v1/issues/"+issueID+"/close", req, nil)
+func (c *Client) CloseIssue(ctx context.Context, issueID string, req core.CloseIssueRequest) (core.CloseIssueResult, error) {
+	var result core.CloseIssueResult
+	if err := c.doJSON(ctx, http.MethodPost, "/v1/issues/"+issueID+"/close", req, &result); err != nil {
+		return core.CloseIssueResult{}, err
+	}
+	return result, nil
 }
 
 // LinkArtifact sends a POST /v1/issues/{issueID}/links request.

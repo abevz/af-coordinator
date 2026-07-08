@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/abevz/af-coordinator/internal/core"
 )
 
 func TestClientError_Error(t *testing.T) {
@@ -175,6 +177,30 @@ func TestListIssuesEncodesExternalKeyQuery(t *testing.T) {
 	}
 	if len(issues) != 0 {
 		t.Fatalf("expected empty issue list, got %d", len(issues))
+	}
+}
+
+func TestCloseIssueReturnsStructuredResult(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			t.Fatalf("method = %q, want POST", r.Method)
+		}
+		if r.URL.Path != "/v1/issues/i1/close" {
+			t.Fatalf("path = %q", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"closed","resolution":"done","branch":"codex/afc-27","pr_url":"https://github.com/abevz/af-coordinator/pull/27","commit_sha":"ba6d011","external_key":"temporal:workflow-456","closed_at":"2026-07-08T15:50:00Z"}`))
+	}))
+	defer server.Close()
+
+	c := testClient(t, server)
+	result, err := c.CloseIssue(context.Background(), "i1", core.CloseIssueRequest{Resolution: "done"})
+	if err != nil {
+		t.Fatalf("CloseIssue() error = %v", err)
+	}
+	if result.Status != "closed" || result.Branch != "codex/afc-27" || result.ExternalKey != "temporal:workflow-456" {
+		t.Fatalf("unexpected result: %+v", result)
 	}
 }
 

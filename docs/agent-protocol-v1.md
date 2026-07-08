@@ -41,7 +41,8 @@ Every agent session follows this cycle:
 
 5. **Close or release**
    ```
-   afctl issue close <short_id> --resolution done --expected-version N --lease-token <token> --note "what was done"
+   afctl issue close <short_id> --resolution done --expected-version N --lease-token <token> \
+     --branch <branch> --pr-url <url> --commit-sha <sha> --note "what was done"
    afctl issue release <short_id> --lease-token <token>
    ```
 

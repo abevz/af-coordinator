@@ -1157,12 +1157,24 @@ func TestCloseIssue(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = CloseIssue(context.Background(), db, issue.ID, core.CloseIssueRequest{
+	result, err := CloseIssue(context.Background(), db, issue.ID, core.CloseIssueRequest{
 		Resolution:      "done",
+		Branch:          "codex/afc-27",
+		PRURL:           "https://github.com/abevz/af-coordinator/pull/27",
+		CommitSHA:       "ba6d011",
 		ExpectedVersion: issue.Version,
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if result.Branch != "codex/afc-27" {
+		t.Fatalf("branch = %q, want %q", result.Branch, "codex/afc-27")
+	}
+	if result.PRURL != "https://github.com/abevz/af-coordinator/pull/27" {
+		t.Fatalf("pr_url = %q", result.PRURL)
+	}
+	if result.CommitSHA != "ba6d011" {
+		t.Fatalf("commit_sha = %q", result.CommitSHA)
 	}
 
 	// Verify it's closed.
@@ -1178,6 +1190,33 @@ func TestCloseIssue(t *testing.T) {
 	}
 	if got.Version != issue.Version+1 {
 		t.Errorf("expected version %d, got %d", issue.Version+1, got.Version)
+	}
+
+	events, err := ListEvents(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	last := events[len(events)-1]
+	if last.EventType != "issue_closed" {
+		t.Fatalf("expected issue_closed event, got %q", last.EventType)
+	}
+	if !json.Valid([]byte(last.PayloadJSON)) {
+		t.Fatalf("expected valid JSON payload, got %q", last.PayloadJSON)
+	}
+	var payload struct {
+		Resolution string   `json:"resolution"`
+		Branch     string   `json:"branch"`
+		PRURL      string   `json:"pr_url"`
+		CommitSHA  string   `json:"commit_sha"`
+		Changed    []string `json:"changed"`
+	}
+	if err := json.Unmarshal([]byte(last.PayloadJSON), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Resolution != "done" || payload.Branch != "codex/afc-27" ||
+		payload.PRURL != "https://github.com/abevz/af-coordinator/pull/27" ||
+		payload.CommitSHA != "ba6d011" {
+		t.Fatalf("unexpected close payload: %+v", payload)
 	}
 }
 
@@ -1198,7 +1237,7 @@ func TestCloseIssueCancelled(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = CloseIssue(context.Background(), db, issue.ID, core.CloseIssueRequest{
+	_, err = CloseIssue(context.Background(), db, issue.ID, core.CloseIssueRequest{
 		Resolution:      "cancelled",
 		ExpectedVersion: issue.Version,
 	})
@@ -1233,7 +1272,7 @@ func TestCloseIssueVersionConflict(t *testing.T) {
 	}
 
 	// Use wrong expected version.
-	err = CloseIssue(context.Background(), db, issue.ID, core.CloseIssueRequest{
+	_, err = CloseIssue(context.Background(), db, issue.ID, core.CloseIssueRequest{
 		Resolution:      "done",
 		ExpectedVersion: 99,
 	})
@@ -1246,6 +1285,48 @@ func TestCloseIssueVersionConflict(t *testing.T) {
 	}
 	if apiErr.Code != core.ErrConflict {
 		t.Errorf("expected code %q, got %q", core.ErrConflict, apiErr.Code)
+	}
+}
+
+func TestCloseIssueIncludesIssueExternalKeyInPayloadAndResult(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	if _, err := CreateProject(context.Background(), db, "test", "Test", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{
+		ScopeKind:   "project",
+		Title:       "Close me",
+		ExternalKey: "temporal:workflow-456",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := CloseIssue(context.Background(), db, issue.ID, core.CloseIssueRequest{
+		Resolution:      "done",
+		ExpectedVersion: issue.Version,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.ExternalKey != "temporal:workflow-456" {
+		t.Fatalf("result external_key = %q, want %q", result.ExternalKey, "temporal:workflow-456")
+	}
+
+	events, err := ListEvents(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	last := events[len(events)-1]
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(last.PayloadJSON), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload["external_key"] != "temporal:workflow-456" {
+		t.Fatalf("payload external_key = %v, want %q", payload["external_key"], "temporal:workflow-456")
 	}
 }
 

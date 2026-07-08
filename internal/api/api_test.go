@@ -1348,7 +1348,7 @@ func TestCloseIssue(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	body := `{"resolution":"done","expected_version":1,"actor":"test"}`
+	body := `{"resolution":"done","branch":"codex/afc-27","pr_url":"https://github.com/abevz/af-coordinator/pull/27","commit_sha":"ba6d011","expected_version":1,"actor":"test"}`
 	req, err := http.NewRequest("POST", server.URL+"/v1/issues/"+issueID+"/close", strings.NewReader(body))
 	if err != nil {
 		t.Fatal(err)
@@ -1360,6 +1360,33 @@ func TestCloseIssue(t *testing.T) {
 	}
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200 OK, got %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Status     string `json:"status"`
+		Resolution string `json:"resolution"`
+		Branch     string `json:"branch"`
+		PRURL      string `json:"pr_url"`
+		CommitSHA  string `json:"commit_sha"`
+		ClosedAt   string `json:"closed_at"`
+	}
+	result = decodeJSON[struct {
+		Status     string `json:"status"`
+		Resolution string `json:"resolution"`
+		Branch     string `json:"branch"`
+		PRURL      string `json:"pr_url"`
+		CommitSHA  string `json:"commit_sha"`
+		ClosedAt   string `json:"closed_at"`
+	}](t, resp)
+
+	if result.Status != "closed" || result.Resolution != "done" {
+		t.Fatalf("unexpected close response: %+v", result)
+	}
+	if result.Branch != "codex/afc-27" || result.PRURL != "https://github.com/abevz/af-coordinator/pull/27" || result.CommitSHA != "ba6d011" {
+		t.Fatalf("unexpected structured close refs: %+v", result)
+	}
+	if result.ClosedAt == "" {
+		t.Fatal("expected closed_at in close response")
 	}
 }
 

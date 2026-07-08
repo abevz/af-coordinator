@@ -191,7 +191,11 @@ This is the compact route-to-implementation inventory for the current daemon.
   `external_key`, `description`, `acceptance_criteria`, `priority`, `assignee`, `status`); requires
   `expected_version`, plus `lease_token` if the issue is claimed
 - `POST /v1/issues/{issue_id}/close` — requires `lease_token` +
-  `expected_version`; body: `resolution` (`done` | `cancelled`), optional `note` (appends note and closes atomically)
+  `expected_version`; body: `resolution` (`done` | `cancelled`), optional
+  `branch`, `pr_url`, `commit_sha`, and optional `note` (appends note and
+  closes atomically). The response echoes the structured close metadata and
+  `closed_at`; when the issue already carries an `external_key`, the close
+  response and `issue_closed` event include it too.
 
 ## Leases
 

@@ -37,7 +37,8 @@ afctl issue ready                      # the menu
 afctl issue claim utils-7 --ttl 28800  # a working day; nobody to compete with
 # ... work ...
 afctl issue close utils-7 --resolution done \
-  --expected-version N --lease-token <token>
+  --expected-version N --lease-token <token> \
+  --branch codex/utils-7 --pr-url https://example/pr/7 --commit-sha abc1234
 ```
 
 Pick the TTL for how long you actually intend to hold the issue. Agents
@@ -155,6 +156,7 @@ afctl show --full utils-10                 # epic with its trail
 
 # 5. When the last child is done, close the epic by hand
 afctl issue close utils-10 --resolution done --expected-version N \
+  --branch codex/utils-10 --commit-sha abc1234 \
   --note "all children done; restic in production since afc-…"
 ```
 
