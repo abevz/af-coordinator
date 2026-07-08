@@ -157,6 +157,11 @@ leaf. It is optional free text (Markdown, typically a bullet list) and is
 distinct from `description` so criteria are not smuggled into prose. Added
 in migration `0003_acceptance_criteria.sql`.
 
+`external_key` stores a reference owned by an external system such as a mirrored
+GitHub/Gitea issue key or a Temporal workflow id. The coordinator keeps this as
+reference metadata only; external execution state still lives outside the
+coordinator. Added in migration `0004_issue_external_key.sql`.
+
 ```sql
 create table issues (
   id text primary key,
@@ -169,6 +174,7 @@ create table issues (
   issue_type text not null default 'task'
     check (issue_type in ('task', 'bug', 'feature', 'epic', 'chore')),
   title text not null,
+  external_key text not null default '',
   description text not null default '',
   acceptance_criteria text not null default '',
   status text not null

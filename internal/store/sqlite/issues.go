@@ -68,11 +68,11 @@ func CreateIssue(ctx context.Context, db *sql.DB, projectKey string, req core.Cr
 
 	_, err = tx.ExecContext(ctx,
 		`INSERT INTO issues (id, short_id, project_id, repository_id, worktree_id, scope_kind,
-		                    issue_type, title, description, acceptance_criteria, status, priority, assignee, version,
+		                    issue_type, title, external_key, description, acceptance_criteria, status, priority, assignee, version,
 		                    claimed_at, closed_at, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', 1, NULL, NULL, ?, ?)`,
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', 1, NULL, NULL, ?, ?)`,
 		id, shortID, proj.ID, repoID, worktreeID, req.ScopeKind,
-		issueType, req.Title, req.Description, req.AcceptanceCriteria, status, priority, now, now,
+		issueType, req.Title, req.ExternalKey, req.Description, req.AcceptanceCriteria, status, priority, now, now,
 	)
 	if err != nil {
 		return core.Issue{}, fmt.Errorf("insert issue: %w", err)
@@ -85,11 +85,21 @@ func CreateIssue(ctx context.Context, db *sql.DB, projectKey string, req core.Cr
 	}
 
 	// Append event.
-	eventPayload := fmt.Sprintf(`{"title":"%s","scope_kind":"%s"}`, req.Title, req.ScopeKind)
+	eventPayload := map[string]string{
+		"title":      req.Title,
+		"scope_kind": req.ScopeKind,
+	}
+	if req.ExternalKey != "" {
+		eventPayload["external_key"] = req.ExternalKey
+	}
+	payloadBytes, err := json.Marshal(eventPayload)
+	if err != nil {
+		return core.Issue{}, fmt.Errorf("marshal event payload: %w", err)
+	}
 	_, err = tx.ExecContext(ctx,
 		`INSERT INTO events (id, issue_id, actor, event_type, payload_json, created_at)
 		 VALUES (?, ?, ?, ?, ?, ?)`,
-		uuid.New().String(), id, req.Actor, "issue_created", eventPayload, now,
+		uuid.New().String(), id, req.Actor, "issue_created", string(payloadBytes), now,
 	)
 	if err != nil {
 		return core.Issue{}, fmt.Errorf("insert event: %w", err)
@@ -100,7 +110,7 @@ func CreateIssue(ctx context.Context, db *sql.DB, projectKey string, req core.Cr
 	}
 
 	return scanIssueRow(id, shortID, proj.ID, repoID, worktreeID, req.ScopeKind,
-		issueType, req.Title, req.Description, req.AcceptanceCriteria, status, priority, "", 1, "", "", "", "", now, now), nil
+		issueType, req.Title, req.ExternalKey, req.Description, req.AcceptanceCriteria, status, priority, "", 1, "", "", "", "", now, now), nil
 }
 
 // ResolveIssueID resolves an issue by either its UUID id or short_id, returning the UUID id.
@@ -133,7 +143,7 @@ func GetIssue(ctx context.Context, db *sql.DB, id string) (core.Issue, *core.Iss
 
 	row := db.QueryRowContext(ctx,
 		`SELECT i.id, i.short_id, i.project_id, i.repository_id, i.worktree_id, i.scope_kind,
-		        i.issue_type, i.title, i.description, i.acceptance_criteria, i.status, i.priority, i.assignee, i.version,
+		        i.issue_type, i.title, i.external_key, i.description, i.acceptance_criteria, i.status, i.priority, i.assignee, i.version,
 		        i.claimed_at, i.closed_at, i.created_at, i.updated_at,
 		        COALESCE(l.holder, ''), COALESCE(l.expires_at, '')
 		 FROM issues i
@@ -203,9 +213,13 @@ func ListIssues(ctx context.Context, db *sql.DB, params core.IssueListParams) ([
 		where = append(where, "i.issue_type = ?")
 		args = append(args, params.IssueType)
 	}
+	if params.ExternalKey != "" {
+		where = append(where, "i.external_key = ?")
+		args = append(args, params.ExternalKey)
+	}
 
 	query := `SELECT i.id, i.short_id, i.project_id, i.repository_id, i.worktree_id, i.scope_kind,
-	                 i.issue_type, i.title, i.description, i.acceptance_criteria, i.status, i.priority, i.assignee, i.version,
+	                 i.issue_type, i.title, i.external_key, i.description, i.acceptance_criteria, i.status, i.priority, i.assignee, i.version,
 	                 i.claimed_at, i.closed_at, i.created_at, i.updated_at,
 	                 COALESCE(l.holder, ''), COALESCE(l.expires_at, '')
 	          FROM issues i
@@ -249,7 +263,7 @@ func ListReadyIssues(ctx context.Context, db *sql.DB, projectID, repoID string) 
 	now := time.Now().UTC().Format(time.RFC3339)
 	args := []interface{}{now}
 	query := `SELECT i.id, i.short_id, i.project_id, i.repository_id, i.worktree_id, i.scope_kind,
-	                 i.issue_type, i.title, i.description, i.acceptance_criteria, i.status, i.priority, i.assignee, i.version,
+	                 i.issue_type, i.title, i.external_key, i.description, i.acceptance_criteria, i.status, i.priority, i.assignee, i.version,
 	                 i.claimed_at, i.closed_at, i.created_at, i.updated_at,
 	                 COALESCE(l.holder, ''), COALESCE(l.expires_at, '')
 	          FROM issues i
@@ -521,7 +535,7 @@ func scanIssue(s scanner) (core.Issue, error) {
 	var repoID, worktreeID, claimedAt, closedAt sql.NullString
 	var holder, leaseExpiresAt sql.NullString
 	err := s.Scan(&i.ID, &i.ShortID, &i.ProjectID, &repoID, &worktreeID,
-		&i.ScopeKind, &i.IssueType, &i.Title, &i.Description, &i.AcceptanceCriteria, &i.Status, &i.Priority,
+		&i.ScopeKind, &i.IssueType, &i.Title, &i.ExternalKey, &i.Description, &i.AcceptanceCriteria, &i.Status, &i.Priority,
 		&i.Assignee, &i.Version, &claimedAt, &closedAt,
 		&i.CreatedAt, &i.UpdatedAt, &holder, &leaseExpiresAt)
 	if err != nil {
@@ -601,6 +615,10 @@ func UpdateIssue(ctx context.Context, db *sql.DB, issueID string, req core.Updat
 		sets = append(sets, "issue_type = ?")
 		args = append(args, req.IssueType)
 	}
+	if req.ExternalKey != "" {
+		sets = append(sets, "external_key = ?")
+		args = append(args, req.ExternalKey)
+	}
 	if req.Description != "" {
 		sets = append(sets, "description = ?")
 		args = append(args, req.Description)
@@ -677,6 +695,9 @@ func buildChangedFields(req core.UpdateIssueRequest) []string {
 	}
 	if req.IssueType != "" {
 		changed = append(changed, "issue_type")
+	}
+	if req.ExternalKey != "" {
+		changed = append(changed, "external_key")
 	}
 	if req.Description != "" {
 		changed = append(changed, "description")
@@ -1297,7 +1318,7 @@ func isSQLiteConstraintError(err error) bool {
 
 // scanIssueRow builds an Issue struct from raw fields (used by CreateIssue to avoid a second query).
 func scanIssueRow(id, shortID, projectID string, repoID, worktreeID interface{},
-	scopeKind, issueType, title, description, acceptanceCriteria, status string, priority int,
+	scopeKind, issueType, title, externalKey, description, acceptanceCriteria, status string, priority int,
 	assignee string, version int, claimedAt, closedAt, holder, leaseExpiresAt, createdAt, updatedAt string) core.Issue {
 	i := core.Issue{
 		ID:                 id,
@@ -1306,6 +1327,7 @@ func scanIssueRow(id, shortID, projectID string, repoID, worktreeID interface{},
 		ScopeKind:          scopeKind,
 		IssueType:          issueType,
 		Title:              title,
+		ExternalKey:        externalKey,
 		Description:        description,
 		AcceptanceCriteria: acceptanceCriteria,
 		Status:             status,

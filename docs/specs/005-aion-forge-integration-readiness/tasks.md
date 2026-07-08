@@ -17,7 +17,7 @@ notes, and closure audit.
 | `afc-30` | bug | P1 | done | - | Dependency response identity semantics | Define explicit UUID and short id response fields; add API and CLI regression tests. |
 | `afc-36` | bug | P1 | done | - | Scope repository resolution by project | Remove ambiguous unscoped logical-name resolution from multi-project paths; keep exact UUID lookup. |
 | `afc-25` | feature | P2 | done | - | Events watch API | Added global `GET /v1/events` with opaque `since` cursor, `limit`, bounded `wait_ms` long-poll, and contract tests for pagination and payload JSON validity. |
-| `afc-26` | feature | P2 | open | - | External issue references | Store mirrored issue keys and Temporal workflow IDs as references while coordinator issue status stays authoritative. |
+| `afc-26` | feature | P2 | done | - | External issue references | Added optional `external_key` on issues with exact-match query filtering so mirrored issue keys and Temporal workflow IDs can be stored as references while coordinator status stays authoritative. |
 | `afc-27` | feature | P3 | open | - | Structured close resolution | Support PR URL, commit SHA, and external execution reference metadata in close output and events. |
 | `afc-29` | feature | P3 | open | - | JSONL export | Export issues, notes, events, dependencies, artifacts, and references through read-only daemon/store-backed code. |
 | `afc-28` | feature | P3 | open | - | MCP wrapper over daemon API | Expose stable coordinator operations through MCP without direct SQLite access. |

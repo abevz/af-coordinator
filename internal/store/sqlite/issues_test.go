@@ -47,6 +47,35 @@ func TestCreateIssue(t *testing.T) {
 	}
 }
 
+func TestCreateIssueWithExternalKey(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	if _, err := CreateProject(context.Background(), db, "test", "Test", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{
+		ScopeKind:   "project",
+		Title:       "Mirrored issue",
+		ExternalKey: "gh://abevz/af-coordinator/issues/26",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if issue.ExternalKey != "gh://abevz/af-coordinator/issues/26" {
+		t.Fatalf("external_key = %q, want %q", issue.ExternalKey, "gh://abevz/af-coordinator/issues/26")
+	}
+
+	got, _, err := GetIssue(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ExternalKey != issue.ExternalKey {
+		t.Fatalf("GetIssue external_key = %q, want %q", got.ExternalKey, issue.ExternalKey)
+	}
+}
+
 func TestUnlinkArtifactEventPayloadIsJSONEscaped(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
@@ -329,6 +358,44 @@ func TestListIssuesFilterByStatus(t *testing.T) {
 	}
 	if len(issues) != 1 {
 		t.Errorf("expected 1 open issue, got %d", len(issues))
+	}
+}
+
+func TestListIssuesFilterByExternalKey(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	if _, err := CreateProject(context.Background(), db, "test", "Test", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{
+		ScopeKind:   "project",
+		Title:       "Plain issue",
+		ExternalKey: "temporal:workflow-123",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	want, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{
+		ScopeKind:   "project",
+		Title:       "Mirrored issue",
+		ExternalKey: "gh://abevz/af-coordinator/issues/26",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	issues, err := ListIssues(context.Background(), db, core.IssueListParams{
+		ExternalKey: "gh://abevz/af-coordinator/issues/26",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(issues) != 1 {
+		t.Fatalf("expected 1 issue, got %d", len(issues))
+	}
+	if issues[0].ID != want.ID {
+		t.Fatalf("issue id = %q, want %q", issues[0].ID, want.ID)
 	}
 }
 
@@ -979,6 +1046,60 @@ func TestUpdateIssue(t *testing.T) {
 	}
 }
 
+func TestUpdateIssueExternalKey(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	if _, err := CreateProject(context.Background(), db, "test", "Test", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{
+		ScopeKind: "project",
+		Title:     "Original title",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	updated, err := UpdateIssue(context.Background(), db, issue.ID, core.UpdateIssueRequest{
+		ExternalKey:     "temporal:workflow-456",
+		ExpectedVersion: issue.Version,
+		Actor:           "tester",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.ExternalKey != "temporal:workflow-456" {
+		t.Fatalf("external_key = %q, want %q", updated.ExternalKey, "temporal:workflow-456")
+	}
+
+	events, err := ListEvents(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	last := events[len(events)-1]
+	if last.EventType != "issue_updated" {
+		t.Fatalf("expected last event issue_updated, got %q", last.EventType)
+	}
+	var payload struct {
+		Changed []string `json:"changed"`
+	}
+	if err := json.Unmarshal([]byte(last.PayloadJSON), &payload); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, field := range payload.Changed {
+		if field == "external_key" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected changed fields to include external_key, got %v", payload.Changed)
+	}
+}
+
 func TestUpdateIssueVersionConflict(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
@@ -1137,7 +1258,11 @@ func TestCreateIssueAppendsEvent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Event test"})
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{
+		ScopeKind:   "project",
+		Title:       "Event \"test\"",
+		ExternalKey: "gh://abevz/af-coordinator/issues/26",
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1151,6 +1276,16 @@ func TestCreateIssueAppendsEvent(t *testing.T) {
 	}
 	if events[0].EventType != "issue_created" {
 		t.Errorf("expected event_type 'issue_created', got %q", events[0].EventType)
+	}
+	if !json.Valid([]byte(events[0].PayloadJSON)) {
+		t.Fatalf("expected valid JSON payload, got %q", events[0].PayloadJSON)
+	}
+	var payload map[string]string
+	if err := json.Unmarshal([]byte(events[0].PayloadJSON), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload["external_key"] != "gh://abevz/af-coordinator/issues/26" {
+		t.Fatalf("event external_key = %q, want %q", payload["external_key"], "gh://abevz/af-coordinator/issues/26")
 	}
 }
 

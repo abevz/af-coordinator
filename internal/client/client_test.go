@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -147,6 +148,33 @@ func TestHealth(t *testing.T) {
 	}
 	if h.Status != "ok" {
 		t.Errorf("Status = %q, want %q", h.Status, "ok")
+	}
+}
+
+func TestListIssuesEncodesExternalKeyQuery(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/issues" {
+			t.Fatalf("path = %q, want /v1/issues", r.URL.Path)
+		}
+		if got := r.URL.Query().Get("external_key"); got != "gh://abevz/af-coordinator/issues/26" {
+			t.Fatalf("external_key = %q", got)
+		}
+		if strings.Contains(r.URL.RawQuery, "gh://") {
+			t.Fatalf("raw query should be encoded, got %q", r.URL.RawQuery)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"issues":[]}`))
+	}))
+	defer server.Close()
+
+	c := testClient(t, server)
+	issues, err := c.ListIssues(context.Background(), "afc", "", "", "", "", "", "gh://abevz/af-coordinator/issues/26")
+	if err != nil {
+		t.Fatalf("ListIssues() error = %v", err)
+	}
+	if len(issues) != 0 {
+		t.Fatalf("expected empty issue list, got %d", len(issues))
 	}
 }
 

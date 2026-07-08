@@ -112,3 +112,36 @@ Status: active
 ### Open items
 
 - `afc-26`, `afc-27`, `afc-28`, and `afc-29` remain open in this packet.
+
+## 2026-07-08 - afc-26 external issue references
+
+### What shipped
+
+- Added optional issue-level `external_key` storage for mirrored tracker keys
+  and external workflow identifiers.
+- Added migration `0004_issue_external_key.sql` because migration `0003` was
+  already occupied by acceptance criteria.
+- Exposed `external_key` through create/get/update/list API surfaces, store
+  models, and `afctl` create/update/list flows.
+- Added exact-match `external_key` filtering on `GET /v1/issues`.
+- Switched `issue_created` event payload generation to typed JSON marshaling so
+  titles and external keys with special characters remain valid JSON.
+
+### What was verified
+
+- `go test ./internal/store/sqlite ./internal/api ./internal/client ./cmd/afctl`
+- Added store regression tests for:
+  - create/get round-trip of issue `external_key`
+  - exact-match issue listing by `external_key`
+  - update event payload change tracking for `external_key`
+  - valid JSON `issue_created` payloads with quoted titles and external keys
+- Added API regression tests for:
+  - `POST /v1/issues` returning `external_key`
+  - `GET /v1/issues?external_key=` exact-match filtering
+  - `PATCH /v1/issues/{issue_id}` updating `external_key`
+- Added client regression coverage for URL-encoded `external_key` query values.
+- Added CLI output coverage for displaying issue `external_key`.
+
+### Open items
+
+- `afc-27`, `afc-28`, and `afc-29` remain open in this packet.

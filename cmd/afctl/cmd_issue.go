@@ -56,7 +56,7 @@ func runIssue(ctx context.Context, c *client.Client, args []string) error {
 
 func runIssueCreate(ctx context.Context, c *client.Client, args []string) error {
 	if len(args) < 4 {
-		return fmt.Errorf("%s", "Usage: afctl issue create --project <key> --scope-kind <project|repository|worktree> --title <title> [--type <task|bug|feature|epic|chore>] [--repo <repo>] [--worktree <worktree>] [--description <desc>] [--acceptance <criteria>] [--priority <n>]")
+		return fmt.Errorf("%s", "Usage: afctl issue create --project <key> --scope-kind <project|repository|worktree> --title <title> [--type <task|bug|feature|epic|chore>] [--repo <repo>] [--worktree <worktree>] [--external-key <key>] [--description <desc>] [--acceptance <criteria>] [--priority <n>]")
 	}
 
 	var req core.CreateIssueRequest
@@ -80,6 +80,11 @@ func runIssueCreate(ctx context.Context, c *client.Client, args []string) error 
 		case "--title":
 			if i+1 < len(args) {
 				req.Title = args[i+1]
+				i++
+			}
+		case "--external-key":
+			if i+1 < len(args) {
+				req.ExternalKey = args[i+1]
 				i++
 			}
 		case "--repo":
@@ -205,6 +210,7 @@ func runIssueList(ctx context.Context, c *client.Client, args []string) error {
 	status := ""
 	assignee := ""
 	issueType := ""
+	externalKey := ""
 	limit := 0
 	offset := 0
 
@@ -240,6 +246,11 @@ func runIssueList(ctx context.Context, c *client.Client, args []string) error {
 				issueType = args[i+1]
 				i++
 			}
+		case "--external-key":
+			if i+1 < len(args) {
+				externalKey = args[i+1]
+				i++
+			}
 		case "--limit":
 			if i+1 < len(args) {
 				fmt.Sscanf(args[i+1], "%d", &limit)
@@ -257,7 +268,7 @@ func runIssueList(ctx context.Context, c *client.Client, args []string) error {
 	_ = limit
 	_ = offset
 
-	issues, err := c.ListIssues(ctx, project, repo, worktree, status, assignee, issueType)
+	issues, err := c.ListIssues(ctx, project, repo, worktree, status, assignee, issueType, externalKey)
 	if err != nil {
 		fail(err)
 	}
@@ -420,7 +431,7 @@ func runIssueRelease(ctx context.Context, c *client.Client, args []string) error
 
 func runIssueUpdate(ctx context.Context, c *client.Client, args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("%s", "Usage: afctl issue update <issue-id> [--title ...] [--type <task|bug|feature|epic|chore>] [--description ...] [--acceptance ...] [--priority N] [--assignee ...] [--status ...] --expected-version N [--lease-token ...]")
+		return fmt.Errorf("%s", "Usage: afctl issue update <issue-id> [--title ...] [--type <task|bug|feature|epic|chore>] [--external-key ...] [--description ...] [--acceptance ...] [--priority N] [--assignee ...] [--status ...] --expected-version N [--lease-token ...]")
 	}
 
 	issueID := args[0]
@@ -437,6 +448,11 @@ func runIssueUpdate(ctx context.Context, c *client.Client, args []string) error 
 		case "--type":
 			if i+1 < len(args) {
 				req.IssueType = args[i+1]
+				i++
+			}
+		case "--external-key":
+			if i+1 < len(args) {
+				req.ExternalKey = args[i+1]
 				i++
 			}
 		case "--description":

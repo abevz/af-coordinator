@@ -296,6 +296,9 @@ func printIssue(i core.Issue) {
 	fmt.Printf("Scope:        %s\n", i.ScopeKind)
 	fmt.Printf("Type:         %s\n", i.IssueType)
 	fmt.Printf("Title:        %s\n", i.Title)
+	if i.ExternalKey != "" {
+		fmt.Printf("External Key: %s\n", i.ExternalKey)
+	}
 	if i.Description != "" {
 		fmt.Printf("Description:  %s\n", i.Description)
 	}
@@ -359,6 +362,9 @@ func printIssueDetailed(i core.Issue, l *core.IssueLease) {
 	fmt.Printf("Status:     %s %s\n", statusSymbol(i.Status), i.Status)
 	fmt.Printf("Type:       %s\n", i.IssueType)
 	fmt.Printf("Title:      %s\n", i.Title)
+	if i.ExternalKey != "" {
+		fmt.Printf("External:   %s\n", i.ExternalKey)
+	}
 	fmt.Printf("Priority:   %d\n", i.Priority)
 	if i.Assignee != "" {
 		fmt.Printf("Assignee:   %s\n", i.Assignee)
@@ -383,6 +389,9 @@ func printIssueFull(i core.Issue, l *core.IssueLease, events []core.Event, notes
 	fmt.Printf("Status:        %s %s\n", statusSymbol(i.Status), i.Status)
 	fmt.Printf("Type:          %s\n", i.IssueType)
 	fmt.Printf("Title:         %s\n", i.Title)
+	if i.ExternalKey != "" {
+		fmt.Printf("External Key:  %s\n", i.ExternalKey)
+	}
 	if i.Description != "" {
 		fmt.Printf("Description:   %s\n", i.Description)
 	}

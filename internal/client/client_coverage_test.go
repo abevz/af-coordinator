@@ -123,7 +123,7 @@ func TestClientCoverage(t *testing.T) {
 	_, _ = c.ListArtifacts(ctx, "test-repo")
 
 	_, _ = c.CreateIssue(ctx, core.CreateIssueRequest{})
-	_, _ = c.ListIssues(ctx, "project", "test", "open", "assignee", "reporter", "bug")
+	_, _ = c.ListIssues(ctx, "project", "test", "worktree", "open", "assignee", "bug", "gh://repo/42")
 	_, _, _ = c.GetIssue(ctx, "i1")
 	_, _ = c.ListReadyIssues(ctx, "test", "")
 

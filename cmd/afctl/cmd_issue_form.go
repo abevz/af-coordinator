@@ -58,7 +58,7 @@ func runIssueCreateForm(ctx context.Context, c *client.Client, args []string) er
 		allWtOpts = append(allWtOpts, huh.NewOption("No worktrees available", ""))
 	}
 
-	var project, scope, repo, worktree, title, issueType string
+	var project, scope, repo, worktree, title, issueType, externalKey string
 	// Preselect the API default (priority 3) instead of huh's first option.
 	priorityStr := "3"
 	var description, acceptance, assignee string
@@ -135,6 +135,7 @@ func runIssueCreateForm(ctx context.Context, c *client.Client, args []string) er
 		huh.NewGroup(
 			huh.NewText().Title("Description").Value(&description).Lines(5),
 			huh.NewText().Title("Acceptance criteria (optional)").Value(&acceptance).Lines(4),
+			huh.NewInput().Title("External key (optional)").Value(&externalKey),
 			huh.NewInput().Title("Assignee (optional)").Value(&assignee),
 		).Title("Details"),
 		huh.NewGroup(
@@ -165,6 +166,7 @@ func runIssueCreateForm(ctx context.Context, c *client.Client, args []string) er
 		Repo:               repo,
 		Worktree:           worktree,
 		Title:              title,
+		ExternalKey:        externalKey,
 		Description:        description,
 		AcceptanceCriteria: acceptance,
 		Priority:           priority,

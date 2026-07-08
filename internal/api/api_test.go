@@ -350,7 +350,7 @@ func TestCreateIssue(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	body := `{"project":"test","scope_kind":"project","title":"My issue","actor":"test"}`
+	body := `{"project":"test","scope_kind":"project","title":"My issue","external_key":"gh://abevz/af-coordinator/issues/26","actor":"test"}`
 	resp, err := http.Post(server.URL+"/v1/issues", "application/json", strings.NewReader(body))
 	if err != nil {
 		t.Fatal(err)
@@ -361,20 +361,22 @@ func TestCreateIssue(t *testing.T) {
 
 	var result struct {
 		Issue struct {
-			ID        string `json:"id"`
-			ShortID   string `json:"short_id"`
-			Title     string `json:"title"`
-			Status    string `json:"status"`
-			ScopeKind string `json:"scope_kind"`
+			ID          string `json:"id"`
+			ShortID     string `json:"short_id"`
+			Title       string `json:"title"`
+			ExternalKey string `json:"external_key"`
+			Status      string `json:"status"`
+			ScopeKind   string `json:"scope_kind"`
 		} `json:"issue"`
 	}
 	result = decodeJSON[struct {
 		Issue struct {
-			ID        string `json:"id"`
-			ShortID   string `json:"short_id"`
-			Title     string `json:"title"`
-			Status    string `json:"status"`
-			ScopeKind string `json:"scope_kind"`
+			ID          string `json:"id"`
+			ShortID     string `json:"short_id"`
+			Title       string `json:"title"`
+			ExternalKey string `json:"external_key"`
+			Status      string `json:"status"`
+			ScopeKind   string `json:"scope_kind"`
 		} `json:"issue"`
 	}](t, resp)
 
@@ -383,6 +385,9 @@ func TestCreateIssue(t *testing.T) {
 	}
 	if result.Issue.Status != "open" {
 		t.Errorf("expected status 'open', got %q", result.Issue.Status)
+	}
+	if result.Issue.ExternalKey != "gh://abevz/af-coordinator/issues/26" {
+		t.Errorf("expected external_key to round-trip, got %q", result.Issue.ExternalKey)
 	}
 	if result.Issue.ScopeKind != "project" {
 		t.Errorf("expected scope_kind 'project', got %q", result.Issue.ScopeKind)
@@ -733,6 +738,64 @@ func TestListIssues(t *testing.T) {
 
 	if len(result.Issues) != 2 {
 		t.Fatalf("expected 2 issues, got %d", len(result.Issues))
+	}
+}
+
+func TestListIssuesFilterByExternalKey(t *testing.T) {
+	server, db := newTestServer(t)
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	_, err := db.Exec(
+		`INSERT INTO projects (id, key, name, description, next_issue_seq, created_at, updated_at)
+		 VALUES ('proj-1', 'test', 'Test', '', 1, ?, ?)`,
+		now, now,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(
+		`INSERT INTO issues (id, short_id, project_id, scope_kind, title, external_key, description, status, priority, assignee, version, created_at, updated_at)
+		 VALUES ('issue-a', 'test-1', 'proj-1', 'project', 'Issue A', 'temporal:wf-1', '', 'open', 3, '', 1, ?, ?)`,
+		now, now,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(
+		`INSERT INTO issues (id, short_id, project_id, scope_kind, title, external_key, description, status, priority, assignee, version, created_at, updated_at)
+		 VALUES ('issue-b', 'test-2', 'proj-1', 'project', 'Issue B', 'gh://abevz/af-coordinator/issues/26', '', 'open', 3, '', 1, ?, ?)`,
+		now, now,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resp, err := http.Get(server.URL + "/v1/issues?project=test&external_key=gh%3A%2F%2Fabevz%2Faf-coordinator%2Fissues%2F26")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Issues []struct {
+			ID          string `json:"id"`
+			ExternalKey string `json:"external_key"`
+		} `json:"issues"`
+	}
+	result = decodeJSON[struct {
+		Issues []struct {
+			ID          string `json:"id"`
+			ExternalKey string `json:"external_key"`
+		} `json:"issues"`
+	}](t, resp)
+
+	if len(result.Issues) != 1 {
+		t.Fatalf("expected 1 issue, got %d", len(result.Issues))
+	}
+	if result.Issues[0].ID != "issue-b" {
+		t.Fatalf("issue id = %q, want issue-b", result.Issues[0].ID)
 	}
 }
 
@@ -1221,7 +1284,7 @@ func TestUpdateIssue(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	body := `{"title":"Updated","expected_version":1,"actor":"test"}`
+	body := `{"title":"Updated","external_key":"temporal:workflow-456","expected_version":1,"actor":"test"}`
 	req, err := http.NewRequest("PATCH", server.URL+"/v1/issues/"+issueID, strings.NewReader(body))
 	if err != nil {
 		t.Fatal(err)
@@ -1237,19 +1300,24 @@ func TestUpdateIssue(t *testing.T) {
 
 	var result struct {
 		Issue struct {
-			ID    string `json:"id"`
-			Title string `json:"title"`
+			ID          string `json:"id"`
+			Title       string `json:"title"`
+			ExternalKey string `json:"external_key"`
 		} `json:"issue"`
 	}
 	result = decodeJSON[struct {
 		Issue struct {
-			ID    string `json:"id"`
-			Title string `json:"title"`
+			ID          string `json:"id"`
+			Title       string `json:"title"`
+			ExternalKey string `json:"external_key"`
 		} `json:"issue"`
 	}](t, resp)
 
 	if result.Issue.Title != "Updated" {
 		t.Errorf("expected title 'Updated', got %q", result.Issue.Title)
+	}
+	if result.Issue.ExternalKey != "temporal:workflow-456" {
+		t.Errorf("expected external_key to update, got %q", result.Issue.ExternalKey)
 	}
 }
 

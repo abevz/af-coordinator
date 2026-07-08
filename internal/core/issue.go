@@ -59,6 +59,7 @@ type Issue struct {
 	ScopeKind          string       `json:"scope_kind"`
 	IssueType          string       `json:"issue_type"`
 	Title              string       `json:"title"`
+	ExternalKey        string       `json:"external_key,omitempty"`
 	Description        string       `json:"description,omitempty"`
 	AcceptanceCriteria string       `json:"acceptance_criteria,omitempty"`
 	Status             string       `json:"status"`
@@ -98,6 +99,7 @@ type CreateIssueRequest struct {
 	Repo               string `json:"repo,omitempty"`
 	Worktree           string `json:"worktree,omitempty"`
 	Title              string `json:"title"`
+	ExternalKey        string `json:"external_key,omitempty"`
 	Description        string `json:"description,omitempty"`
 	AcceptanceCriteria string `json:"acceptance_criteria,omitempty"`
 	Priority           int    `json:"priority,omitempty"`
@@ -106,12 +108,13 @@ type CreateIssueRequest struct {
 
 // IssueListParams represents query params for GET /v1/issues.
 type IssueListParams struct {
-	Project   string
-	Repo      string
-	Worktree  string
-	Status    string
-	Assignee  string
-	IssueType string
+	Project     string
+	Repo        string
+	Worktree    string
+	Status      string
+	Assignee    string
+	IssueType   string
+	ExternalKey string
 }
 
 // ClaimRequest is the JSON body for POST /v1/issues/{issue_id}/claim.
@@ -141,6 +144,7 @@ type ReleaseRequest struct {
 type UpdateIssueRequest struct {
 	Title              string `json:"title,omitempty"`
 	IssueType          string `json:"issue_type,omitempty"`
+	ExternalKey        string `json:"external_key,omitempty"`
 	Description        string `json:"description,omitempty"`
 	AcceptanceCriteria string `json:"acceptance_criteria,omitempty"`
 	Priority           int    `json:"priority,omitempty"`

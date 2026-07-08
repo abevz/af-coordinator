@@ -173,12 +173,12 @@ This is the compact route-to-implementation inventory for the current daemon.
 
 - `POST /v1/issues` — create; daemon allocates `short_id`; body includes
   `project`, `scope_kind`, optional `repo`/`worktree`, `title`,
-  `description`, `acceptance_criteria`, `priority`, `issue_type`
+  optional `external_key`, `description`, `acceptance_criteria`, `priority`, `issue_type`
   (`task` default, `bug`, `feature`, `epic`, `chore`)
 - `GET  /v1/issues/{issue_id}` — fetch one, including current lease if any
 - dependency payloads inside issue responses use explicit identity fields:
   `issue_id`, `issue_short_id`, `depends_on_id`, `depends_on_short_id`
-- `GET  /v1/issues?project=&repo=&worktree=&status=&assignee=&type=` — query
+- `GET  /v1/issues?project=&repo=&worktree=&status=&assignee=&type=&external_key=` — query
 - `GET  /v1/events?since=&limit=&wait_ms=` — global cursor-paginated event
   stream; `since` is an opaque cursor returned as `next_since`, `limit`
   defaults to 100 and is capped at 500, and `wait_ms` enables bounded long-poll
@@ -188,7 +188,7 @@ This is the compact route-to-implementation inventory for the current daemon.
   alongside `project`, repository logical-name resolution is scoped to that
   project; without `project`, prefer repository UUIDs over ambiguous names.
 - `PATCH /v1/issues/{issue_id}` — edit metadata and status (`title`, `issue_type`,
-  `description`, `acceptance_criteria`, `priority`, `assignee`, `status`); requires
+  `external_key`, `description`, `acceptance_criteria`, `priority`, `assignee`, `status`); requires
   `expected_version`, plus `lease_token` if the issue is claimed
 - `POST /v1/issues/{issue_id}/close` — requires `lease_token` +
   `expected_version`; body: `resolution` (`done` | `cancelled`), optional `note` (appends note and closes atomically)

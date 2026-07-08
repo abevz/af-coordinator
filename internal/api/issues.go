@@ -99,12 +99,13 @@ func handleGetIssue(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 func handleListIssues(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		params := core.IssueListParams{
-			Project:   r.URL.Query().Get("project"),
-			Repo:      r.URL.Query().Get("repo"),
-			Worktree:  r.URL.Query().Get("worktree"),
-			Status:    r.URL.Query().Get("status"),
-			Assignee:  r.URL.Query().Get("assignee"),
-			IssueType: r.URL.Query().Get("type"),
+			Project:     r.URL.Query().Get("project"),
+			Repo:        r.URL.Query().Get("repo"),
+			Worktree:    r.URL.Query().Get("worktree"),
+			Status:      r.URL.Query().Get("status"),
+			Assignee:    r.URL.Query().Get("assignee"),
+			IssueType:   r.URL.Query().Get("type"),
+			ExternalKey: r.URL.Query().Get("external_key"),
 		}
 		if params.IssueType != "" && !core.ValidIssueType(params.IssueType) {
 			writeError(w, http.StatusBadRequest, core.ErrValidationFailed,

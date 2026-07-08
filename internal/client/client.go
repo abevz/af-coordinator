@@ -231,13 +231,12 @@ func (c *Client) GetIssue(ctx context.Context, issueID string) (core.Issue, *cor
 }
 
 // ListIssues sends a GET /v1/issues request with optional query params.
-func (c *Client) ListIssues(ctx context.Context, project, repo, worktree, status, assignee, issueType string) ([]core.Issue, error) {
+func (c *Client) ListIssues(ctx context.Context, project, repo, worktree, status, assignee, issueType, externalKey string) ([]core.Issue, error) {
 	path := "/v1/issues"
-	sep := "?"
+	query := url.Values{}
 	appendParam := func(key, val string) {
 		if val != "" {
-			path += sep + key + "=" + val
-			sep = "&"
+			query.Set(key, val)
 		}
 	}
 	appendParam("project", project)
@@ -246,6 +245,10 @@ func (c *Client) ListIssues(ctx context.Context, project, repo, worktree, status
 	appendParam("status", status)
 	appendParam("assignee", assignee)
 	appendParam("type", issueType)
+	appendParam("external_key", externalKey)
+	if len(query) > 0 {
+		path += "?" + query.Encode()
+	}
 
 	var result struct {
 		Issues []core.Issue `json:"issues"`
