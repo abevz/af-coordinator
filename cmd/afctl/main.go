@@ -82,6 +82,8 @@ func main() {
 		err = runArtifactRoot(ctx, c, filtered[1:])
 	case "artifact":
 		err = runArtifact(ctx, c, filtered[1:])
+	case "export":
+		err = runExport(ctx, c, filtered[1:])
 	case "issue":
 		err = runIssue(ctx, c, filtered[1:])
 	case "ls":
@@ -126,6 +128,8 @@ Commands:
   artifact              Manage artifacts
     register            Register an artifact file
     list                List artifacts
+  export                Export coordinator state
+    jsonl               Stream normalized JSONL to stdout
   issue                 Manage issues
     create              Create a new issue
     get                 Get an issue by ID or short_id [--full]

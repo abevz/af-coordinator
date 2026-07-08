@@ -231,3 +231,21 @@ Get the full chronological audit trail of an issue.
 ```bash
 curl -s --unix-socket $AFC_SOCK http://localhost/v1/issues/afc-15/events | jq
 ```
+
+---
+
+## 6. Export
+
+### Stream a normalized JSONL export
+Each line is a record envelope with a stable `type` and `payload`.
+```bash
+curl -s --unix-socket $AFC_SOCK http://localhost/v1/export/jsonl
+```
+
+Example lines:
+
+```json
+{"type":"issue","payload":{"id":"...","short_id":"afc-29","title":"JSONL export"}}
+{"type":"dependency","payload":{"issue_id":"...","issue_short_id":"afc-29","depends_on_id":"...","depends_on_short_id":"afc-24","kind":"parent","created_at":"2026-07-08T16:07:00Z"}}
+{"type":"reference","payload":{"issue_id":"...","issue_short_id":"afc-29","artifact_id":"...","artifact_path":"docs/specs/005-aion-forge-integration-readiness/tasks.md","artifact_kind":"tasks","relation":"implements","link_created_at":"2026-07-08T16:08:00Z"}}
+```

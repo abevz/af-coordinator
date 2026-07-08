@@ -30,6 +30,7 @@ func registerRoutes(mux *http.ServeMux, db *sql.DB, logger *slog.Logger) {
 	}
 	mux.HandleFunc("/healthz", healthHandler)
 	mux.HandleFunc("/v1/health", healthHandler)
+	mux.HandleFunc("GET /v1/export/jsonl", handleExportJSONL(db, logger))
 
 	// Projects
 	mux.HandleFunc("POST /v1/projects", handleCreateProject(db, logger))
@@ -283,6 +284,75 @@ func TestCreateRepo(t *testing.T) {
 
 	if result.Repository.LogicalName != "main" {
 		t.Errorf("expected logical_name 'main', got %q", result.Repository.LogicalName)
+	}
+}
+
+func TestExportJSONL(t *testing.T) {
+	server, db := newTestServer(t)
+
+	now := "2026-07-08T16:00:00Z"
+	statements := []struct {
+		query string
+		args  []any
+	}{
+		{
+			query: `INSERT INTO projects (id, key, name, description, next_issue_seq, created_at, updated_at)
+			        VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			args: []any{"proj-1", "afc", "AF Coordinator", "", 2, now, now},
+		},
+		{
+			query: `INSERT INTO repositories (id, project_id, logical_name, canonical_git_dir, default_branch, hosting_kind, hosting_slug, created_at, updated_at)
+			        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			args: []any{"repo-1", "proj-1", "main", "/tmp/af-coordinator.git", "main", "", "", now, now},
+		},
+		{
+			query: `INSERT INTO issues (id, short_id, project_id, repository_id, worktree_id, scope_kind, issue_type, title, external_key, description, acceptance_criteria, status, priority, assignee, version, claimed_at, closed_at, created_at, updated_at)
+			        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			args: []any{"issue-1", "afc-1", "proj-1", "repo-1", nil, "repository", "feature", "Export data", "", "", "", "open", 2, "", 1, nil, nil, now, now},
+		},
+		{
+			query: `INSERT INTO events (id, issue_id, actor, event_type, payload_json, created_at)
+			        VALUES (?, ?, ?, ?, ?, ?)`,
+			args: []any{"event-1", "issue-1", "codex", "issue_created", `{"title":"Export data"}`, now},
+		},
+	}
+	for _, stmt := range statements {
+		if _, err := db.Exec(stmt.query, stmt.args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	resp, err := http.Get(server.URL + "/v1/export/jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d", resp.StatusCode)
+	}
+	if got := resp.Header.Get("Content-Type"); got != "application/x-ndjson" {
+		t.Fatalf("content-type = %q, want application/x-ndjson", got)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(body)), "\n")
+	if len(lines) < 4 {
+		t.Fatalf("expected at least 4 export lines, got %d\n%s", len(lines), string(body))
+	}
+
+	var first struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal([]byte(lines[0]), &first); err != nil {
+		t.Fatalf("decode first export line: %v", err)
+	}
+	if first.Type != "project" {
+		t.Fatalf("first export record type = %q, want project", first.Type)
 	}
 }
 

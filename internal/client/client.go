@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -418,6 +419,11 @@ func (c *Client) WatchEvents(ctx context.Context, since string, limit, waitMS in
 	return result, nil
 }
 
+// ExportJSONL streams a JSONL export from the daemon to the provided writer.
+func (c *Client) ExportJSONL(ctx context.Context, w io.Writer) error {
+	return c.doStream(ctx, http.MethodGet, "/v1/export/jsonl", nil, w)
+}
+
 // ListReadyIssues sends a GET /v1/issues/ready request with optional project and repo filters.
 func (c *Client) ListReadyIssues(ctx context.Context, project, repo string) ([]core.Issue, error) {
 	path := "/v1/issues/ready"
@@ -476,6 +482,47 @@ func (c *Client) doJSON(ctx context.Context, method, path string, body any, targ
 		if err := json.NewDecoder(resp.Body).Decode(target); err != nil {
 			return fmt.Errorf("decode response: %w", err)
 		}
+	}
+
+	return nil
+}
+
+func (c *Client) doStream(ctx context.Context, method, path string, body any, w io.Writer) error {
+	if w == nil {
+		return fmt.Errorf("stream target writer is required")
+	}
+
+	var reqBody []byte
+	if body != nil {
+		var err error
+		reqBody, err = json.Marshal(body)
+		if err != nil {
+			return fmt.Errorf("marshal request: %w", err)
+		}
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, "http://af-coordinator"+path, bytes.NewReader(reqBody))
+	if err != nil {
+		return fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("perform request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		var errResp core.APIErrorResponse
+		if decodeErr := json.NewDecoder(resp.Body).Decode(&errResp); decodeErr == nil && errResp.Error.Code != "" {
+			return &ClientError{Code: errResp.Error.Code, Message: errResp.Error.Message}
+		}
+		return fmt.Errorf("unexpected status: %s", resp.Status)
+	}
+
+	if _, err := io.Copy(w, resp.Body); err != nil {
+		return fmt.Errorf("copy response body: %w", err)
 	}
 
 	return nil

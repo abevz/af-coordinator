@@ -212,3 +212,35 @@ Status: active
 ### Open items
 
 - `afc-29` remains open in this packet.
+
+## 2026-07-08 - afc-29 JSONL export
+
+### What shipped
+
+- Added `internal/export` as the read-only export layer promised by the
+  original design.
+- Added `GET /v1/export/jsonl` to stream normalized JSONL over the daemon API
+  instead of exposing SQLite directly.
+- Added `afctl export jsonl` as the CLI bridge for backups, greppable history,
+  and interim consumers.
+- Export records now cover projects, repositories, repo remotes, worktrees,
+  artifact roots, artifacts, issues, dependencies, references
+  (issue-artifact links), notes, and events.
+- Kept the export format normalized with a stable envelope:
+  `{"type":"...","payload":...}` so consumers can process one record type at a
+  time without unpacking nested issue graphs.
+
+### What was verified
+
+- `go test ./internal/export ./internal/api ./internal/client ./cmd/afctl`
+- Added export regression tests for:
+  - normalized JSONL output across all supported record types
+  - omission of embedded issue dependency arrays in favor of first-class
+    `dependency` records
+- Added API regression tests for:
+  - `GET /v1/export/jsonl` content type and record stream shape
+- Added client regression coverage for streaming the export response.
+
+### Open items
+
+- `afc-24` still has remaining readiness work outside this export slice.

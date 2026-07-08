@@ -1,6 +1,7 @@
 package client
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"net"
@@ -201,6 +202,30 @@ func TestCloseIssueReturnsStructuredResult(t *testing.T) {
 	}
 	if result.Status != "closed" || result.Branch != "codex/afc-27" || result.ExternalKey != "temporal:workflow-456" {
 		t.Fatalf("unexpected result: %+v", result)
+	}
+}
+
+func TestExportJSONL(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "GET" {
+			t.Fatalf("method = %q, want GET", r.Method)
+		}
+		if r.URL.Path != "/v1/export/jsonl" {
+			t.Fatalf("path = %q, want /v1/export/jsonl", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		_, _ = w.Write([]byte("{\"type\":\"project\",\"payload\":{\"id\":\"p1\"}}\n"))
+	}))
+	defer server.Close()
+
+	c := testClient(t, server)
+	var buf bytes.Buffer
+	if err := c.ExportJSONL(context.Background(), &buf); err != nil {
+		t.Fatalf("ExportJSONL() error = %v", err)
+	}
+	if got := buf.String(); got != "{\"type\":\"project\",\"payload\":{\"id\":\"p1\"}}\n" {
+		t.Fatalf("ExportJSONL() output = %q", got)
 	}
 }
 
