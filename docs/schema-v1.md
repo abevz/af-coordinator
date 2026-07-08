@@ -76,6 +76,10 @@ create table repo_remotes (
 
 ### worktrees
 
+Non-main worktree rows may be unregistered later, but only when no issue or
+artifact still references that worktree. Main worktrees are protected from
+unregister/delete operations.
+
 ```sql
 create table worktrees (
   id text primary key,

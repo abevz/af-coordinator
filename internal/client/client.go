@@ -141,6 +141,17 @@ func (c *Client) ListWorktrees(ctx context.Context, repo string) ([]core.Worktre
 	return result.Worktrees, nil
 }
 
+// DeleteWorktree sends a DELETE /v1/worktrees/{worktreeID} request.
+func (c *Client) DeleteWorktree(ctx context.Context, worktreeID string) (core.Worktree, error) {
+	var result struct {
+		Worktree core.Worktree `json:"worktree"`
+	}
+	if err := c.doJSON(ctx, http.MethodDelete, "/v1/worktrees/"+worktreeID, nil, &result); err != nil {
+		return core.Worktree{}, err
+	}
+	return result.Worktree, nil
+}
+
 // CreateArtifactRoot sends a POST /v1/artifact-roots request.
 func (c *Client) CreateArtifactRoot(ctx context.Context, req core.CreateArtifactRootRequest) (core.ArtifactRoot, error) {
 	var result struct {

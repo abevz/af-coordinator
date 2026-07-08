@@ -14,7 +14,7 @@ import (
 
 func runWorktree(ctx context.Context, c *client.Client, args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("%s", "Usage: afctl worktree <register|list>")
+		return fmt.Errorf("%s", "Usage: afctl worktree <register|list|unregister|prune>")
 	}
 
 	switch args[0] {
@@ -22,6 +22,10 @@ func runWorktree(ctx context.Context, c *client.Client, args []string) error {
 		return runWorktreeRegister(ctx, c, args[1:])
 	case "list":
 		return runWorktreeList(ctx, c, args[1:])
+	case "unregister":
+		return runWorktreeUnregister(ctx, c, args[1:])
+	case "prune":
+		return runWorktreePrune(ctx, c, args[1:])
 	default:
 		return fmt.Errorf("unknown worktree subcommand: %s\n", args[0])
 	}
@@ -105,6 +109,85 @@ func runWorktreeList(ctx context.Context, c *client.Client, args []string) error
 		return nil
 	}
 	for _, wt := range worktrees {
+		printWorktree(wt)
+	}
+	return nil
+}
+
+func runWorktreeUnregister(ctx context.Context, c *client.Client, args []string) error {
+	if len(args) < 2 {
+		return fmt.Errorf("%s", "Usage: afctl worktree unregister --worktree <worktree-id>")
+	}
+
+	worktreeID := ""
+	for i := 0; i < len(args); i++ {
+		if args[i] == "--worktree" && i+1 < len(args) {
+			worktreeID = args[i+1]
+			i++
+		}
+	}
+	if worktreeID == "" {
+		return fmt.Errorf("%s", "Usage: afctl worktree unregister --worktree <worktree-id>")
+	}
+
+	wt, err := c.DeleteWorktree(ctx, worktreeID)
+	if err != nil {
+		fail(err)
+	}
+	if jsonOutput {
+		json.NewEncoder(os.Stdout).Encode(wt)
+		return nil
+	}
+
+	fmt.Println("Unregistered worktree:")
+	printWorktree(wt)
+	return nil
+}
+
+func runWorktreePrune(ctx context.Context, c *client.Client, args []string) error {
+	repo := ""
+	for i := 0; i < len(args); i++ {
+		if args[i] == "--repo" && i+1 < len(args) {
+			repo = args[i+1]
+			i++
+		}
+	}
+
+	worktrees, err := c.ListWorktrees(ctx, repo)
+	if err != nil {
+		fail(err)
+	}
+
+	pruned := make([]core.Worktree, 0)
+	for _, wt := range worktrees {
+		if wt.IsMain {
+			continue
+		}
+		if _, err := os.Stat(wt.AbsolutePath); err == nil {
+			continue
+		} else if !os.IsNotExist(err) {
+			return fmt.Errorf("stat worktree %s: %w", wt.AbsolutePath, err)
+		}
+
+		deleted, err := c.DeleteWorktree(ctx, wt.ID)
+		if err != nil {
+			fail(err)
+		}
+		pruned = append(pruned, deleted)
+	}
+
+	if jsonOutput {
+		json.NewEncoder(os.Stdout).Encode(pruned)
+		return nil
+	}
+
+	if len(pruned) == 0 {
+		fmt.Println("No stale worktrees found.")
+		return nil
+	}
+
+	fmt.Printf("Pruned %d stale worktree(s):\n\n", len(pruned))
+	for _, wt := range pruned {
 		printWorktree(wt)
 	}
 	return nil

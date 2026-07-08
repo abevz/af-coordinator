@@ -79,6 +79,7 @@ func RunDaemon(ctx context.Context, logger *slog.Logger, cfg config.Config, db *
 	// Worktree registration.
 	mux.HandleFunc("POST /v1/worktrees", handleRegisterWorktree(db, logger))
 	mux.HandleFunc("GET /v1/worktrees", handleListWorktrees(db, logger))
+	mux.HandleFunc("DELETE /v1/worktrees/{worktree_id}", handleDeleteWorktree(db, logger))
 
 	// Artifact root registration.
 	mux.HandleFunc("POST /v1/artifact-roots", handleCreateArtifactRoot(db, logger))

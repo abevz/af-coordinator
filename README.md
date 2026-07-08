@@ -62,6 +62,18 @@ make build-install
 
 This builds `af-coordinatord` and `afctl` into `~/.local/bin/`.
 
+Common worktree maintenance commands:
+
+```text
+afctl worktree list --repo <repo-id>
+afctl worktree unregister --worktree <worktree-id>
+afctl worktree prune --repo <repo-id>
+```
+
+`unregister` only removes a non-main worktree record when nothing still points
+at it. `prune` is the safe cleanup path for stale records whose checkout path
+is already gone on disk.
+
 ## Goals
 
 - reliable local-first coordination without internet dependency

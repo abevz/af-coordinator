@@ -97,6 +97,8 @@ This is the compact route-to-implementation inventory for the current daemon.
 - `POST /v1/worktrees` -> `handleRegisterWorktree` -> `sqlite.UpsertWorktree`
 - `GET /v1/worktrees?repo=` -> `handleListWorktrees` ->
   `sqlite.ListWorktrees`
+- `DELETE /v1/worktrees/{worktree_id}` -> `handleDeleteWorktree` ->
+  `sqlite.DeleteWorktree`
 
 ### `internal/api/artifacts.go`
 
@@ -154,6 +156,9 @@ This is the compact route-to-implementation inventory for the current daemon.
 - `POST /v1/worktrees` — register/update worktree by `absolute_path`
   (upsert: re-registration refreshes branch, HEAD, `last_seen_at`)
 - `GET  /v1/worktrees?repo=` — list
+- `DELETE /v1/worktrees/{worktree_id}` — unregister one worktree record;
+  only allowed for non-main worktrees with no remaining issue or artifact
+  references
 - `POST /v1/artifact-roots` — register artifact root (`repo`, `root_path`,
   `kind`)
 - `GET  /v1/artifact-roots?repo=` — list registered artifact roots

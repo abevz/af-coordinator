@@ -42,6 +42,7 @@ func registerRoutes(mux *http.ServeMux, db *sql.DB, logger *slog.Logger) {
 	// Worktrees
 	mux.HandleFunc("POST /v1/worktrees", handleRegisterWorktree(db, logger))
 	mux.HandleFunc("GET /v1/worktrees", handleListWorktrees(db, logger))
+	mux.HandleFunc("DELETE /v1/worktrees/{worktree_id}", handleDeleteWorktree(db, logger))
 
 	// Artifact roots
 	mux.HandleFunc("POST /v1/artifact-roots", handleCreateArtifactRoot(db, logger))
@@ -1024,6 +1025,116 @@ func TestCreateArtifactRoot(t *testing.T) {
 
 	if result.ArtifactRoot.RootPath != "docs/specs" {
 		t.Errorf("expected root_path 'docs/specs', got %q", result.ArtifactRoot.RootPath)
+	}
+}
+
+func TestDeleteWorktree(t *testing.T) {
+	server, db := newTestServer(t)
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	_, err := db.Exec(
+		`INSERT INTO projects (id, key, name, description, next_issue_seq, created_at, updated_at)
+		 VALUES ('proj-1', 'test', 'Test', '', 1, ?, ?)`,
+		now, now,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(
+		`INSERT INTO repositories (id, project_id, logical_name, canonical_git_dir, default_branch, created_at, updated_at)
+		 VALUES ('repo-1', 'proj-1', 'main', '/tmp/repo', 'main', ?, ?)`,
+		now, now,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(
+		`INSERT INTO worktrees (id, repository_id, absolute_path, branch, head_commit, remote_name, remote_branch, is_main, is_ephemeral, last_seen_at, created_at, updated_at)
+		 VALUES ('wt-1', 'repo-1', '/tmp/worktree', 'feature-1', '', '', '', 0, 0, ?, ?, ?)`,
+		now, now, now,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, server.URL+"/v1/worktrees/wt-1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d", resp.StatusCode)
+	}
+
+	result := decodeJSON[struct {
+		Worktree struct {
+			ID string `json:"id"`
+		} `json:"worktree"`
+	}](t, resp)
+	if result.Worktree.ID != "wt-1" {
+		t.Fatalf("expected deleted worktree id wt-1, got %q", result.Worktree.ID)
+	}
+
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(1) FROM worktrees WHERE id = 'wt-1'`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("expected worktree row to be deleted, found %d row(s)", count)
+	}
+}
+
+func TestDeleteWorktreeRejectsMain(t *testing.T) {
+	server, db := newTestServer(t)
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	_, err := db.Exec(
+		`INSERT INTO projects (id, key, name, description, next_issue_seq, created_at, updated_at)
+		 VALUES ('proj-1', 'test', 'Test', '', 1, ?, ?)`,
+		now, now,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(
+		`INSERT INTO repositories (id, project_id, logical_name, canonical_git_dir, default_branch, created_at, updated_at)
+		 VALUES ('repo-1', 'proj-1', 'main', '/tmp/repo', 'main', ?, ?)`,
+		now, now,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(
+		`INSERT INTO worktrees (id, repository_id, absolute_path, branch, head_commit, remote_name, remote_branch, is_main, is_ephemeral, last_seen_at, created_at, updated_at)
+		 VALUES ('wt-main', 'repo-1', '/tmp/main', 'main', '', '', '', 1, 0, ?, ?, ?)`,
+		now, now, now,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, server.URL+"/v1/worktrees/wt-main", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("expected 409 Conflict, got %d", resp.StatusCode)
+	}
+
+	errResp := decodeJSON[struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}](t, resp)
+	if errResp.Error.Code != core.ErrConflict {
+		t.Fatalf("expected error code %q, got %q", core.ErrConflict, errResp.Error.Code)
 	}
 }
 

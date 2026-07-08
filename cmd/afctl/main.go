@@ -118,6 +118,8 @@ Commands:
   worktree              Manage worktrees
     register            Register or update a worktree
     list                List worktrees
+    unregister          Remove a safe-to-delete worktree record
+    prune               Remove stale worktree records for missing paths
   artifact-root         Manage artifact roots
     add                 Register an artifact root in a repository
     list                List artifact roots

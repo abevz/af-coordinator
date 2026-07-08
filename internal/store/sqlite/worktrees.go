@@ -116,6 +116,56 @@ func ListWorktrees(ctx context.Context, db *sql.DB, repoID string) ([]core.Workt
 	return worktrees, nil
 }
 
+// DeleteWorktree removes a non-main worktree that is no longer referenced by
+// issues or artifacts.
+func DeleteWorktree(ctx context.Context, db *sql.DB, id string) (core.Worktree, error) {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return core.Worktree{}, fmt.Errorf("begin delete worktree tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	row := tx.QueryRowContext(ctx,
+		`SELECT id, repository_id, absolute_path, branch, head_commit, remote_name, remote_branch,
+		        is_main, is_ephemeral, last_seen_at, created_at, updated_at
+		 FROM worktrees WHERE id = ?`, id,
+	)
+	wt, err := scanWorktree(row)
+	if err != nil {
+		return core.Worktree{}, err
+	}
+
+	if wt.IsMain {
+		return core.Worktree{}, core.NewAPIError(core.ErrConflict, "main worktree cannot be unregistered")
+	}
+
+	var issueRefs int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(1) FROM issues WHERE worktree_id = ?`, id).Scan(&issueRefs); err != nil {
+		return core.Worktree{}, fmt.Errorf("count issue worktree references: %w", err)
+	}
+	if issueRefs > 0 {
+		return core.Worktree{}, core.NewAPIError(core.ErrConflict, "worktree is still referenced by issues")
+	}
+
+	var artifactRefs int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(1) FROM artifacts WHERE worktree_id = ?`, id).Scan(&artifactRefs); err != nil {
+		return core.Worktree{}, fmt.Errorf("count artifact worktree references: %w", err)
+	}
+	if artifactRefs > 0 {
+		return core.Worktree{}, core.NewAPIError(core.ErrConflict, "worktree is still referenced by artifacts")
+	}
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM worktrees WHERE id = ?`, id); err != nil {
+		return core.Worktree{}, fmt.Errorf("delete worktree: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return core.Worktree{}, fmt.Errorf("commit delete worktree tx: %w", err)
+	}
+
+	return wt, nil
+}
+
 func scanWorktree(s scanner) (core.Worktree, error) {
 	var wt core.Worktree
 	var isMain, isEphemeral int

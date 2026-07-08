@@ -41,6 +41,8 @@ func TestClientCoverage(t *testing.T) {
 			json.NewEncoder(w).Encode(core.Worktree{ID: "w1"})
 		case r.URL.Path == "/v1/worktrees" && r.Method == "GET":
 			json.NewEncoder(w).Encode([]core.Worktree{{ID: "w1"}})
+		case r.URL.Path == "/v1/worktrees/w1" && r.Method == "DELETE":
+			json.NewEncoder(w).Encode(map[string]any{"worktree": core.Worktree{ID: "w1"}})
 		case r.URL.Path == "/v1/artifact-roots" && r.Method == "POST":
 			json.NewEncoder(w).Encode(core.ArtifactRoot{ID: "ar1"})
 		case r.URL.Path == "/v1/artifact-roots" && r.Method == "GET":
@@ -110,6 +112,7 @@ func TestClientCoverage(t *testing.T) {
 
 	_, _ = c.RegisterWorktree(ctx, core.CreateWorktreeRequest{})
 	_, _ = c.ListWorktrees(ctx, "test-repo")
+	_, _ = c.DeleteWorktree(ctx, "w1")
 
 	_, _ = c.CreateArtifactRoot(ctx, core.CreateArtifactRootRequest{})
 	_, _ = c.ListArtifactRoots(ctx, "test-repo")

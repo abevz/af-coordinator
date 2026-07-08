@@ -288,3 +288,179 @@ func TestCreateWorktreeIsEphemeral(t *testing.T) {
 		t.Error("expected worktree to be ephemeral")
 	}
 }
+
+func TestDeleteWorktree(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo, _, err := CreateRepo(context.Background(), db, "test", core.CreateRepoRequest{
+		Project:         "test",
+		LogicalName:     "repo",
+		CanonicalGitDir: "/repos/repo.git",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	wt, _, err := UpsertWorktree(context.Background(), db, repo.ID, core.CreateWorktreeRequest{
+		Repo:         repo.ID,
+		AbsolutePath: "/worktrees/delete-me",
+		Branch:       "feature/delete-me",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	deleted, err := DeleteWorktree(context.Background(), db, wt.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deleted.ID != wt.ID {
+		t.Fatalf("expected deleted worktree id %q, got %q", wt.ID, deleted.ID)
+	}
+
+	_, err = GetWorktree(context.Background(), db, wt.ID)
+	if err == nil {
+		t.Fatal("expected deleted worktree to be gone")
+	}
+}
+
+func TestDeleteWorktreeRejectsMain(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo, _, err := CreateRepo(context.Background(), db, "test", core.CreateRepoRequest{
+		Project:         "test",
+		LogicalName:     "repo",
+		CanonicalGitDir: "/repos/repo.git",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	wt, _, err := UpsertWorktree(context.Background(), db, repo.ID, core.CreateWorktreeRequest{
+		Repo:         repo.ID,
+		AbsolutePath: "/worktrees/main",
+		Branch:       "main",
+		IsMain:       true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = DeleteWorktree(context.Background(), db, wt.ID)
+	if err == nil {
+		t.Fatal("expected main worktree delete to fail")
+	}
+
+	var apiErr core.APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("expected APIError, got %T: %v", err, err)
+	}
+	if apiErr.Code != core.ErrConflict {
+		t.Fatalf("expected code %q, got %q", core.ErrConflict, apiErr.Code)
+	}
+}
+
+func TestDeleteWorktreeRejectsIssueReferences(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo, _, err := CreateRepo(context.Background(), db, "test", core.CreateRepoRequest{
+		Project:         "test",
+		LogicalName:     "repo",
+		CanonicalGitDir: "/repos/repo.git",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wt, _, err := UpsertWorktree(context.Background(), db, repo.ID, core.CreateWorktreeRequest{
+		Repo:         repo.ID,
+		AbsolutePath: "/worktrees/in-use",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{
+		Project:   "test",
+		Repo:      repo.ID,
+		Worktree:  wt.ID,
+		ScopeKind: "worktree",
+		Title:     "Bound to worktree",
+		Actor:     "tester",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = DeleteWorktree(context.Background(), db, wt.ID)
+	if err == nil {
+		t.Fatal("expected worktree delete with issue refs to fail")
+	}
+	var apiErr core.APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("expected APIError, got %T: %v", err, err)
+	}
+	if apiErr.Code != core.ErrConflict {
+		t.Fatalf("expected code %q, got %q", core.ErrConflict, apiErr.Code)
+	}
+}
+
+func TestDeleteWorktreeRejectsArtifactReferences(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo, _, err := CreateRepo(context.Background(), db, "test", core.CreateRepoRequest{
+		Project:         "test",
+		LogicalName:     "repo",
+		CanonicalGitDir: "/repos/repo.git",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wt, _, err := UpsertWorktree(context.Background(), db, repo.ID, core.CreateWorktreeRequest{
+		Repo:         repo.ID,
+		AbsolutePath: "/worktrees/artifact-bound",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = CreateArtifact(context.Background(), db, repo.ID, core.CreateArtifactRequest{
+		Repo:         repo.ID,
+		Worktree:     wt.ID,
+		Kind:         "doc",
+		RelativePath: "docs/specs/005/tasks.md",
+		Title:        "Spec tasks",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = DeleteWorktree(context.Background(), db, wt.ID)
+	if err == nil {
+		t.Fatal("expected worktree delete with artifact refs to fail")
+	}
+	var apiErr core.APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("expected APIError, got %T: %v", err, err)
+	}
+	if apiErr.Code != core.ErrConflict {
+		t.Fatalf("expected code %q, got %q", core.ErrConflict, apiErr.Code)
+	}
+}

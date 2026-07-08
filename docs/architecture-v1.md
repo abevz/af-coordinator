@@ -485,6 +485,8 @@ Core commands:
 - `afctl project add`
 - `afctl repo add`
 - `afctl worktree register`
+- `afctl worktree unregister`
+- `afctl worktree prune`
 - `afctl artifact register`
 - `afctl issue link-artifact`
 
