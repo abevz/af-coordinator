@@ -143,6 +143,8 @@ This is the compact route-to-implementation inventory for the current daemon.
   `sqlite.ListNotes`
 - `GET /v1/issues/{issue_id}/events` -> `handleListEvents` ->
   `sqlite.ListEvents`
+- `GET /v1/events?since=&limit=&wait_ms=` -> `handleWatchEvents` ->
+  `sqlite.ListGlobalEvents`
 
 ## Registry
 
@@ -177,6 +179,10 @@ This is the compact route-to-implementation inventory for the current daemon.
 - dependency payloads inside issue responses use explicit identity fields:
   `issue_id`, `issue_short_id`, `depends_on_id`, `depends_on_short_id`
 - `GET  /v1/issues?project=&repo=&worktree=&status=&assignee=&type=` — query
+- `GET  /v1/events?since=&limit=&wait_ms=` — global cursor-paginated event
+  stream; `since` is an opaque cursor returned as `next_since`, `limit`
+  defaults to 100 and is capped at 500, and `wait_ms` enables bounded long-poll
+  up to 30000 ms
 - `GET  /v1/issues/ready?project=&repo=` — computed ready view; excludes
   epics (they are containers, not units of work). When `repo` is given
   alongside `project`, repository logical-name resolution is scoped to that

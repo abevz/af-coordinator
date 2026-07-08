@@ -106,6 +106,7 @@ func RunDaemon(ctx context.Context, logger *slog.Logger, cfg config.Config, db *
 	mux.HandleFunc("POST /v1/issues/{issue_id}/notes", handleCreateNote(db, logger))
 	mux.HandleFunc("GET /v1/issues/{issue_id}/notes", handleListNotes(db, logger))
 	mux.HandleFunc("GET /v1/issues/{issue_id}/events", handleListEvents(db, logger))
+	mux.HandleFunc("GET /v1/events", handleWatchEvents(db, logger))
 	mux.HandleFunc("GET /v1/issues", handleListIssues(db, logger))
 
 	server := &http.Server{

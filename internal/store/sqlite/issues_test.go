@@ -2100,6 +2100,90 @@ func TestListEventsEmpty(t *testing.T) {
 	}
 }
 
+func TestListGlobalEvents(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	now := time.Now().UTC()
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, issue := range []struct {
+		id      string
+		shortID string
+		title   string
+	}{
+		{"issue-1", "test-1", "One"},
+		{"issue-2", "test-2", "Two"},
+		{"issue-3", "test-3", "Three"},
+	} {
+		_, err = db.Exec(
+			`INSERT INTO issues (id, short_id, project_id, scope_kind, title, description, status, priority, assignee, version, created_at, updated_at)
+			 VALUES (?, ?, (SELECT id FROM projects WHERE key = 'test'), 'project', ?, '', 'open', 3, '', 1, ?, ?)`,
+			issue.id, issue.shortID, issue.title, now.Format(time.RFC3339), now.Format(time.RFC3339),
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, err = db.Exec(
+		`INSERT INTO events (id, issue_id, actor, event_type, payload_json, created_at)
+		 VALUES
+		 ('evt-1', 'issue-1', 'system', 'issue.created', '{"n":1}', ?),
+		 ('evt-2', 'issue-2', 'system', 'issue.updated', '{"n":2}', ?),
+		 ('evt-3', 'issue-3', 'system', 'issue.closed', '{"n":3}', ?)`,
+		now.Format(time.RFC3339),
+		now.Add(time.Second).Format(time.RFC3339),
+		now.Add(2*time.Second).Format(time.RFC3339),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	page, err := ListGlobalEvents(context.Background(), db, "", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Events) != 2 {
+		t.Fatalf("expected 2 events in first page, got %d", len(page.Events))
+	}
+	if page.NextSince == "" {
+		t.Fatal("expected non-empty next_since")
+	}
+	if !json.Valid([]byte(page.Events[0].PayloadJSON)) || !json.Valid([]byte(page.Events[1].PayloadJSON)) {
+		t.Fatal("expected valid JSON payloads in first page")
+	}
+
+	nextPage, err := ListGlobalEvents(context.Background(), db, page.NextSince, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(nextPage.Events) != 1 {
+		t.Fatalf("expected 1 event in second page, got %d", len(nextPage.Events))
+	}
+	if nextPage.Events[0].ID != "evt-3" {
+		t.Fatalf("expected evt-3 in second page, got %q", nextPage.Events[0].ID)
+	}
+}
+
+func TestListGlobalEventsInvalidCursor(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := ListGlobalEvents(context.Background(), db, "bad-cursor", 100)
+	if err == nil {
+		t.Fatal("expected invalid cursor error")
+	}
+	var apiErr core.APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("expected APIError, got %T: %v", err, err)
+	}
+	if apiErr.Code != core.ErrValidationFailed {
+		t.Fatalf("expected code %q, got %q", core.ErrValidationFailed, apiErr.Code)
+	}
+}
+
 func TestAddRemoveDependency(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)

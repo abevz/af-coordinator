@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"time"
 
 	"strings"
@@ -381,6 +382,33 @@ func (c *Client) ListEvents(ctx context.Context, issueID string) ([]core.Event, 
 		return nil, err
 	}
 	return result.Events, nil
+}
+
+// WatchEvents sends a GET /v1/events request with cursor pagination and optional long-polling.
+func (c *Client) WatchEvents(ctx context.Context, since string, limit, waitMS int) (core.EventPage, error) {
+	path := "/v1/events"
+	query := url.Values{}
+	if since != "" {
+		query.Set("since", since)
+	}
+	if limit > 0 {
+		query.Set("limit", strconv.Itoa(limit))
+	}
+	if waitMS > 0 {
+		query.Set("wait_ms", strconv.Itoa(waitMS))
+	}
+	if len(query) > 0 {
+		path += "?" + query.Encode()
+	}
+
+	var result core.EventPage
+	if err := c.doJSON(ctx, http.MethodGet, path, nil, &result); err != nil {
+		return core.EventPage{}, err
+	}
+	if result.Events == nil {
+		result.Events = []core.Event{}
+	}
+	return result, nil
 }
 
 // ListReadyIssues sends a GET /v1/issues/ready request with optional project and repo filters.

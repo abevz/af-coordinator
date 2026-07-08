@@ -73,6 +73,8 @@ func TestClientCoverage(t *testing.T) {
 			json.NewEncoder(w).Encode([]core.Note{{ID: "n1"}})
 		case r.URL.Path == "/v1/issues/i1/events" && r.Method == "GET":
 			json.NewEncoder(w).Encode([]core.Event{{ID: "e1"}})
+		case r.URL.Path == "/v1/events" && r.Method == "GET":
+			json.NewEncoder(w).Encode(core.EventPage{Events: []core.Event{{ID: "e1"}}, NextSince: "v1.cursor"})
 		case r.URL.Path == "/v1/issues/i1/dependencies" && r.Method == "POST":
 			// no body
 		case r.URL.Path == "/v1/issues/i1/dependencies/i2" && r.Method == "DELETE":
@@ -133,6 +135,7 @@ func TestClientCoverage(t *testing.T) {
 	_, _ = c.CreateNote(ctx, "i1", "actor", "note")
 	_, _ = c.ListNotes(ctx, "i1")
 	_, _ = c.ListEvents(ctx, "i1")
+	_, _ = c.WatchEvents(ctx, "", 100, 0)
 
 	_ = c.AddDependency(ctx, "i1", core.AddDependencyRequest{})
 	_ = c.RemoveDependency(ctx, "i1", core.RemoveDependencyRequest{DependsOn: "i2", Kind: "kind"})

@@ -82,3 +82,33 @@ Status: active
 
 - `afc-25`, `afc-26`, `afc-27`, `afc-28`, and `afc-29` remain open in this
   packet.
+
+## 2026-07-08 - afc-25 global events watch API
+
+### What shipped
+
+- Added `GET /v1/events` as a global watch/list endpoint over the append-only
+  events table.
+- Defined an opaque `since` cursor contract returned as `next_since`, ordered
+  by `(created_at, id)` without exposing raw query semantics to clients.
+- Added bounded long-polling via `wait_ms`, with a maximum wait of 30000 ms,
+  plus a `limit` parameter capped at 500.
+- Kept the existing issue-scoped `GET /v1/issues/{issue_id}/events` endpoint
+  unchanged.
+- Added a client wrapper for the global watch API and refreshed the API docs.
+
+### What was verified
+
+- `go test ./internal/store/sqlite ./internal/api ./internal/client`
+- Added store regression tests for:
+  - global cursor pagination across multiple events
+  - invalid `since` cursor rejection
+- Added API regression tests for:
+  - `GET /v1/events` initial page and follow-up page behavior
+  - invalid `since` cursor rejection
+  - bounded long-poll timeout with an empty result set
+- Verified watched `payload_json` stays valid JSON in the API contract.
+
+### Open items
+
+- `afc-26`, `afc-27`, `afc-28`, and `afc-29` remain open in this packet.

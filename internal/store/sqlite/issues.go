@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -1175,6 +1176,115 @@ func ListEvents(ctx context.Context, db *sql.DB, issueID string) ([]core.Event, 
 		events = []core.Event{}
 	}
 	return events, nil
+}
+
+type eventCursor struct {
+	ID        string `json:"id"`
+	CreatedAt string `json:"created_at"`
+}
+
+// ListGlobalEvents returns a global cursor-paginated event stream ordered by
+// created_at and ID.
+func ListGlobalEvents(ctx context.Context, db *sql.DB, since string, limit int) (core.EventPage, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+
+	cursor, err := decodeEventCursor(since)
+	if err != nil {
+		return core.EventPage{}, err
+	}
+
+	var (
+		rows *sql.Rows
+	)
+	if cursor == nil {
+		rows, err = db.QueryContext(ctx,
+			`SELECT id, issue_id, actor, event_type, payload_json, created_at
+			 FROM events
+			 ORDER BY created_at ASC, id ASC
+			 LIMIT ?`,
+			limit,
+		)
+	} else {
+		rows, err = db.QueryContext(ctx,
+			`SELECT id, issue_id, actor, event_type, payload_json, created_at
+			 FROM events
+			 WHERE created_at > ? OR (created_at = ? AND id > ?)
+			 ORDER BY created_at ASC, id ASC
+			 LIMIT ?`,
+			cursor.CreatedAt, cursor.CreatedAt, cursor.ID, limit,
+		)
+	}
+	if err != nil {
+		return core.EventPage{}, fmt.Errorf("list global events: %w", err)
+	}
+	defer rows.Close()
+
+	events := make([]core.Event, 0)
+	for rows.Next() {
+		var e core.Event
+		var issueID sql.NullString
+		if err := rows.Scan(&e.ID, &issueID, &e.Actor, &e.EventType, &e.PayloadJSON, &e.CreatedAt); err != nil {
+			return core.EventPage{}, fmt.Errorf("scan global event: %w", err)
+		}
+		if issueID.Valid {
+			e.IssueID = issueID.String
+		}
+		events = append(events, e)
+	}
+	if err := rows.Err(); err != nil {
+		return core.EventPage{}, fmt.Errorf("iterate global events: %w", err)
+	}
+
+	page := core.EventPage{
+		Events:    events,
+		NextSince: since,
+	}
+	if page.Events == nil {
+		page.Events = []core.Event{}
+	}
+	if len(page.Events) > 0 {
+		last := page.Events[len(page.Events)-1]
+		next, err := encodeEventCursor(eventCursor{ID: last.ID, CreatedAt: last.CreatedAt})
+		if err != nil {
+			return core.EventPage{}, err
+		}
+		page.NextSince = next
+	}
+	return page, nil
+}
+
+func encodeEventCursor(cursor eventCursor) (string, error) {
+	data, err := json.Marshal(cursor)
+	if err != nil {
+		return "", fmt.Errorf("marshal event cursor: %w", err)
+	}
+	return "v1." + base64.RawURLEncoding.EncodeToString(data), nil
+}
+
+func decodeEventCursor(since string) (*eventCursor, error) {
+	if since == "" {
+		return nil, nil
+	}
+	if !strings.HasPrefix(since, "v1.") {
+		return nil, core.NewAPIError(core.ErrValidationFailed, "since cursor must start with v1.")
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(since, "v1."))
+	if err != nil {
+		return nil, core.NewAPIError(core.ErrValidationFailed, "since cursor is invalid")
+	}
+	var cursor eventCursor
+	if err := json.Unmarshal(raw, &cursor); err != nil {
+		return nil, core.NewAPIError(core.ErrValidationFailed, "since cursor is invalid")
+	}
+	if cursor.ID == "" || cursor.CreatedAt == "" {
+		return nil, core.NewAPIError(core.ErrValidationFailed, "since cursor is invalid")
+	}
+	if _, err := time.Parse(time.RFC3339, cursor.CreatedAt); err != nil {
+		return nil, core.NewAPIError(core.ErrValidationFailed, "since cursor is invalid")
+	}
+	return &cursor, nil
 }
 
 // isSQLiteConstraintError checks if an error is a SQLite constraint violation.

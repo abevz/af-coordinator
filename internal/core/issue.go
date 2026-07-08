@@ -30,6 +30,12 @@ type Event struct {
 	CreatedAt   string `json:"created_at"`
 }
 
+// EventPage is a cursor-paginated page of global events.
+type EventPage struct {
+	Events    []Event `json:"events"`
+	NextSince string  `json:"next_since"`
+}
+
 // IssueTypes lists the valid values for an issue's issue_type.
 var IssueTypes = []string{"task", "bug", "feature", "epic", "chore"}
 

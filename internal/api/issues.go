@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strconv"
+	"time"
 
 	"github.com/abevz/af-coordinator/internal/core"
 	"github.com/abevz/af-coordinator/internal/store/sqlite"
@@ -648,5 +650,63 @@ func handleListEvents(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 		}
 
 		writeJSON(w, http.StatusOK, map[string][]core.Event{"events": events})
+	}
+}
+
+func handleWatchEvents(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		since := r.URL.Query().Get("since")
+
+		limit := 100
+		if raw := r.URL.Query().Get("limit"); raw != "" {
+			n, err := strconv.Atoi(raw)
+			if err != nil || n <= 0 {
+				writeError(w, http.StatusBadRequest, core.ErrValidationFailed, "limit must be a positive integer")
+				return
+			}
+			if n > 500 {
+				n = 500
+			}
+			limit = n
+		}
+
+		waitMS := 0
+		if raw := r.URL.Query().Get("wait_ms"); raw != "" {
+			n, err := strconv.Atoi(raw)
+			if err != nil || n < 0 {
+				writeError(w, http.StatusBadRequest, core.ErrValidationFailed, "wait_ms must be a non-negative integer")
+				return
+			}
+			if n > 30000 {
+				n = 30000
+			}
+			waitMS = n
+		}
+
+		deadline := time.Now().Add(time.Duration(waitMS) * time.Millisecond)
+		for {
+			page, err := sqlite.ListGlobalEvents(r.Context(), db, since, limit)
+			if err != nil {
+				if apiErr, ok := errAsAPIError(err); ok && apiErr.Code == core.ErrValidationFailed {
+					writeError(w, http.StatusBadRequest, core.ErrValidationFailed, apiErr.Message)
+					return
+				}
+				logger.Error("failed to watch events", "since", since, "error", err)
+				writeError(w, http.StatusInternalServerError, "internal_error", "failed to list events")
+				return
+			}
+			if len(page.Events) > 0 || waitMS == 0 || time.Now().After(deadline) {
+				writeJSON(w, http.StatusOK, page)
+				return
+			}
+
+			timer := time.NewTimer(200 * time.Millisecond)
+			select {
+			case <-r.Context().Done():
+				timer.Stop()
+				return
+			case <-timer.C:
+			}
+		}
 	}
 }

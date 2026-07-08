@@ -43,6 +43,7 @@ func registerRoutes(mux *http.ServeMux, db *sql.DB, logger *slog.Logger) {
 	mux.HandleFunc("POST /v1/worktrees", handleRegisterWorktree(db, logger))
 	mux.HandleFunc("GET /v1/worktrees", handleListWorktrees(db, logger))
 	mux.HandleFunc("DELETE /v1/worktrees/{worktree_id}", handleDeleteWorktree(db, logger))
+	mux.HandleFunc("GET /v1/events", handleWatchEvents(db, logger))
 
 	// Artifact roots
 	mux.HandleFunc("POST /v1/artifact-roots", handleCreateArtifactRoot(db, logger))
@@ -1431,6 +1432,106 @@ func TestListEvents(t *testing.T) {
 	}
 	if eventsResult.Events[0].EventType != "issue.created" {
 		t.Errorf("expected event_type 'issue.created', got %q", eventsResult.Events[0].EventType)
+	}
+}
+
+func TestWatchEvents(t *testing.T) {
+	server, db := newTestServer(t)
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	_, err := db.Exec(
+		`INSERT INTO projects (id, key, name, description, next_issue_seq, created_at, updated_at)
+		 VALUES ('proj-1', 'test', 'Test', '', 1, ?, ?)`,
+		now, now,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(
+		`INSERT INTO issues (id, short_id, project_id, scope_kind, title, description, status, priority, assignee, version, created_at, updated_at)
+		 VALUES ('issue-1', 'test-1', 'proj-1', 'project', 'Eventful', '', 'open', 3, '', 1, ?, ?)`,
+		now, now,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(
+		`INSERT INTO events (id, issue_id, actor, event_type, payload_json, created_at)
+		 VALUES ('evt-1', 'issue-1', 'system', 'issue.created', '{"title":"Eventful"}', ?)`,
+		now,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resp, err := http.Get(server.URL + "/v1/events")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d", resp.StatusCode)
+	}
+
+	result := decodeJSON[core.EventPage](t, resp)
+	if len(result.Events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(result.Events))
+	}
+	if result.NextSince == "" {
+		t.Fatal("expected non-empty next_since")
+	}
+	if !json.Valid([]byte(result.Events[0].PayloadJSON)) {
+		t.Fatalf("expected valid payload_json, got %q", result.Events[0].PayloadJSON)
+	}
+
+	resp, err = http.Get(server.URL + "/v1/events?since=" + result.NextSince)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 OK on cursor follow-up, got %d", resp.StatusCode)
+	}
+	followUp := decodeJSON[core.EventPage](t, resp)
+	if len(followUp.Events) != 0 {
+		t.Fatalf("expected 0 follow-up events, got %d", len(followUp.Events))
+	}
+	if followUp.NextSince != result.NextSince {
+		t.Fatalf("expected next_since to stay at %q, got %q", result.NextSince, followUp.NextSince)
+	}
+}
+
+func TestWatchEventsInvalidCursor(t *testing.T) {
+	server, _ := newTestServer(t)
+
+	resp, err := http.Get(server.URL + "/v1/events?since=bad-cursor")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request, got %d", resp.StatusCode)
+	}
+}
+
+func TestWatchEventsLongPollTimeout(t *testing.T) {
+	server, _ := newTestServer(t)
+
+	start := time.Now()
+	resp, err := http.Get(server.URL + "/v1/events?wait_ms=50")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d", resp.StatusCode)
+	}
+	if elapsed := time.Since(start); elapsed < 40*time.Millisecond {
+		t.Fatalf("expected long-poll to wait at least ~40ms, got %v", elapsed)
+	}
+
+	result := decodeJSON[core.EventPage](t, resp)
+	if len(result.Events) != 0 {
+		t.Fatalf("expected no events, got %d", len(result.Events))
+	}
+	if result.NextSince != "" {
+		t.Fatalf("expected empty next_since, got %q", result.NextSince)
 	}
 }
 
