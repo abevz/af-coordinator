@@ -66,6 +66,19 @@ Commands with `--json` succeed or fail with typed exit codes so the caller can r
 - **Identity**: `afctl` automatically infers your agent name and process PID from the process tree (e.g. `agy-4725`). You may optionally override this by exporting `AF_COORDINATOR_ACTOR=<agent-name>`.
 - Resolve actor from: `--actor` flag > `AF_COORDINATOR_ACTOR` env variable > process tree climbing > `USER` env variable > error.
 
+## Worktree hygiene
+
+- If the coordinated checkout is a read/merge anchor, do implementation in a sibling worktree, not in that coordinated checkout.
+- After a non-main task worktree is merged and removed from disk, clean stale coordinator records with:
+  ```
+  afctl worktree prune --repo <repo-id>
+  ```
+- If you know the exact safe-to-delete worktree record, remove it directly with:
+  ```
+  afctl worktree unregister --worktree <worktree-id>
+  ```
+- `prune` and `unregister` only remove non-main worktrees that no longer have issue or artifact references.
+
 ## Prohibitions
 
 - Do not open the coordinator database directly.
