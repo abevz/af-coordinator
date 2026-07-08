@@ -178,3 +178,37 @@ Status: active
 ### Open items
 
 - `afc-28` and `afc-29` remain open in this packet.
+
+## 2026-07-08 - afc-28 MCP wrapper over daemon API
+
+### What shipped
+
+- Added `afc-mcp`, a small stdio MCP server wrapper over the daemon API.
+- Kept the wrapper thin by routing every tool through `internal/client`; the
+  wrapper does not access SQLite directly.
+- Exposed a focused tool surface for coordinator agent workflows:
+  `health`, `get_issue`, `list_ready_issues`, `claim_issue`,
+  `heartbeat_issue`, `add_note`, `list_notes`, `list_issue_events`, and
+  `close_issue`.
+- Added MCP docs plus repo layout references, and installed `afc-mcp` through
+  `make build-install`.
+
+### What was verified
+
+- `go test ./internal/mcp ./internal/client ./cmd/afc-mcp`
+- `go test ./...`
+- `go build -buildvcs=false ./...`
+- `make build-install`
+- Installed-binary scratch verification of `afc-mcp` over stdio framing:
+  - `initialize`
+  - `tools/call` for `list_ready_issues`
+  - `tools/call` for `claim_issue`
+- Added MCP regression tests for:
+  - `initialize`
+  - `tools/list`
+  - structured tool dispatch for `claim_issue` and `close_issue`
+  - stdio message framing with `Content-Length`
+
+### Open items
+
+- `afc-29` remains open in this packet.

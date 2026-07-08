@@ -1,0 +1,552 @@
+package mcp
+
+import (
+	"bufio"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"strconv"
+	"strings"
+
+	"github.com/abevz/af-coordinator/internal/client"
+	"github.com/abevz/af-coordinator/internal/core"
+)
+
+const (
+	serverName             = "afc-mcp"
+	defaultProtocolVersion = "2025-03-26"
+)
+
+// CoordinatorClient describes the daemon API surface used by the MCP wrapper.
+type CoordinatorClient interface {
+	Health(ctx context.Context) (core.Health, error)
+	GetIssue(ctx context.Context, issueID string) (core.Issue, *core.IssueLease, error)
+	ListReadyIssues(ctx context.Context, project, repo string) ([]core.Issue, error)
+	ClaimIssue(ctx context.Context, issueID, holder string, ttlSeconds int) (core.ClaimResponse, error)
+	HeartbeatLease(ctx context.Context, issueID, leaseToken string, ttlSeconds int) (string, error)
+	CreateNote(ctx context.Context, issueID, author, body string) (core.Note, error)
+	ListNotes(ctx context.Context, issueID string) ([]core.Note, error)
+	ListEvents(ctx context.Context, issueID string) ([]core.Event, error)
+	CloseIssue(ctx context.Context, issueID string, req core.CloseIssueRequest) (core.CloseIssueResult, error)
+}
+
+// Server is a tiny MCP stdio server that wraps the daemon API.
+type Server struct {
+	client  CoordinatorClient
+	actor   string
+	name    string
+	version string
+}
+
+// NewServer constructs a new MCP wrapper server.
+func NewServer(c CoordinatorClient, actor, version string) *Server {
+	return &Server{
+		client:  c,
+		actor:   actor,
+		name:    serverName,
+		version: version,
+	}
+}
+
+type rpcRequest struct {
+	JSONRPC string          `json:"jsonrpc"`
+	ID      json.RawMessage `json:"id,omitempty"`
+	Method  string          `json:"method"`
+	Params  json.RawMessage `json:"params,omitempty"`
+}
+
+type rpcResponse struct {
+	JSONRPC string          `json:"jsonrpc"`
+	ID      json.RawMessage `json:"id,omitempty"`
+	Result  any             `json:"result,omitempty"`
+	Error   *rpcError       `json:"error,omitempty"`
+}
+
+type rpcError struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+}
+
+type toolCallParams struct {
+	Name      string          `json:"name"`
+	Arguments json.RawMessage `json:"arguments,omitempty"`
+}
+
+// Run serves MCP requests over stdio using JSON-RPC 2.0 framing.
+func (s *Server) Run(ctx context.Context, r io.Reader, w io.Writer) error {
+	reader := bufio.NewReader(r)
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		body, err := readMessage(reader)
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			if writeErr := writeMessage(w, rpcResponse{
+				JSONRPC: "2.0",
+				ID:      json.RawMessage("null"),
+				Error:   &rpcError{Code: -32700, Message: err.Error()},
+			}); writeErr != nil {
+				return writeErr
+			}
+			continue
+		}
+
+		var req rpcRequest
+		if err := json.Unmarshal(body, &req); err != nil {
+			if writeErr := writeMessage(w, rpcResponse{
+				JSONRPC: "2.0",
+				ID:      json.RawMessage("null"),
+				Error:   &rpcError{Code: -32700, Message: "invalid JSON request"},
+			}); writeErr != nil {
+				return writeErr
+			}
+			continue
+		}
+
+		resp := s.handleRequest(ctx, req)
+		if resp == nil {
+			continue
+		}
+		if err := writeMessage(w, *resp); err != nil {
+			return err
+		}
+	}
+}
+
+func (s *Server) handleRequest(ctx context.Context, req rpcRequest) *rpcResponse {
+	if req.JSONRPC != "" && req.JSONRPC != "2.0" {
+		return s.errorResponse(req.ID, -32600, "jsonrpc must be 2.0")
+	}
+
+	switch req.Method {
+	case "initialize":
+		return s.initializeResponse(req)
+	case "ping":
+		return s.resultResponse(req.ID, map[string]any{})
+	case "notifications/initialized":
+		return nil
+	case "tools/list":
+		return s.resultResponse(req.ID, map[string]any{"tools": s.tools()})
+	case "tools/call":
+		return s.handleToolCall(ctx, req)
+	default:
+		return s.errorResponse(req.ID, -32601, "method not found")
+	}
+}
+
+func (s *Server) initializeResponse(req rpcRequest) *rpcResponse {
+	protocolVersion := defaultProtocolVersion
+	if len(req.Params) > 0 {
+		var params struct {
+			ProtocolVersion string `json:"protocolVersion"`
+		}
+		if err := json.Unmarshal(req.Params, &params); err == nil && params.ProtocolVersion != "" {
+			protocolVersion = params.ProtocolVersion
+		}
+	}
+
+	return s.resultResponse(req.ID, map[string]any{
+		"protocolVersion": protocolVersion,
+		"capabilities": map[string]any{
+			"tools": map[string]any{
+				"listChanged": false,
+			},
+		},
+		"serverInfo": map[string]any{
+			"name":    s.name,
+			"version": s.version,
+		},
+	})
+}
+
+func (s *Server) handleToolCall(ctx context.Context, req rpcRequest) *rpcResponse {
+	var params toolCallParams
+	if err := json.Unmarshal(req.Params, &params); err != nil {
+		return s.errorResponse(req.ID, -32602, "invalid tools/call params")
+	}
+
+	result, err := s.callTool(ctx, params)
+	if err != nil {
+		return s.resultResponse(req.ID, toolErrorResult(err))
+	}
+	return s.resultResponse(req.ID, toolSuccessResult(result))
+}
+
+func (s *Server) callTool(ctx context.Context, params toolCallParams) (any, error) {
+	switch params.Name {
+	case "health":
+		return s.client.Health(ctx)
+	case "get_issue":
+		var args struct {
+			IssueID string `json:"issue_id"`
+		}
+		if err := unmarshalArgs(params.Arguments, &args); err != nil {
+			return nil, err
+		}
+		if args.IssueID == "" {
+			return nil, fmt.Errorf("issue_id is required")
+		}
+		issue, lease, err := s.client.GetIssue(ctx, args.IssueID)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"issue": issue, "lease": lease}, nil
+	case "list_ready_issues":
+		var args struct {
+			Project string `json:"project"`
+			Repo    string `json:"repo"`
+		}
+		if err := unmarshalArgs(params.Arguments, &args); err != nil {
+			return nil, err
+		}
+		issues, err := s.client.ListReadyIssues(ctx, args.Project, args.Repo)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"issues": issues}, nil
+	case "claim_issue":
+		var args struct {
+			IssueID    string `json:"issue_id"`
+			Holder     string `json:"holder"`
+			Actor      string `json:"actor"`
+			TTLSeconds int    `json:"ttl_seconds"`
+		}
+		if err := unmarshalArgs(params.Arguments, &args); err != nil {
+			return nil, err
+		}
+		if args.IssueID == "" {
+			return nil, fmt.Errorf("issue_id is required")
+		}
+		holder, err := s.resolveActor(args.Holder, args.Actor)
+		if err != nil {
+			return nil, err
+		}
+		return s.client.ClaimIssue(ctx, args.IssueID, holder, args.TTLSeconds)
+	case "heartbeat_issue":
+		var args struct {
+			IssueID    string `json:"issue_id"`
+			LeaseToken string `json:"lease_token"`
+			TTLSeconds int    `json:"ttl_seconds"`
+		}
+		if err := unmarshalArgs(params.Arguments, &args); err != nil {
+			return nil, err
+		}
+		if args.IssueID == "" || args.LeaseToken == "" {
+			return nil, fmt.Errorf("issue_id and lease_token are required")
+		}
+		expiresAt, err := s.client.HeartbeatLease(ctx, args.IssueID, args.LeaseToken, args.TTLSeconds)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"expires_at": expiresAt}, nil
+	case "add_note":
+		var args struct {
+			IssueID string `json:"issue_id"`
+			Body    string `json:"body"`
+			Author  string `json:"author"`
+			Actor   string `json:"actor"`
+		}
+		if err := unmarshalArgs(params.Arguments, &args); err != nil {
+			return nil, err
+		}
+		if args.IssueID == "" || args.Body == "" {
+			return nil, fmt.Errorf("issue_id and body are required")
+		}
+		author, err := s.resolveActor(args.Author, args.Actor)
+		if err != nil {
+			return nil, err
+		}
+		return s.client.CreateNote(ctx, args.IssueID, author, args.Body)
+	case "list_notes":
+		var args struct {
+			IssueID string `json:"issue_id"`
+		}
+		if err := unmarshalArgs(params.Arguments, &args); err != nil {
+			return nil, err
+		}
+		if args.IssueID == "" {
+			return nil, fmt.Errorf("issue_id is required")
+		}
+		notes, err := s.client.ListNotes(ctx, args.IssueID)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"notes": notes}, nil
+	case "list_issue_events":
+		var args struct {
+			IssueID string `json:"issue_id"`
+		}
+		if err := unmarshalArgs(params.Arguments, &args); err != nil {
+			return nil, err
+		}
+		if args.IssueID == "" {
+			return nil, fmt.Errorf("issue_id is required")
+		}
+		events, err := s.client.ListEvents(ctx, args.IssueID)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"events": events}, nil
+	case "close_issue":
+		var args struct {
+			IssueID         string `json:"issue_id"`
+			Resolution      string `json:"resolution"`
+			Branch          string `json:"branch"`
+			PRURL           string `json:"pr_url"`
+			CommitSHA       string `json:"commit_sha"`
+			ExpectedVersion int    `json:"expected_version"`
+			LeaseToken      string `json:"lease_token"`
+			Actor           string `json:"actor"`
+			Note            string `json:"note"`
+		}
+		if err := unmarshalArgs(params.Arguments, &args); err != nil {
+			return nil, err
+		}
+		if args.IssueID == "" || args.Resolution == "" || args.ExpectedVersion <= 0 || args.LeaseToken == "" {
+			return nil, fmt.Errorf("issue_id, resolution, expected_version, and lease_token are required")
+		}
+		actor, err := s.resolveActor(args.Actor, "")
+		if err != nil {
+			return nil, err
+		}
+		return s.client.CloseIssue(ctx, args.IssueID, core.CloseIssueRequest{
+			Resolution:      args.Resolution,
+			Branch:          args.Branch,
+			PRURL:           args.PRURL,
+			CommitSHA:       args.CommitSHA,
+			ExpectedVersion: args.ExpectedVersion,
+			LeaseToken:      args.LeaseToken,
+			Actor:           actor,
+			Note:            args.Note,
+		})
+	default:
+		return nil, fmt.Errorf("unknown tool: %s", params.Name)
+	}
+}
+
+func (s *Server) tools() []map[string]any {
+	return []map[string]any{
+		toolDefinition("health", "Return daemon health from GET /healthz.", objectSchema(nil)),
+		toolDefinition("get_issue", "Fetch one issue plus its active lease, if any.", objectSchema([]schemaField{
+			{name: "issue_id", fieldType: "string", description: "Issue UUID or short id.", required: true},
+		})),
+		toolDefinition("list_ready_issues", "List ready issues filtered by optional project and repo.", objectSchema([]schemaField{
+			{name: "project", fieldType: "string", description: "Optional project key."},
+			{name: "repo", fieldType: "string", description: "Optional repository id or logical name."},
+		})),
+		toolDefinition("claim_issue", "Claim an issue and acquire a lease token.", objectSchema([]schemaField{
+			{name: "issue_id", fieldType: "string", description: "Issue UUID or short id.", required: true},
+			{name: "holder", fieldType: "string", description: "Optional holder name; falls back to actor or AF_COORDINATOR_ACTOR."},
+			{name: "actor", fieldType: "string", description: "Optional actor fallback for the holder field."},
+			{name: "ttl_seconds", fieldType: "integer", description: "Optional lease TTL in seconds; daemon default applies when omitted."},
+		})),
+		toolDefinition("heartbeat_issue", "Extend an active lease.", objectSchema([]schemaField{
+			{name: "issue_id", fieldType: "string", description: "Issue UUID or short id.", required: true},
+			{name: "lease_token", fieldType: "string", description: "Current lease token.", required: true},
+			{name: "ttl_seconds", fieldType: "integer", description: "Optional lease TTL in seconds; daemon default applies when omitted."},
+		})),
+		toolDefinition("add_note", "Append a note to an issue.", objectSchema([]schemaField{
+			{name: "issue_id", fieldType: "string", description: "Issue UUID or short id.", required: true},
+			{name: "body", fieldType: "string", description: "Note text.", required: true},
+			{name: "author", fieldType: "string", description: "Optional note author; falls back to actor or AF_COORDINATOR_ACTOR."},
+			{name: "actor", fieldType: "string", description: "Optional actor fallback when author is omitted."},
+		})),
+		toolDefinition("list_notes", "List notes for an issue.", objectSchema([]schemaField{
+			{name: "issue_id", fieldType: "string", description: "Issue UUID or short id.", required: true},
+		})),
+		toolDefinition("list_issue_events", "List activity events for an issue.", objectSchema([]schemaField{
+			{name: "issue_id", fieldType: "string", description: "Issue UUID or short id.", required: true},
+		})),
+		toolDefinition("close_issue", "Close an issue through the daemon API with structured resolution metadata.", objectSchema([]schemaField{
+			{name: "issue_id", fieldType: "string", description: "Issue UUID or short id.", required: true},
+			{name: "resolution", fieldType: "string", description: "Resolution: done or cancelled.", required: true},
+			{name: "expected_version", fieldType: "integer", description: "Current issue version.", required: true},
+			{name: "lease_token", fieldType: "string", description: "Active lease token.", required: true},
+			{name: "branch", fieldType: "string", description: "Optional branch name to record in close metadata."},
+			{name: "pr_url", fieldType: "string", description: "Optional pull request URL to record in close metadata."},
+			{name: "commit_sha", fieldType: "string", description: "Optional commit SHA to record in close metadata."},
+			{name: "note", fieldType: "string", description: "Optional closing note appended atomically before close."},
+			{name: "actor", fieldType: "string", description: "Optional actor; falls back to AF_COORDINATOR_ACTOR."},
+		})),
+	}
+}
+
+func (s *Server) resolveActor(primary, fallback string) (string, error) {
+	if primary != "" {
+		return primary, nil
+	}
+	if fallback != "" {
+		return fallback, nil
+	}
+	if s.actor != "" {
+		return s.actor, nil
+	}
+	return "", fmt.Errorf("actor is required: pass actor/holder/author or set AF_COORDINATOR_ACTOR")
+}
+
+func (s *Server) resultResponse(id json.RawMessage, result any) *rpcResponse {
+	return &rpcResponse{
+		JSONRPC: "2.0",
+		ID:      id,
+		Result:  result,
+	}
+}
+
+func (s *Server) errorResponse(id json.RawMessage, code int, message string) *rpcResponse {
+	if len(id) == 0 {
+		id = json.RawMessage("null")
+	}
+	return &rpcResponse{
+		JSONRPC: "2.0",
+		ID:      id,
+		Error: &rpcError{
+			Code:    code,
+			Message: message,
+		},
+	}
+}
+
+func toolSuccessResult(payload any) map[string]any {
+	text := "{}"
+	if payload != nil {
+		if data, err := json.MarshalIndent(payload, "", "  "); err == nil {
+			text = string(data)
+		}
+	}
+	return map[string]any{
+		"content": []map[string]string{
+			{"type": "text", "text": text},
+		},
+		"structuredContent": payload,
+	}
+}
+
+func toolErrorResult(err error) map[string]any {
+	payload := map[string]any{"message": err.Error()}
+	var clientErr *client.ClientError
+	if ok := asClientError(err, &clientErr); ok {
+		payload["code"] = clientErr.Code
+		payload["message"] = clientErr.Message
+	}
+	text, _ := json.MarshalIndent(payload, "", "  ")
+	return map[string]any{
+		"content": []map[string]string{
+			{"type": "text", "text": string(text)},
+		},
+		"structuredContent": payload,
+		"isError":           true,
+	}
+}
+
+func asClientError(err error, target **client.ClientError) bool {
+	if err == nil {
+		return false
+	}
+	return errors.As(err, target)
+}
+
+type schemaField struct {
+	name        string
+	fieldType   string
+	description string
+	required    bool
+}
+
+func toolDefinition(name, description string, inputSchema map[string]any) map[string]any {
+	return map[string]any{
+		"name":        name,
+		"description": description,
+		"inputSchema": inputSchema,
+	}
+}
+
+func objectSchema(fields []schemaField) map[string]any {
+	props := map[string]any{}
+	required := make([]string, 0)
+	for _, field := range fields {
+		props[field.name] = map[string]any{
+			"type":        field.fieldType,
+			"description": field.description,
+		}
+		if field.required {
+			required = append(required, field.name)
+		}
+	}
+
+	schema := map[string]any{
+		"type":                 "object",
+		"properties":           props,
+		"additionalProperties": false,
+	}
+	if len(required) > 0 {
+		schema["required"] = required
+	}
+	return schema
+}
+
+func unmarshalArgs(raw json.RawMessage, target any) error {
+	if len(raw) == 0 {
+		raw = []byte("{}")
+	}
+	if err := json.Unmarshal(raw, target); err != nil {
+		return fmt.Errorf("invalid tool arguments: %w", err)
+	}
+	return nil
+}
+
+func readMessage(r *bufio.Reader) ([]byte, error) {
+	contentLength := -1
+	for {
+		line, err := r.ReadString('\n')
+		if err != nil {
+			if err == io.EOF && line == "" {
+				return nil, io.EOF
+			}
+			return nil, err
+		}
+		line = strings.TrimRight(line, "\r\n")
+		if line == "" {
+			break
+		}
+		name, value, found := strings.Cut(line, ":")
+		if !found {
+			return nil, fmt.Errorf("malformed header line")
+		}
+		if strings.EqualFold(strings.TrimSpace(name), "Content-Length") {
+			n, err := strconv.Atoi(strings.TrimSpace(value))
+			if err != nil || n < 0 {
+				return nil, fmt.Errorf("invalid Content-Length")
+			}
+			contentLength = n
+		}
+	}
+	if contentLength < 0 {
+		return nil, fmt.Errorf("missing Content-Length header")
+	}
+
+	body := make([]byte, contentLength)
+	if _, err := io.ReadFull(r, body); err != nil {
+		return nil, err
+	}
+	return body, nil
+}
+
+func writeMessage(w io.Writer, resp rpcResponse) error {
+	body, err := json.Marshal(resp)
+	if err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "Content-Length: %d\r\n\r\n", len(body)); err != nil {
+		return err
+	}
+	_, err = w.Write(body)
+	return err
+}

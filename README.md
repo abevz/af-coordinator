@@ -242,9 +242,11 @@ An issue may belong to:
 ```text
 cmd/af-coordinatord/   daemon entrypoint
 cmd/afctl/             CLI client
+cmd/afc-mcp/           MCP stdio wrapper over the daemon API
 docs/                  design docs
 internal/api/          transport layer
 internal/client/       Go client for the daemon API
+internal/mcp/          MCP protocol wrapper over the daemon API
 internal/config/       daemon configuration
 internal/core/         domain logic (validation, models, lease semantics)
 internal/store/sqlite/ SQLite implementation (including lease operations)
@@ -256,6 +258,7 @@ migrations/            schema migrations
 - [Architecture v1](docs/architecture-v1.md)
 - [Schema v1](docs/schema-v1.md)
 - [API v1](docs/api-v1.md)
+- [MCP server v1](docs/mcp-server-v1.md)
 - [Agent protocol v1](docs/agent-protocol-v1.md)
 - [Workflows v1](docs/workflows-v1.md)
 - [SDD workflow v1](docs/sdd-workflow-v1.md)

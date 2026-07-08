@@ -19,6 +19,7 @@ build:
 build-install:
 	$(GO) build -buildvcs=false -o $(BINDIR)/af-coordinatord ./cmd/af-coordinatord/
 	$(GO) build -buildvcs=false -o $(BINDIR)/afctl ./cmd/afctl/
+	$(GO) build -buildvcs=false -o $(BINDIR)/afc-mcp ./cmd/afc-mcp/
 
 test:
 	$(GO) test -race ./...
