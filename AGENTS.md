@@ -35,6 +35,7 @@ Active packet selection:
   that is not explicitly declared complete by its packet-local artifacts
 - `docs/specs/005-aion-forge-integration-readiness/` is completed
 - `docs/specs/006-public-readiness/` is completed
+- `docs/specs/007-release-and-backup-readiness/` is completed
 - if no packet remains active, do not invent one in code or issue text; create
   a new packet first when the next meaningful track starts
 

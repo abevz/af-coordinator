@@ -112,8 +112,8 @@ client/daemon config mismatch.
 
 | Platform | Status |
 |---|---|
-| Linux + systemd user session | Primary supported install path. `make install-service`, `make restart-service`, and backup timer targets are systemd-based. |
-| macOS | Supported daemon install path via `make install-launchd`. Automated backup timer is not packaged for launchd yet. |
+| Linux + systemd user session | Primary supported install path. `make install-service`, `make restart-service`, and `make install-backup` use systemd. |
+| macOS | Supported daemon install path via `make install-launchd`; automated backups are available through `make install-backup` / launchd. |
 | Other Unix-like OSes | Untested. The daemon relies on Unix sockets and local filesystem paths. |
 
 ### Configure

@@ -12,6 +12,12 @@ daemon install path, Linux service helper, and API-facing store boundary
 cleanup. SQLite remains the only storage backend; the boundary keeps transport
 code separate from persistence details without adding multi-database support.
 
+## Completed target: release and backup readiness (`afc-45`-`afc-46`)
+
+Packet `docs/specs/007-release-and-backup-readiness/` added tagged GitHub
+release packaging, checksum manifests, release install docs, tag-driven version
+injection, and macOS launchd backup parity with `afctl doctor` coverage.
+
 ## Completed target: Aion Forge integration (epic `afc-24`)
 
 af-coordinator now has the local tracker / control-surface primitives needed

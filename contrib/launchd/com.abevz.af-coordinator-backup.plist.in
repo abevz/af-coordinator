@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.abevz.af-coordinator-backup</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>@HOME@/.local/bin/af-coordinator-backup.sh</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>@HOME@/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>BACKUPDIR</key>
+    <string>@HOME@/backups/af-coordinator</string>
+  </dict>
+
+  <key>WorkingDirectory</key>
+  <string>@HOME@</string>
+
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>3</integer>
+    <key>Minute</key>
+    <integer>17</integer>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>@HOME@/Library/Logs/af-coordinator-backup.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>@HOME@/Library/Logs/af-coordinator-backup.err.log</string>
+</dict>
+</plist>

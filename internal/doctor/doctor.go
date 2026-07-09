@@ -125,25 +125,44 @@ func EvaluateVersionSkew(h *core.Health) Result {
 }
 
 func EvaluateBackup(ctx context.Context, e OSExec, backupDir string, now time.Time) Result {
-	if runtime.GOOS == "darwin" {
+	return evaluateBackup(ctx, e, backupDir, now, runtime.GOOS, os.Getuid())
+}
+
+func evaluateBackup(ctx context.Context, e OSExec, backupDir string, now time.Time, goos string, uid int) Result {
+	switch goos {
+	case "darwin":
+		out, err := e.Command("launchctl", "print", fmt.Sprintf("gui/%d/com.abevz.af-coordinator-backup", uid))
+		if err != nil || strings.TrimSpace(string(out)) == "" {
+			return Result{
+				Name:    "Backup agent",
+				Status:  "WARN",
+				Message: "Backup LaunchAgent is not loaded",
+				Hint:    "Run: make install-backup",
+			}
+		}
+	case "linux":
+		out, err := e.Command("systemctl", "--user", "is-enabled", "af-coordinator-backup.timer")
+		if err != nil || strings.TrimSpace(string(out)) != "enabled" {
+			return Result{
+				Name:    "Backup timer",
+				Status:  "WARN",
+				Message: "Backup timer is not enabled",
+				Hint:    "Run: systemctl --user enable --now af-coordinator-backup.timer",
+			}
+		}
+	default:
 		return Result{
 			Name:    "Backup",
 			Status:  "WARN",
-			Message: "Automated launchd backup job is not installed by this project yet",
-			Hint:    "Use manual SQLite VACUUM INTO backups or run the Linux systemd backup timer path",
+			Message: "Automated backup is not supported for this OS",
+			Hint:    "Use manual SQLite VACUUM INTO backups",
 		}
 	}
 
-	out, err := e.Command("systemctl", "--user", "is-enabled", "af-coordinator-backup.timer")
-	if err != nil || strings.TrimSpace(string(out)) != "enabled" {
-		return Result{
-			Name:    "Backup timer",
-			Status:  "WARN",
-			Message: "Backup timer is not enabled",
-			Hint:    "Run: systemctl --user enable --now af-coordinator-backup.timer",
-		}
-	}
+	return evaluateBackupFiles(ctx, backupDir, now)
+}
 
+func evaluateBackupFiles(ctx context.Context, backupDir string, now time.Time) Result {
 	entries, err := os.ReadDir(backupDir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -151,7 +170,7 @@ func EvaluateBackup(ctx context.Context, e OSExec, backupDir string, now time.Ti
 				Name:    "Backup files",
 				Status:  "WARN",
 				Message: "Backup directory does not exist",
-				Hint:    "Wait for the timer to run or run it manually: systemctl --user start af-coordinator-backup.service",
+				Hint:    "Wait for the backup job to run or trigger it manually",
 			}
 		}
 		return Result{
@@ -183,7 +202,7 @@ func EvaluateBackup(ctx context.Context, e OSExec, backupDir string, now time.Ti
 			Name:    "Backup files",
 			Status:  "WARN",
 			Message: "No backup databases found",
-			Hint:    "Run: systemctl --user start af-coordinator-backup.service",
+			Hint:    "Run the backup job manually",
 		}
 	}
 
@@ -192,7 +211,7 @@ func EvaluateBackup(ctx context.Context, e OSExec, backupDir string, now time.Ti
 			Name:    "Backup files",
 			Status:  "WARN",
 			Message: "Last backup is older than 48 hours",
-			Hint:    "Check journalctl --user -u af-coordinator-backup.service",
+			Hint:    "Check backup job logs",
 		}
 	}
 
@@ -229,7 +248,7 @@ func EvaluateBackup(ctx context.Context, e OSExec, backupDir string, now time.Ti
 	return Result{
 		Name:    "Backup",
 		Status:  "ok",
-		Message: "Backup timer enabled, recent backup present and intact",
+		Message: "Backup automation enabled, recent backup present and intact",
 	}
 }
 

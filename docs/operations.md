@@ -65,15 +65,12 @@ To uninstall:
 make uninstall-launchd
 ```
 
-Logs are written to:
+Daemon logs are written to:
 
 ```text
 ~/Library/Logs/af-coordinatord.log
 ~/Library/Logs/af-coordinatord.err.log
 ```
-
-The launchd path currently covers the daemon only. Automated backup jobs are
-still Linux/systemd-only.
 
 ## Manual daemon start
 
@@ -112,16 +109,59 @@ sqlite3 ~/.local/share/af-coordinator/af-coordinator.db \
 
 This creates a consistent, compacted copy of the database while the daemon is running.
 
-### Automatic backup (systemd timer)
+### Automatic backup
+
+`make install-backup` installs the native scheduler for the current OS:
+
+- Linux: systemd user timer.
+- macOS: launchd LaunchAgent.
+
+The job runs `VACUUM INTO` daily at 03:17, checks the integrity of the backup,
+and keeps the last 14 backups in `~/backups/af-coordinator`.
+
+#### Linux systemd timer
 
 An automated backup script and systemd timer are provided in `contrib/systemd/`.
 To install and enable them:
 
 ```bash
 make install-backup
+sh contrib/install/systemctl-user.sh enable --now af-coordinator-backup.timer
 ```
 
-This will run a `VACUUM INTO` daily at 03:17, check the integrity of the backup, and keep the last 14 backups in `~/backups/af-coordinator`.
+Logs are available with:
+
+```bash
+journalctl --user -u af-coordinator-backup.service
+```
+
+#### macOS launchd backup
+
+Install the backup LaunchAgent:
+
+```bash
+make install-backup
+launchctl print gui/$(id -u)/com.abevz.af-coordinator-backup
+```
+
+Run a backup immediately when needed:
+
+```bash
+launchctl kickstart -k gui/$(id -u)/com.abevz.af-coordinator-backup
+```
+
+Logs are written to:
+
+```text
+~/Library/Logs/af-coordinator-backup.log
+~/Library/Logs/af-coordinator-backup.err.log
+```
+
+To uninstall:
+
+```bash
+make uninstall-backup
+```
 
 ### Restore
 

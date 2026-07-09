@@ -2,6 +2,8 @@ package doctor
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"net"
 	"os"
 	"path/filepath"
@@ -145,6 +147,33 @@ func TestEvaluateBackup(t *testing.T) {
 	res = EvaluateBackup(ctx, e, dir1, time.Now())
 	if res.Status != "WARN" {
 		t.Errorf("expected WARN for empty dir")
+	}
+}
+
+func TestEvaluateBackupDarwinLaunchAgent(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+
+	missing := evaluateBackup(ctx, mockExec{cmdErr: errors.New("not loaded")}, dir, time.Now(), "darwin", 1000)
+	if missing.Status != "WARN" {
+		t.Fatalf("expected WARN for missing LaunchAgent, got %s: %s", missing.Status, missing.Message)
+	}
+
+	backupPath := filepath.Join(dir, "af-coordinator-20260709-0317.db")
+	db, err := sql.Open("sqlite", backupPath)
+	if err != nil {
+		t.Fatalf("open backup db: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `CREATE TABLE sanity (id integer primary key)`); err != nil {
+		t.Fatalf("seed backup db: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close backup db: %v", err)
+	}
+
+	ok := evaluateBackup(ctx, mockExec{cmdOut: []byte("loaded\n")}, dir, time.Now(), "darwin", 1000)
+	if ok.Status != "ok" {
+		t.Fatalf("expected ok for loaded LaunchAgent and valid backup, got %s: %s", ok.Status, ok.Message)
 	}
 }
 
