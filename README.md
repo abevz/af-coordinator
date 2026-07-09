@@ -60,6 +60,16 @@ make build-install
 This builds `af-coordinatord`, `afctl`, and `afc-mcp` into `~/.local/bin/`.
 Make sure `~/.local/bin` is on `PATH`.
 
+To install the latest published GitHub release instead of building from source:
+
+```bash
+sh contrib/install/install-release.sh
+```
+
+Set `VERSION=vX.Y.Z` to install a specific tag. The script downloads the
+matching Linux/macOS archive, verifies it against the published checksum
+manifest, and installs the three binaries into `~/.local/bin` by default.
+
 ### Test
 
 ```bash
@@ -328,7 +338,23 @@ migrations/            schema migrations
 
 ## How to release
 
-1. Ensure the `review.md` for the active SDD packet is complete.
-2. Verify that all tests pass (`make test`) and the codebase is clean (`make lint`).
-3. Build the binaries using `make build`.
-4. Create a new git tag and push it to the upstream repository.
+1. Ensure the `review.md` for the active SDD packet is complete and all related
+   `afc` issues are closed.
+2. Verify locally:
+   ```bash
+   go test ./...
+   VERSION=vX.Y.Z make build
+   ```
+3. Create and push a tag:
+   ```bash
+   git tag vX.Y.Z
+   git push origin vX.Y.Z
+   ```
+4. The `Release` GitHub Actions workflow builds Linux and macOS archives for
+   `afctl`, `af-coordinatord`, and `afc-mcp`, then uploads
+   `checksums.txt` to the GitHub release.
+5. Verify the release install path:
+   ```bash
+   VERSION=vX.Y.Z sh contrib/install/install-release.sh
+   afctl health
+   ```

@@ -1,0 +1,91 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version string for manual release dry-run builds"
+        required: false
+        default: "dev"
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go test ./...
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+    env:
+      VERSION: ${{ github.ref_type == 'tag' && github.ref_name || inputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build binaries
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          set -euo pipefail
+          archive="af-coordinator_${GOOS}_${GOARCH}"
+          mkdir -p "dist/${archive}"
+          ldflags="-X github.com/abevz/af-coordinator/internal/build.Version=${VERSION}"
+          go build -buildvcs=false -ldflags "${ldflags}" -o "dist/${archive}/afctl" ./cmd/afctl/
+          go build -buildvcs=false -ldflags "${ldflags}" -o "dist/${archive}/af-coordinatord" ./cmd/af-coordinatord/
+          go build -buildvcs=false -ldflags "${ldflags}" -o "dist/${archive}/afc-mcp" ./cmd/afc-mcp/
+          tar -C "dist/${archive}" -czf "dist/${archive}.tar.gz" afctl af-coordinatord afc-mcp
+      - uses: actions/upload-artifact@v4
+        with:
+          name: af-coordinator-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/*.tar.gz
+
+  publish:
+    if: github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ github.ref_name }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+          merge-multiple: true
+      - name: Publish GitHub release
+        run: |
+          set -euo pipefail
+          cd release-artifacts
+          sha256sum *.tar.gz > checksums.txt
+          if gh release view "${VERSION}" >/dev/null 2>&1; then
+            gh release upload "${VERSION}" *.tar.gz checksums.txt --clobber
+          else
+            gh release create "${VERSION}" *.tar.gz checksums.txt \
+              --title "${VERSION}" \
+              --notes "af-coordinator ${VERSION}"
+          fi
+

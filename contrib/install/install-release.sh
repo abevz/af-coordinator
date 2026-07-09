@@ -1,0 +1,64 @@
+#!/bin/sh
+set -eu
+
+repo="${AF_COORDINATOR_REPO:-abevz/af-coordinator}"
+version="${VERSION:-latest}"
+bindir="${BINDIR:-$HOME/.local/bin}"
+
+case "$(uname -s)" in
+	Linux) os="linux" ;;
+	Darwin) os="darwin" ;;
+	*)
+		echo "unsupported OS: $(uname -s)" >&2
+		exit 1
+		;;
+esac
+
+case "$(uname -m)" in
+	x86_64 | amd64) arch="amd64" ;;
+	arm64 | aarch64) arch="arm64" ;;
+	*)
+		echo "unsupported architecture: $(uname -m)" >&2
+		exit 1
+		;;
+esac
+
+if command -v curl >/dev/null 2>&1; then
+	download() { curl -fsSL "$1" -o "$2"; }
+elif command -v wget >/dev/null 2>&1; then
+	download() { wget -q "$1" -O "$2"; }
+else
+	echo "curl or wget is required" >&2
+	exit 1
+fi
+
+asset="af-coordinator_${os}_${arch}.tar.gz"
+if [ "$version" = "latest" ]; then
+	base_url="https://github.com/$repo/releases/latest/download"
+else
+	base_url="https://github.com/$repo/releases/download/$version"
+fi
+
+tmpdir="$(mktemp -d)"
+trap 'rm -rf "$tmpdir"' EXIT
+
+download "$base_url/$asset" "$tmpdir/$asset"
+download "$base_url/checksums.txt" "$tmpdir/checksums.txt"
+
+grep "  $asset\$" "$tmpdir/checksums.txt" > "$tmpdir/$asset.sha256"
+(
+	cd "$tmpdir"
+	if command -v sha256sum >/dev/null 2>&1; then
+		sha256sum -c "$asset.sha256"
+	else
+		shasum -a 256 -c "$asset.sha256"
+	fi
+)
+
+tar -xzf "$tmpdir/$asset" -C "$tmpdir"
+mkdir -p "$bindir"
+install -m 755 "$tmpdir/afctl" "$bindir/afctl"
+install -m 755 "$tmpdir/af-coordinatord" "$bindir/af-coordinatord"
+install -m 755 "$tmpdir/afc-mcp" "$bindir/afc-mcp"
+
+echo "Installed af-coordinator binaries into $bindir"

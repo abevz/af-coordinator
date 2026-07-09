@@ -2,6 +2,11 @@ GO ?= go
 BINDIR ?= $(HOME)/.local/bin
 BACKUPDIR ?= $(HOME)/backups/af-coordinator
 SYSTEMCTL_USER ?= sh contrib/install/systemctl-user.sh
+VERSION ?=
+LD_VERSION_FLAG =
+ifneq ($(strip $(VERSION)),)
+LD_VERSION_FLAG = -ldflags "-X github.com/abevz/af-coordinator/internal/build.Version=$(VERSION)"
+endif
 
 .PHONY: preflight fmt vet lint build test build-install install-service uninstall-service restart-service install-launchd uninstall-launchd install-backup uninstall-backup
 
@@ -18,13 +23,13 @@ lint:
 	golangci-lint run --disable errcheck,staticcheck
 
 build:
-	$(GO) build -buildvcs=false ./...
+	$(GO) build -buildvcs=false $(LD_VERSION_FLAG) ./...
 
 build-install:
 	@mkdir -p $(BINDIR)
-	$(GO) build -buildvcs=false -o $(BINDIR)/af-coordinatord ./cmd/af-coordinatord/
-	$(GO) build -buildvcs=false -o $(BINDIR)/afctl ./cmd/afctl/
-	$(GO) build -buildvcs=false -o $(BINDIR)/afc-mcp ./cmd/afc-mcp/
+	$(GO) build -buildvcs=false $(LD_VERSION_FLAG) -o $(BINDIR)/af-coordinatord ./cmd/af-coordinatord/
+	$(GO) build -buildvcs=false $(LD_VERSION_FLAG) -o $(BINDIR)/afctl ./cmd/afctl/
+	$(GO) build -buildvcs=false $(LD_VERSION_FLAG) -o $(BINDIR)/afc-mcp ./cmd/afc-mcp/
 
 test:
 	$(GO) test -race ./...
