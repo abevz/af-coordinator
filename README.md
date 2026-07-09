@@ -1,7 +1,25 @@
 # af-coordinator
 
-Local coordination service for AI agents working across many projects,
-repositories, and worktrees.
+`af-coordinator` is a local-first coordination daemon for AI agents and
+automation scripts that work across many projects, repositories, and git
+worktrees.
+
+It gives agents a shared execution ledger: what work is ready, who claimed it,
+what is blocked, what changed, and how a task was closed. Specs and source code
+stay in git; runtime coordination state stays in the local daemon.
+
+Use it when local AI agents need to cooperate safely without all of them
+writing directly to a database, editing the same checkout, or duplicating work.
+
+## What it does
+
+- tracks projects, repositories, worktrees, artifacts, issues, dependencies,
+  leases, notes, and events
+- exposes a small HTTP+JSON API over a Unix socket
+- ships `afctl`, a CLI for agents and humans
+- computes a `ready` view from issue status, leases, and blockers
+- records an append-only audit trail for claims, notes, updates, and closes
+- keeps live runtime data out of git
 
 ## Why this exists
 
@@ -15,17 +33,32 @@ The core design choice is simple:
 - one daemon owns all writes
 - clients talk to the daemon over a local API
 
-## Getting started
+## Quick start
 
 ### Prerequisites
 
-- Go 1.22 or later
+- Go version matching the `go` directive in [go.mod](go.mod)
+- `make`
+- `git` for clone/worktree workflows
 
-### Build
+Run the preflight first on a clean laptop or VM:
+
+```bash
+make preflight
+```
+
+The preflight checks required build tools, the Go version, the install
+directory, and the current OS/service-manager situation.
+
+### Build and install
 
 ```bash
 make build
+make build-install
 ```
+
+This builds `af-coordinatord`, `afctl`, and `afc-mcp` into `~/.local/bin/`.
+Make sure `~/.local/bin` is on `PATH`.
 
 ### Test
 
@@ -38,11 +71,33 @@ make test
 ```bash
 # Start in the foreground (for testing):
 af-coordinatord
+```
 
-# Or install as a systemd user service:
+On Linux with `systemd --user`:
+
+```bash
 make install-service
 systemctl --user enable --now af-coordinatord
 ```
+
+After the daemon is running:
+
+```bash
+afctl health
+afctl doctor
+```
+
+`afctl doctor` is a post-install/runtime diagnostic. It checks daemon
+reachability, client/daemon version skew, backup setup, duplicate binaries, and
+client/daemon config mismatch.
+
+### Platform support
+
+| Platform | Status |
+|---|---|
+| Linux + systemd user session | Primary supported install path. `make install-service` and backup timer targets are systemd-based. |
+| macOS | The Go binaries build for `darwin/arm64` and `darwin/amd64`, and the daemon can run in the foreground. A packaged `launchd` service is not shipped yet. |
+| Other Unix-like OSes | Untested. The daemon relies on Unix sockets and local filesystem paths. |
 
 ### Configure
 
@@ -53,14 +108,6 @@ The daemon reads these environment variables:
 | `AF_COORDINATOR_SOCKET` | `~/.local/state/af-coordinator/af-coordinator.sock` | Unix socket path |
 | `AF_COORDINATOR_DB` | `~/.local/share/af-coordinator/af-coordinator.db` | SQLite database path |
 | `AF_COORDINATOR_LOG_LEVEL` | `info` | Log level: `debug`, `info`, `warn`, `error` |
-
-### Install binaries
-
-```bash
-make build-install
-```
-
-This builds `af-coordinatord` and `afctl` into `~/.local/bin/`.
 
 Common worktree maintenance commands:
 

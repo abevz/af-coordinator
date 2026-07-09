@@ -2,7 +2,10 @@ GO ?= go
 BINDIR ?= $(HOME)/.local/bin
 BACKUPDIR ?= $(HOME)/backups/af-coordinator
 
-.PHONY: fmt vet lint build test build-install install-service uninstall-service install-backup uninstall-backup
+.PHONY: preflight fmt vet lint build test build-install install-service uninstall-service install-backup uninstall-backup
+
+preflight:
+	sh contrib/install/check-deps.sh
 
 fmt:
 	gofmt -w cmd internal
@@ -17,6 +20,7 @@ build:
 	$(GO) build -buildvcs=false ./...
 
 build-install:
+	@mkdir -p $(BINDIR)
 	$(GO) build -buildvcs=false -o $(BINDIR)/af-coordinatord ./cmd/af-coordinatord/
 	$(GO) build -buildvcs=false -o $(BINDIR)/afctl ./cmd/afctl/
 	$(GO) build -buildvcs=false -o $(BINDIR)/afc-mcp ./cmd/afc-mcp/
