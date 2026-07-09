@@ -13,7 +13,7 @@ curl --unix-socket ~/.local/state/af-coordinator/af-coordinator.sock \
 
 ## Implementation layout
 
-The API stack is intentionally thin and split into five layers:
+The API stack is intentionally thin and split into six layers:
 
 - daemon entrypoint: `cmd/af-coordinatord/main.go`
 - route registration and JSON helpers: `internal/api/daemon.go`,
@@ -21,6 +21,7 @@ The API stack is intentionally thin and split into five layers:
 - endpoint handlers: `internal/api/projects.go`, `repos.go`, `worktrees.go`,
   `artifacts.go`, `issues.go`
 - typed client over the unix socket: `internal/client/client.go`
+- API-facing store boundary: `internal/store`
 - persistence and most business rules: `internal/store/sqlite/*.go`
 
 The effective call path is:
@@ -30,6 +31,7 @@ afctl or curl
   -> internal/client (for afctl)
   -> Unix socket HTTP API
   -> internal/api handlers
+  -> internal/store.CoordinatorStore
   -> internal/store/sqlite
   -> SQLite
 ```

@@ -22,6 +22,8 @@ import (
 
 // registerRoutes duplicates the route setup from daemon.go for testing.
 func registerRoutes(mux *http.ServeMux, db *sql.DB, logger *slog.Logger) {
+	st := sqlite.NewStore(db)
+
 	// Health endpoints
 	healthHandler := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -30,46 +32,46 @@ func registerRoutes(mux *http.ServeMux, db *sql.DB, logger *slog.Logger) {
 	}
 	mux.HandleFunc("/healthz", healthHandler)
 	mux.HandleFunc("/v1/health", healthHandler)
-	mux.HandleFunc("GET /v1/export/jsonl", handleExportJSONL(db, logger))
+	mux.HandleFunc("GET /v1/export/jsonl", handleExportJSONL(st, logger))
 
 	// Projects
-	mux.HandleFunc("POST /v1/projects", handleCreateProject(db, logger))
-	mux.HandleFunc("GET /v1/projects", handleListProjects(db, logger))
+	mux.HandleFunc("POST /v1/projects", handleCreateProject(st, logger))
+	mux.HandleFunc("GET /v1/projects", handleListProjects(st, logger))
 
 	// Repos
-	mux.HandleFunc("POST /v1/repos", handleCreateRepo(db, logger))
-	mux.HandleFunc("GET /v1/repos", handleListRepos(db, logger))
+	mux.HandleFunc("POST /v1/repos", handleCreateRepo(st, logger))
+	mux.HandleFunc("GET /v1/repos", handleListRepos(st, logger))
 
 	// Worktrees
-	mux.HandleFunc("POST /v1/worktrees", handleRegisterWorktree(db, logger))
-	mux.HandleFunc("GET /v1/worktrees", handleListWorktrees(db, logger))
-	mux.HandleFunc("DELETE /v1/worktrees/{worktree_id}", handleDeleteWorktree(db, logger))
-	mux.HandleFunc("GET /v1/events", handleWatchEvents(db, logger))
+	mux.HandleFunc("POST /v1/worktrees", handleRegisterWorktree(st, logger))
+	mux.HandleFunc("GET /v1/worktrees", handleListWorktrees(st, logger))
+	mux.HandleFunc("DELETE /v1/worktrees/{worktree_id}", handleDeleteWorktree(st, logger))
+	mux.HandleFunc("GET /v1/events", handleWatchEvents(st, logger))
 
 	// Artifact roots
-	mux.HandleFunc("POST /v1/artifact-roots", handleCreateArtifactRoot(db, logger))
-	mux.HandleFunc("GET /v1/artifact-roots", handleListArtifactRoots(db, logger))
+	mux.HandleFunc("POST /v1/artifact-roots", handleCreateArtifactRoot(st, logger))
+	mux.HandleFunc("GET /v1/artifact-roots", handleListArtifactRoots(st, logger))
 
 	// Artifacts
-	mux.HandleFunc("POST /v1/artifacts", handleCreateArtifact(db, logger))
-	mux.HandleFunc("GET /v1/artifacts", handleListArtifacts(db, logger))
+	mux.HandleFunc("POST /v1/artifacts", handleCreateArtifact(st, logger))
+	mux.HandleFunc("GET /v1/artifacts", handleListArtifacts(st, logger))
 
 	// Issues
-	mux.HandleFunc("POST /v1/issues", handleCreateIssue(db, logger))
-	mux.HandleFunc("GET /v1/issues/ready", handleListReadyIssues(db, logger))
-	mux.HandleFunc("GET /v1/issues/{issue_id}", handleGetIssue(db, logger))
-	mux.HandleFunc("POST /v1/issues/{issue_id}/claim", handleClaimIssue(db, logger))
-	mux.HandleFunc("POST /v1/issues/{issue_id}/heartbeat", handleHeartbeatLease(db, logger))
-	mux.HandleFunc("POST /v1/issues/{issue_id}/release", handleReleaseLease(db, logger))
-	mux.HandleFunc("PATCH /v1/issues/{issue_id}", handleUpdateIssue(db, logger))
-	mux.HandleFunc("POST /v1/issues/{issue_id}/close", handleCloseIssue(db, logger))
-	mux.HandleFunc("POST /v1/issues/{issue_id}/dependencies", handleAddDependency(db, logger))
-	mux.HandleFunc("DELETE /v1/issues/{issue_id}/dependencies/{depends_on}", handleRemoveDependency(db, logger))
-	mux.HandleFunc("POST /v1/issues/{issue_id}/links", handleLinkArtifact(db, logger))
-	mux.HandleFunc("POST /v1/issues/{issue_id}/notes", handleCreateNote(db, logger))
-	mux.HandleFunc("GET /v1/issues/{issue_id}/notes", handleListNotes(db, logger))
-	mux.HandleFunc("GET /v1/issues/{issue_id}/events", handleListEvents(db, logger))
-	mux.HandleFunc("GET /v1/issues", handleListIssues(db, logger))
+	mux.HandleFunc("POST /v1/issues", handleCreateIssue(st, logger))
+	mux.HandleFunc("GET /v1/issues/ready", handleListReadyIssues(st, logger))
+	mux.HandleFunc("GET /v1/issues/{issue_id}", handleGetIssue(st, logger))
+	mux.HandleFunc("POST /v1/issues/{issue_id}/claim", handleClaimIssue(st, logger))
+	mux.HandleFunc("POST /v1/issues/{issue_id}/heartbeat", handleHeartbeatLease(st, logger))
+	mux.HandleFunc("POST /v1/issues/{issue_id}/release", handleReleaseLease(st, logger))
+	mux.HandleFunc("PATCH /v1/issues/{issue_id}", handleUpdateIssue(st, logger))
+	mux.HandleFunc("POST /v1/issues/{issue_id}/close", handleCloseIssue(st, logger))
+	mux.HandleFunc("POST /v1/issues/{issue_id}/dependencies", handleAddDependency(st, logger))
+	mux.HandleFunc("DELETE /v1/issues/{issue_id}/dependencies/{depends_on}", handleRemoveDependency(st, logger))
+	mux.HandleFunc("POST /v1/issues/{issue_id}/links", handleLinkArtifact(st, logger))
+	mux.HandleFunc("POST /v1/issues/{issue_id}/notes", handleCreateNote(st, logger))
+	mux.HandleFunc("GET /v1/issues/{issue_id}/notes", handleListNotes(st, logger))
+	mux.HandleFunc("GET /v1/issues/{issue_id}/events", handleListEvents(st, logger))
+	mux.HandleFunc("GET /v1/issues", handleListIssues(st, logger))
 }
 
 // newTestServer creates an in-memory SQLite DB, initializes the schema,

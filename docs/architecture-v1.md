@@ -78,7 +78,7 @@ Reasoning:
 ## Process model
 
 ```text
-many clients -> one daemon -> one SQLite database
+many clients -> one daemon -> store boundary -> one SQLite database
 ```
 
 Clients:
@@ -95,6 +95,11 @@ Daemon responsibilities:
 - dependency checks
 - event creation
 - export endpoints
+
+API handlers depend on `internal/store.CoordinatorStore`, not directly on the
+SQLite package. The only implementation is still `internal/store/sqlite`; the
+boundary exists to keep transport logic separate from persistence details, not
+to make multiple databases a v1 feature.
 
 ## SDD integration
 

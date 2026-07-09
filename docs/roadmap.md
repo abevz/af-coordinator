@@ -4,6 +4,14 @@ Direction for af-coordinator beyond v1. The operational source of truth for
 this work is the coordinator itself (project `afc`); this document records
 the intent and the reasoning so the issues stay short.
 
+## Completed target: public readiness (`afc-39`-`afc-44`)
+
+Packet `docs/specs/006-public-readiness/` completed the public README refresh,
+API endpoint map, safe worktree cleanup commands, install preflight, macOS
+daemon install path, Linux service helper, and API-facing store boundary
+cleanup. SQLite remains the only storage backend; the boundary keeps transport
+code separate from persistence details without adding multi-database support.
+
 ## Completed target: Aion Forge integration (epic `afc-24`)
 
 af-coordinator now has the local tracker / control-surface primitives needed

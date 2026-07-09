@@ -44,7 +44,8 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	if err := api.RunDaemon(ctx, logger, cfg, db); err != nil {
+	st := sqlite.NewStore(db)
+	if err := api.RunDaemon(ctx, logger, cfg, st); err != nil {
 		logger.Error("daemon failed", "error", err)
 		os.Exit(1)
 	}

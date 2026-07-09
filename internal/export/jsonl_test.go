@@ -1,4 +1,4 @@
-package export
+package export_test
 
 import (
 	"bytes"
@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/abevz/af-coordinator/internal/core"
+	coordinatorexport "github.com/abevz/af-coordinator/internal/export"
 	"github.com/abevz/af-coordinator/internal/store/sqlite"
 	"github.com/abevz/af-coordinator/migrations"
 
@@ -18,9 +19,10 @@ import (
 func TestWriteJSONL(t *testing.T) {
 	db := newExportTestDB(t)
 	seedExportFixture(t, db)
+	st := sqlite.NewStore(db)
 
 	var buf bytes.Buffer
-	if err := WriteJSONL(context.Background(), db, &buf); err != nil {
+	if err := coordinatorexport.WriteJSONL(context.Background(), st, &buf); err != nil {
 		t.Fatalf("WriteJSONL() error = %v", err)
 	}
 
@@ -31,8 +33,8 @@ func TestWriteJSONL(t *testing.T) {
 
 	counts := map[string]int{}
 	issueShortIDs := map[string]bool{}
-	var sawDependency Dependency
-	var sawReference Reference
+	var sawDependency coordinatorexport.Dependency
+	var sawReference coordinatorexport.Reference
 	var sawEvent core.Event
 
 	for _, line := range lines {

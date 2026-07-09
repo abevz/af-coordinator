@@ -34,6 +34,7 @@ Active packet selection:
 - treat the active SDD packet as the lowest-numbered `docs/specs/NNN-*` packet
   that is not explicitly declared complete by its packet-local artifacts
 - `docs/specs/005-aion-forge-integration-readiness/` is completed
+- `docs/specs/006-public-readiness/` is completed
 - if no packet remains active, do not invent one in code or issue text; create
   a new packet first when the next meaningful track starts
 
@@ -247,7 +248,8 @@ The daemon you are modifying is the daemon that tracks your work — so:
   the live daemon — use a scratch DB and socket via
   `AF_COORDINATOR_DB`/`AF_COORDINATOR_SOCKET` overrides.
 - After changing daemon or CLI behavior: `make build-install`, restart
-  the service (`systemctl --user restart af-coordinatord`), and verify
+  the service with `make restart-service` (or
+  `sh contrib/install/systemctl-user.sh restart af-coordinatord`), and verify
   your change through the installed binary before marking anything done.
   Two of the same binary live in PATH history (`~/go/bin` vs
   `~/.local/bin`) — `make build-install` targets the right one.
@@ -264,4 +266,3 @@ This repo is coordinated by [af-coordinator](https://github.com/abevz/af-coordin
 - **Never** restate specs in issue descriptions — link them.
 - **Never** close an issue without a note (`--note`) — the audit trail is for whoever comes after you.
 <!-- END AF-COORDINATOR INTEGRATION -->
-

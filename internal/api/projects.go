@@ -1,17 +1,16 @@
 package api
 
 import (
-	"database/sql"
 	"encoding/json"
 	"log/slog"
 	"net/http"
 	"strings"
 
 	"github.com/abevz/af-coordinator/internal/core"
-	"github.com/abevz/af-coordinator/internal/store/sqlite"
+	"github.com/abevz/af-coordinator/internal/store"
 )
 
-func handleCreateProject(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
+func handleCreateProject(st store.CoordinatorStore, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Key         string `json:"key"`
@@ -28,7 +27,7 @@ func handleCreateProject(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 			return
 		}
 
-		project, err := sqlite.CreateProject(r.Context(), db, body.Key, body.Name, body.Description)
+		project, err := st.CreateProject(r.Context(), body.Key, body.Name, body.Description)
 		if err != nil {
 			logger.Error("failed to create project", "key", body.Key, "error", err)
 			// Detect unique constraint violation on key.
@@ -45,9 +44,9 @@ func handleCreateProject(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
 	}
 }
 
-func handleListProjects(db *sql.DB, logger *slog.Logger) http.HandlerFunc {
+func handleListProjects(st store.CoordinatorStore, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		projects, err := sqlite.ListProjects(r.Context(), db)
+		projects, err := st.ListProjects(r.Context())
 		if err != nil {
 			logger.Error("failed to list projects", "error", err)
 			writeError(w, http.StatusInternalServerError, "internal_error", "failed to list projects")
