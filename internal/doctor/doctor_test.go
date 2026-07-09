@@ -2,8 +2,10 @@ package doctor
 
 import (
 	"context"
+	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -144,4 +146,64 @@ func TestEvaluateBackup(t *testing.T) {
 	if res.Status != "WARN" {
 		t.Errorf("expected WARN for empty dir")
 	}
+}
+
+func TestSystemdUserEnv(t *testing.T) {
+	runtimeDir := t.TempDir()
+	busPath := filepath.Join(runtimeDir, "bus")
+	listener, err := netListenUnix(busPath)
+	if err != nil {
+		t.Fatalf("listen unix socket: %v", err)
+	}
+	defer listener.Close()
+
+	env := systemdUserEnv(func(key string) (string, bool) {
+		switch key {
+		case "XDG_RUNTIME_DIR":
+			return runtimeDir, true
+		default:
+			return "", false
+		}
+	}, os.Stat, 1000)
+
+	if !containsEnv(env, "DBUS_SESSION_BUS_ADDRESS=unix:path="+busPath) {
+		t.Fatalf("expected DBUS_SESSION_BUS_ADDRESS for user bus socket, got %v", env)
+	}
+
+	env = systemdUserEnv(func(key string) (string, bool) {
+		switch key {
+		case "XDG_RUNTIME_DIR":
+			return runtimeDir, true
+		case "DBUS_SESSION_BUS_ADDRESS":
+			return "unix:path=/custom/bus", true
+		default:
+			return "", false
+		}
+	}, os.Stat, 1000)
+
+	if containsEnvPrefix(env, "DBUS_SESSION_BUS_ADDRESS=") {
+		t.Fatalf("expected existing DBUS_SESSION_BUS_ADDRESS to be preserved, got %v", env)
+	}
+}
+
+func containsEnv(env []string, want string) bool {
+	for _, entry := range env {
+		if entry == want {
+			return true
+		}
+	}
+	return false
+}
+
+func containsEnvPrefix(env []string, prefix string) bool {
+	for _, entry := range env {
+		if strings.HasPrefix(entry, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func netListenUnix(path string) (net.Listener, error) {
+	return net.Listen("unix", path)
 }

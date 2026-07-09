@@ -1,8 +1,9 @@
 GO ?= go
 BINDIR ?= $(HOME)/.local/bin
 BACKUPDIR ?= $(HOME)/backups/af-coordinator
+SYSTEMCTL_USER ?= sh contrib/install/systemctl-user.sh
 
-.PHONY: preflight fmt vet lint build test build-install install-service uninstall-service install-backup uninstall-backup
+.PHONY: preflight fmt vet lint build test build-install install-service uninstall-service restart-service install-launchd uninstall-launchd install-backup uninstall-backup
 
 preflight:
 	sh contrib/install/check-deps.sh
@@ -31,14 +32,32 @@ test:
 install-service:
 	@mkdir -p $(HOME)/.config/systemd/user
 	cp contrib/systemd/af-coordinatord.service $(HOME)/.config/systemd/user/
-	systemctl --user daemon-reload
-	@echo "Service installed. Enable: systemctl --user enable --now af-coordinatord"
+	$(SYSTEMCTL_USER) daemon-reload
+	@echo "Service installed. Enable: $(SYSTEMCTL_USER) enable --now af-coordinatord"
 
 uninstall-service:
-	-systemctl --user stop af-coordinatord
-	-systemctl --user disable af-coordinatord
+	-$(SYSTEMCTL_USER) stop af-coordinatord
+	-$(SYSTEMCTL_USER) disable af-coordinatord
 	rm -f $(HOME)/.config/systemd/user/af-coordinatord.service
-	systemctl --user daemon-reload
+	$(SYSTEMCTL_USER) daemon-reload
+
+restart-service: build-install
+	$(SYSTEMCTL_USER) restart af-coordinatord
+
+install-launchd: build-install
+	@test "$$(uname -s)" = "Darwin" || (echo "install-launchd is macOS-only" >&2; exit 1)
+	@mkdir -p "$(HOME)/Library/LaunchAgents"
+	sed "s|@HOME@|$(HOME)|g" contrib/launchd/com.abevz.af-coordinatord.plist.in > "$(HOME)/Library/LaunchAgents/com.abevz.af-coordinatord.plist"
+	-launchctl bootout gui/$$(id -u) "$(HOME)/Library/LaunchAgents/com.abevz.af-coordinatord.plist" 2>/dev/null
+	launchctl bootstrap gui/$$(id -u) "$(HOME)/Library/LaunchAgents/com.abevz.af-coordinatord.plist"
+	launchctl enable gui/$$(id -u)/com.abevz.af-coordinatord
+	launchctl kickstart -k gui/$$(id -u)/com.abevz.af-coordinatord
+	@echo "LaunchAgent installed and started: com.abevz.af-coordinatord"
+
+uninstall-launchd:
+	@test "$$(uname -s)" = "Darwin" || (echo "uninstall-launchd is macOS-only" >&2; exit 1)
+	-launchctl bootout gui/$$(id -u) "$(HOME)/Library/LaunchAgents/com.abevz.af-coordinatord.plist" 2>/dev/null
+	rm -f "$(HOME)/Library/LaunchAgents/com.abevz.af-coordinatord.plist"
 
 install-backup:
 	@mkdir -p $(HOME)/.config/systemd/user
@@ -46,13 +65,13 @@ install-backup:
 	install -m 755 contrib/systemd/af-coordinator-backup.sh $(BINDIR)/af-coordinator-backup.sh
 	cp contrib/systemd/af-coordinator-backup.service $(HOME)/.config/systemd/user/
 	cp contrib/systemd/af-coordinator-backup.timer $(HOME)/.config/systemd/user/
-	systemctl --user daemon-reload
-	@echo "Backup service installed. Enable: systemctl --user enable --now af-coordinator-backup.timer"
+	$(SYSTEMCTL_USER) daemon-reload
+	@echo "Backup service installed. Enable: $(SYSTEMCTL_USER) enable --now af-coordinator-backup.timer"
 
 uninstall-backup:
-	-systemctl --user stop af-coordinator-backup.timer
-	-systemctl --user disable af-coordinator-backup.timer
+	-$(SYSTEMCTL_USER) stop af-coordinator-backup.timer
+	-$(SYSTEMCTL_USER) disable af-coordinator-backup.timer
 	rm -f $(HOME)/.config/systemd/user/af-coordinator-backup.service
 	rm -f $(HOME)/.config/systemd/user/af-coordinator-backup.timer
 	rm -f $(BINDIR)/af-coordinator-backup.sh
-	systemctl --user daemon-reload
+	$(SYSTEMCTL_USER) daemon-reload

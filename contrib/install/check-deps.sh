@@ -71,12 +71,22 @@ case "$os_name" in
 	Linux)
 		if command -v systemctl >/dev/null 2>&1; then
 			ok "systemctl found for Linux user service install"
+			runtime_dir="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+			if [ -S "$runtime_dir/bus" ]; then
+				ok "systemd user bus socket available: $runtime_dir/bus"
+			else
+				warn "systemd user bus socket not found at $runtime_dir/bus; Makefile service targets will need a logged-in user manager"
+			fi
 		else
 			warn "systemctl not found; use foreground daemon or install a service manually"
 		fi
 		;;
 	Darwin)
-		warn "macOS detected; binaries build, but packaged launchd service install is not shipped yet"
+		if command -v launchctl >/dev/null 2>&1; then
+			ok "launchctl found for macOS LaunchAgent install"
+		else
+			warn "launchctl not found; use foreground daemon or install a service manually"
+		fi
 		;;
 	*)
 		warn "untested OS: $os_name"

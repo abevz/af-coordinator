@@ -77,7 +77,14 @@ On Linux with `systemd --user`:
 
 ```bash
 make install-service
-systemctl --user enable --now af-coordinatord
+sh contrib/install/systemctl-user.sh enable --now af-coordinatord
+```
+
+On macOS with `launchd`:
+
+```bash
+make install-launchd
+launchctl print gui/$(id -u)/com.abevz.af-coordinatord
 ```
 
 After the daemon is running:
@@ -95,8 +102,8 @@ client/daemon config mismatch.
 
 | Platform | Status |
 |---|---|
-| Linux + systemd user session | Primary supported install path. `make install-service` and backup timer targets are systemd-based. |
-| macOS | The Go binaries build for `darwin/arm64` and `darwin/amd64`, and the daemon can run in the foreground. A packaged `launchd` service is not shipped yet. |
+| Linux + systemd user session | Primary supported install path. `make install-service`, `make restart-service`, and backup timer targets are systemd-based. |
+| macOS | Supported daemon install path via `make install-launchd`. Automated backup timer is not packaged for launchd yet. |
 | Other Unix-like OSes | Untested. The daemon relies on Unix sockets and local filesystem paths. |
 
 ### Configure
@@ -296,6 +303,7 @@ internal/client/       Go client for the daemon API
 internal/mcp/          MCP protocol wrapper over the daemon API
 internal/config/       daemon configuration
 internal/core/         domain logic (validation, models, lease semantics)
+internal/store/        API-facing store interface
 internal/store/sqlite/ SQLite implementation (including lease operations)
 migrations/            schema migrations
 ```

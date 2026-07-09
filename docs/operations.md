@@ -18,15 +18,14 @@ make build
 ### Install
 
 ```bash
-cp contrib/systemd/af-coordinatord.service ~/.config/systemd/user/
-systemctl --user daemon-reload
-systemctl --user enable --now af-coordinatord
+make install-service
+sh contrib/install/systemctl-user.sh enable --now af-coordinatord
 ```
 
 ### Check status
 
 ```bash
-systemctl --user status af-coordinatord
+sh contrib/install/systemctl-user.sh status af-coordinatord
 ```
 
 ### View logs
@@ -38,10 +37,43 @@ journalctl --user -u af-coordinatord -f
 ### Start/stop/restart
 
 ```bash
-systemctl --user start af-coordinatord
-systemctl --user stop af-coordinatord
-systemctl --user restart af-coordinatord
+sh contrib/install/systemctl-user.sh start af-coordinatord
+sh contrib/install/systemctl-user.sh stop af-coordinatord
+make restart-service
 ```
+
+`contrib/install/systemctl-user.sh` fills `XDG_RUNTIME_DIR` and
+`DBUS_SESSION_BUS_ADDRESS` from `/run/user/$(id -u)/bus` when they are missing,
+which keeps service targets working from non-interactive agent environments.
+
+## macOS LaunchAgent
+
+Build the binaries and install the daemon as a user LaunchAgent:
+
+```bash
+make install-launchd
+launchctl print gui/$(id -u)/com.abevz.af-coordinatord
+```
+
+The Makefile renders `contrib/launchd/com.abevz.af-coordinatord.plist.in` into
+`~/Library/LaunchAgents/com.abevz.af-coordinatord.plist`, then bootstraps and
+starts the service.
+
+To uninstall:
+
+```bash
+make uninstall-launchd
+```
+
+Logs are written to:
+
+```text
+~/Library/Logs/af-coordinatord.log
+~/Library/Logs/af-coordinatord.err.log
+```
+
+The launchd path currently covers the daemon only. Automated backup jobs are
+still Linux/systemd-only.
 
 ## Manual daemon start
 
@@ -95,7 +127,7 @@ This will run a `VACUUM INTO` daily at 03:17, check the integrity of the backup,
 
 1. Stop the daemon:
    ```bash
-   systemctl --user stop af-coordinatord
+   sh contrib/install/systemctl-user.sh stop af-coordinatord
    ```
 2. Replace the database:
    ```bash
@@ -103,7 +135,7 @@ This will run a `VACUUM INTO` daily at 03:17, check the integrity of the backup,
    ```
 3. Start the daemon:
    ```bash
-   systemctl --user start af-coordinatord
+   sh contrib/install/systemctl-user.sh start af-coordinatord
    ```
 
 ## CLI usage

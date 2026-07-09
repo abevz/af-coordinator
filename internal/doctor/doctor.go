@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -35,11 +36,51 @@ type realExec struct{}
 
 func (realExec) Command(name string, arg ...string) ([]byte, error) {
 	cmd := exec.Command(name, arg...)
+	if runtime.GOOS == "linux" && name == "systemctl" && isSystemctlUserCommand(arg) {
+		cmd.Env = append(os.Environ(), systemdUserEnv(os.LookupEnv, os.Stat, os.Getuid())...)
+	}
 	return cmd.CombinedOutput()
 }
 
 func (realExec) LookupEnv(key string) (string, bool) {
 	return os.LookupEnv(key)
+}
+
+func isSystemctlUserCommand(args []string) bool {
+	for _, arg := range args {
+		if arg == "--user" {
+			return true
+		}
+	}
+	return false
+}
+
+func systemdUserEnv(lookup func(string) (string, bool), stat func(string) (os.FileInfo, error), uid int) []string {
+	var env []string
+
+	runtimeDir, hasRuntimeDir := lookup("XDG_RUNTIME_DIR")
+	if !hasRuntimeDir || runtimeDir == "" {
+		candidate := fmt.Sprintf("/run/user/%d", uid)
+		if info, err := stat(candidate); err == nil && info.IsDir() {
+			runtimeDir = candidate
+			env = append(env, "XDG_RUNTIME_DIR="+runtimeDir)
+		}
+	}
+
+	if runtimeDir == "" {
+		return env
+	}
+
+	if busAddress, hasBusAddress := lookup("DBUS_SESSION_BUS_ADDRESS"); hasBusAddress && busAddress != "" {
+		return env
+	}
+
+	busPath := filepath.Join(runtimeDir, "bus")
+	if info, err := stat(busPath); err == nil && info.Mode()&os.ModeSocket != 0 {
+		env = append(env, "DBUS_SESSION_BUS_ADDRESS=unix:path="+busPath)
+	}
+
+	return env
 }
 
 func EvaluateDaemon(ctx context.Context, c *client.Client) (Result, *core.Health) {
@@ -49,7 +90,7 @@ func EvaluateDaemon(ctx context.Context, c *client.Client) (Result, *core.Health
 			Name:    "Daemon reachable",
 			Status:  "WARN",
 			Message: "Daemon is unreachable",
-			Hint:    "Start or restart af-coordinatord: systemctl --user restart af-coordinatord",
+			Hint:    "Start or restart af-coordinatord: " + restartDaemonHint(),
 		}, nil
 	}
 	return Result{
@@ -73,7 +114,7 @@ func EvaluateVersionSkew(h *core.Health) Result {
 			Name:    "Version skew",
 			Status:  "WARN",
 			Message: fmt.Sprintf("afctl version %s != daemon version %s", build.Version, h.Version),
-			Hint:    "Restart af-coordinatord: systemctl --user restart af-coordinatord",
+			Hint:    "Restart af-coordinatord: " + restartDaemonHint(),
 		}
 	}
 	return Result{
@@ -84,6 +125,15 @@ func EvaluateVersionSkew(h *core.Health) Result {
 }
 
 func EvaluateBackup(ctx context.Context, e OSExec, backupDir string, now time.Time) Result {
+	if runtime.GOOS == "darwin" {
+		return Result{
+			Name:    "Backup",
+			Status:  "WARN",
+			Message: "Automated launchd backup job is not installed by this project yet",
+			Hint:    "Use manual SQLite VACUUM INTO backups or run the Linux systemd backup timer path",
+		}
+	}
+
 	out, err := e.Command("systemctl", "--user", "is-enabled", "af-coordinator-backup.timer")
 	if err != nil || strings.TrimSpace(string(out)) != "enabled" {
 		return Result{
@@ -183,6 +233,17 @@ func EvaluateBackup(ctx context.Context, e OSExec, backupDir string, now time.Ti
 	}
 }
 
+func restartDaemonHint() string {
+	switch runtime.GOOS {
+	case "darwin":
+		return "launchctl kickstart -k gui/$(id -u)/com.abevz.af-coordinatord"
+	case "linux":
+		return "systemctl --user restart af-coordinatord"
+	default:
+		return "run af-coordinatord in the foreground or restart your local service manager"
+	}
+}
+
 func EvaluateDuplicates(e OSExec) Result {
 	pathEnv, ok := e.LookupEnv("PATH")
 	if !ok {
@@ -207,11 +268,11 @@ func EvaluateDuplicates(e OSExec) Result {
 				}
 			}
 		}
-		
+
 		if len(found) <= 1 {
 			return nil
 		}
-		
+
 		// check if they differ in content
 		firstHash := ""
 		differ := false
@@ -228,7 +289,7 @@ func EvaluateDuplicates(e OSExec) Result {
 				break
 			}
 		}
-		
+
 		if differ {
 			return found
 		}
