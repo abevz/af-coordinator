@@ -4,10 +4,10 @@ Direction for af-coordinator beyond v1. The operational source of truth for
 this work is the coordinator itself (project `afc`); this document records
 the intent and the reasoning so the issues stay short.
 
-## Target: Aion Forge integration (epic `afc-24`)
+## Completed target: Aion Forge integration (epic `afc-24`)
 
-af-coordinator becomes the local tracker / control surface for the
-[Aion Forge](https://github.com/abevz/aion-forge) agent factory:
+af-coordinator now has the local tracker / control-surface primitives needed
+by the [Aion Forge](https://github.com/abevz/aion-forge) agent factory:
 
 ```text
 issue (af-coordinator) -> Temporal workflow -> isolated runner -> branch/PR -> checks -> merge -> issue closed
@@ -21,7 +21,7 @@ Division of responsibility stays strict:
 - the coordinator stores references to execution (workflow IDs, PR URLs),
   never execution state itself
 
-Planned work, in priority order:
+Delivered work:
 
 | Issue | Type | What |
 |---|---|---|
@@ -32,6 +32,16 @@ Planned work, in priority order:
 | `afc-27` | feature | Structured resolution: PR/commit references on close |
 | `afc-29` | feature | JSONL export (`internal/export`), backup + interim bridge |
 | `afc-28` | feature | MCP server wrapper over the daemon API for Claude-based agents |
+
+Packet `docs/specs/005-aion-forge-integration-readiness/` is complete. The
+coordinator has no active roadmap target until the next direction is written
+as a new SDD packet and corresponding `afc` issues.
+
+Known follow-up before the next large track:
+
+- `epic` issues are intentionally not claimable, but `afctl issue close`
+  still requires a `--lease-token`. Add a supported CLI/API flow for closing
+  unclaimed epics instead of relying on direct daemon calls.
 
 ## Issue classification (done)
 
