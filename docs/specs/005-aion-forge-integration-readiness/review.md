@@ -1,6 +1,6 @@
 # Review
 
-Status: active
+Status: completed
 
 ## 2026-07-07 - Packet initialized
 
@@ -244,3 +244,27 @@ Status: active
 ### Open items
 
 - `afc-24` still has remaining readiness work outside this export slice.
+
+## 2026-07-09 - Packet completion and epic closure
+
+### What shipped
+
+- Confirmed every `afc-24` child tracked by packet `005` is closed:
+  `afc-25`, `afc-26`, `afc-27`, `afc-28`, `afc-29`, `afc-30`, `afc-36`, and
+  `afc-37`.
+- Confirmed adjacent packet-alignment/docs chores tied to this track are also
+  closed: `afc-35`, `afc-38`, `afc-39`, and `afc-40`.
+- Marked packet `005` completed in its packet-local artifacts.
+
+### What was verified
+
+- `afctl issue list --project afc --json` shows every issue with a `parent`
+  dependency on `afc-24` is `done`.
+- `afctl issue ready --project afc` returns no ready items.
+- `afctl issue get afc-24 --full` shows the epic has no active lease and no
+  later execution slices were added after packet `005`.
+
+### Open items
+
+- None in packet `005`. Future Aion Forge work should start in a new packet and
+  a new coordinator epic instead of reopening this completed readiness track.

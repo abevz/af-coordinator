@@ -6,7 +6,7 @@ notes, and closure audit.
 
 ## Parent epic
 
-**`afc-24`** (epic, P2, open) - Aion Forge integration readiness
+**`afc-24`** (epic, P2, done) - Aion Forge integration readiness
 
 ## Leaves
 

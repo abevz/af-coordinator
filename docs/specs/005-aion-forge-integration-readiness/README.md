@@ -1,6 +1,6 @@
 # 005 - Aion Forge integration readiness
 
-Status: active.
+Status: completed.
 
 Intent: prepare af-coordinator to act as the local tracker and control surface
 for Aion Forge without turning the coordinator into the execution engine.
@@ -21,6 +21,9 @@ This packet covers the coordinator-side readiness work behind epic `afc-24`:
 - `afc-27` - structured close resolution references
 - `afc-29` - JSONL export
 - `afc-28` - MCP wrapper over the daemon API
+
+Outcome: completed. The readiness slices in this packet shipped and the parent
+epic `afc-24` can be closed without leaving open child work.
 
 The division of responsibility from `docs/roadmap.md` remains the contract:
 
