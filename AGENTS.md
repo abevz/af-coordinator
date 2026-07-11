@@ -81,6 +81,10 @@ Rules:
 Do not introduce frameworks, DI containers, or plugin systems unless the spec
 explicitly calls for them.
 
+Enum values in the public contract (issue statuses, event types) are
+snake_case by design (`in_progress`); do not "fix" them to kebab-case.
+Rationale: `docs/specs/001-foundation/design.md`, Naming conventions.
+
 ## Directory intent
 
 - `cmd/af-coordinatord/` daemon entrypoint only
