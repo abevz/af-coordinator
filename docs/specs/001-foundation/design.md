@@ -37,6 +37,24 @@ replace the spec packet itself.
 - note
 - event
 
+## Naming conventions
+
+Machine-readable enum values (issue `status`, event types, etc.) use
+snake_case: `in_progress`, not `in-progress`.
+
+Rationale:
+
+- valid identifier in SQL and Go; kebab-case would require quoting and
+  parses as subtraction in most languages
+- consistent with snake_case JSON field names (`lease_token`,
+  `expected_version`)
+- matches common API conventions (GitHub, Slack use `in_progress`)
+
+These values are part of the public contract (JSON API, SQLite CHECK
+constraints in migrations, JSONL export, CLI flags). Renaming any of
+them is a breaking change requiring a schema migration and a
+compatibility window.
+
 ## Artifact model
 
 `artifact_root` describes a repository-local area such as `docs/specs/`.
