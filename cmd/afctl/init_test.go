@@ -3,8 +3,19 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
+
+func TestInitSnippetPointsToCanonicalProtocolAndHandoff(t *testing.T) {
+	block := formatBlock(initSnippet)
+	if !strings.Contains(block, "`afctl protocol`") || !strings.Contains(block, "docs/agent-protocol-v1.md") {
+		t.Fatalf("init block does not point to the canonical protocol: %q", block)
+	}
+	if !strings.Contains(block, "handoff/close") {
+		t.Fatalf("init block does not describe the handoff/close session path: %q", block)
+	}
+}
 
 func TestApplyBlock(t *testing.T) {
 	t.Parallel()

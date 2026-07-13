@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -913,6 +914,72 @@ func TestListIssues(t *testing.T) {
 
 	if len(result.Issues) != 2 {
 		t.Fatalf("expected 2 issues, got %d", len(result.Issues))
+	}
+}
+
+func TestListIssuesMultiValueFilters(t *testing.T) {
+	server, db := newTestServer(t)
+	now := "2026-07-13T10:00:00Z"
+	for _, project := range []struct{ id, key string }{
+		{id: "project-afc", key: "afc"},
+		{id: "project-aion", key: "aion"},
+	} {
+		if _, err := db.Exec(
+			`INSERT INTO projects (id, key, name, description, next_issue_seq, created_at, updated_at)
+			 VALUES (?, ?, ?, '', 1, ?, ?)`,
+			project.id, project.key, project.key, now, now,
+		); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, issue := range []struct {
+		id, shortID, projectID, issueType, status string
+	}{
+		{id: "issue-afc-epic", shortID: "afc-1", projectID: "project-afc", issueType: "epic", status: "open"},
+		{id: "issue-aion-chore", shortID: "aion-1", projectID: "project-aion", issueType: "chore", status: "in_progress"},
+		{id: "issue-aion-bug", shortID: "aion-2", projectID: "project-aion", issueType: "bug", status: "open"},
+	} {
+		if _, err := db.Exec(
+			`INSERT INTO issues (id, short_id, project_id, scope_kind, issue_type, title, description, status, priority, assignee, version, created_at, updated_at)
+			 VALUES (?, ?, ?, 'project', ?, ?, '', ?, 3, '', 1, ?, ?)`,
+			issue.id, issue.shortID, issue.projectID, issue.issueType, issue.id, issue.status, now, now,
+		); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	resp, err := http.Get(server.URL + "/v1/issues?project=afc,%20aion&type=epic&type=chore&status=open,in_progress")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d", resp.StatusCode)
+	}
+	result := decodeJSON[struct {
+		Issues []struct {
+			ID string `json:"id"`
+		} `json:"issues"`
+	}](t, resp)
+	if len(result.Issues) != 2 {
+		t.Fatalf("expected 2 matching issues, got %d", len(result.Issues))
+	}
+	if got, want := []string{result.Issues[0].ID, result.Issues[1].ID}, []string{"issue-afc-epic", "issue-aion-chore"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("issue IDs = %q, want %q", got, want)
+	}
+
+	for _, rawQuery := range []string{"project=afc,", "type=epic,unknown"} {
+		resp, err := http.Get(server.URL + "/v1/issues?" + rawQuery)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resp.StatusCode != http.StatusBadRequest {
+			resp.Body.Close()
+			t.Fatalf("query %q: expected 400, got %d", rawQuery, resp.StatusCode)
+		}
+		result := decodeJSON[core.APIErrorResponse](t, resp)
+		if result.Error.Code != core.ErrValidationFailed {
+			t.Fatalf("query %q: error code = %q, want %q", rawQuery, result.Error.Code, core.ErrValidationFailed)
+		}
 	}
 }
 

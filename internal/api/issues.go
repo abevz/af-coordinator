@@ -97,19 +97,37 @@ func handleGetIssue(st store.CoordinatorStore, logger *slog.Logger) http.Handler
 
 func handleListIssues(st store.CoordinatorStore, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		projects, err := core.NormalizeIssueListValues(r.URL.Query()["project"])
+		if err != nil {
+			writeError(w, http.StatusBadRequest, core.ErrValidationFailed, "project filter values must not contain empty elements")
+			return
+		}
+		statuses, err := core.NormalizeIssueListValues(r.URL.Query()["status"])
+		if err != nil {
+			writeError(w, http.StatusBadRequest, core.ErrValidationFailed, "status filter values must not contain empty elements")
+			return
+		}
+		issueTypes, err := core.NormalizeIssueListValues(r.URL.Query()["type"])
+		if err != nil {
+			writeError(w, http.StatusBadRequest, core.ErrValidationFailed, "type filter values must not contain empty elements")
+			return
+		}
+
 		params := core.IssueListParams{
-			Project:     r.URL.Query().Get("project"),
 			Repo:        r.URL.Query().Get("repo"),
 			Worktree:    r.URL.Query().Get("worktree"),
-			Status:      r.URL.Query().Get("status"),
 			Assignee:    r.URL.Query().Get("assignee"),
-			IssueType:   r.URL.Query().Get("type"),
 			ExternalKey: r.URL.Query().Get("external_key"),
+			Projects:    projects,
+			Statuses:    statuses,
+			IssueTypes:  issueTypes,
 		}
-		if params.IssueType != "" && !core.ValidIssueType(params.IssueType) {
-			writeError(w, http.StatusBadRequest, core.ErrValidationFailed,
-				"type must be one of: task, bug, feature, epic, chore")
-			return
+		for _, issueType := range params.IssueTypes {
+			if !core.ValidIssueType(issueType) {
+				writeError(w, http.StatusBadRequest, core.ErrValidationFailed,
+					"type must be one of: task, bug, feature, epic, chore")
+				return
+			}
 		}
 
 		issues, err := st.ListIssues(r.Context(), params)

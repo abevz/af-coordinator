@@ -499,7 +499,9 @@ Core commands:
 
 - `afctl issue create`
 - `afctl issue get`
-- `afctl issue list`
+- `afctl issue list` / `afctl ls` — query issues; project, type, and status
+  filters support comma-separated or repeated values with OR within each
+  filter and AND across filters
 - `afctl issue ready`
 - `afctl issue claim`
 - `afctl issue release`
@@ -517,8 +519,8 @@ Core commands:
 - `afctl artifact register`
 - `afctl issue link-artifact`
 
-The CLI should eventually support query-style filters, not only fixed list
-views.
+The CLI supports query-style list filters while keeping rendered views and JSON
+arrays stable for automation.
 
 ## Integration model
 

@@ -231,8 +231,24 @@ func (c *Client) GetIssue(ctx context.Context, issueID string) (core.Issue, *cor
 	return result.Issue, result.Lease, nil
 }
 
-// ListIssues sends a GET /v1/issues request with optional query params.
+// ListIssues sends a GET /v1/issues request with optional single-value query params.
+// It remains available for source compatibility; new callers with multi-value
+// filters should use ListIssuesWithFilters.
 func (c *Client) ListIssues(ctx context.Context, project, repo, worktree, status, assignee, issueType, externalKey string) ([]core.Issue, error) {
+	return c.ListIssuesWithFilters(ctx, core.IssueListParams{
+		Project:     project,
+		Repo:        repo,
+		Worktree:    worktree,
+		Status:      status,
+		Assignee:    assignee,
+		IssueType:   issueType,
+		ExternalKey: externalKey,
+	})
+}
+
+// ListIssuesWithFilters sends a GET /v1/issues request with optional filters.
+// Project, status, and issue-type slices are emitted as repeated query keys.
+func (c *Client) ListIssuesWithFilters(ctx context.Context, params core.IssueListParams) ([]core.Issue, error) {
 	path := "/v1/issues"
 	query := url.Values{}
 	appendParam := func(key, val string) {
@@ -240,13 +256,22 @@ func (c *Client) ListIssues(ctx context.Context, project, repo, worktree, status
 			query.Set(key, val)
 		}
 	}
-	appendParam("project", project)
-	appendParam("repo", repo)
-	appendParam("worktree", worktree)
-	appendParam("status", status)
-	appendParam("assignee", assignee)
-	appendParam("type", issueType)
-	appendParam("external_key", externalKey)
+	appendValues := func(key string, values []string, fallback string) {
+		if len(values) == 0 {
+			appendParam(key, fallback)
+			return
+		}
+		for _, value := range values {
+			query.Add(key, value)
+		}
+	}
+	appendValues("project", params.Projects, params.Project)
+	appendParam("repo", params.Repo)
+	appendParam("worktree", params.Worktree)
+	appendValues("status", params.Statuses, params.Status)
+	appendParam("assignee", params.Assignee)
+	appendValues("type", params.IssueTypes, params.IssueType)
+	appendParam("external_key", params.ExternalKey)
 	if len(query) > 0 {
 		path += "?" + query.Encode()
 	}

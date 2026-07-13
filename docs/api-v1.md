@@ -186,7 +186,13 @@ This is the compact route-to-implementation inventory for the current daemon.
 - `GET  /v1/issues/{issue_id}` — fetch one, including current lease if any
 - dependency payloads inside issue responses use explicit identity fields:
   `issue_id`, `issue_short_id`, `depends_on_id`, `depends_on_short_id`
-- `GET  /v1/issues?project=&repo=&worktree=&status=&assignee=&type=&external_key=` — query
+- `GET  /v1/issues?project=&repo=&worktree=&status=&assignee=&type=&external_key=` — query.
+  `project`, `status`, and `type` accept one value, comma-separated values,
+  or repeated keys (for example, `project=afc,aion` is equivalent to
+  `project=afc&project=aion`). Values within one of those filters are ORed;
+  supplied filters are ANDed. Surrounding whitespace is trimmed and empty CSV
+  elements return `validation_failed`; every `type` value must be a public
+  issue type.
 - `GET  /v1/events?since=&limit=&wait_ms=` — global cursor-paginated event
   stream ordered by `event.sequence`; `since` is an opaque `v2` cursor returned
   as `next_since`, `limit` defaults to 100 and is capped at 500, and `wait_ms`

@@ -187,8 +187,12 @@ afctl project list
 # Create an issue
 afctl issue create --project test --scope-kind project --title "My issue"
 
-# List issues
-afctl issue list --project test
+# List issues; project, type, and status accept CSV values
+afctl ls --project afc --type epic,chore --status open,in_progress
+afctl ls --project afc,aion --type epic,chore --status open,in_progress
+
+# Show the complete filter contract without contacting the daemon
+afctl ls --help
 
 # Claim and work on an issue
 afctl issue claim <issue-id> --holder my-agent --ttl 3600
@@ -202,6 +206,24 @@ afctl issue ready --project test
 afctl issue note add <issue-id> --author me --body "Working on this"
 afctl issue note list <issue-id>
 ```
+
+## Agent guidance sync
+
+`afctl protocol` is the canonical detailed agent workflow. `afctl init`
+updates only the managed coordinator block in one target `AGENTS.md` (the
+current directory by default, or `--path`), preserving all surrounding
+repository instructions. It is not a global fan-out command.
+
+After a protocol-summary template update, check each registered checkout first:
+
+```bash
+afctl init --dry-run
+afctl init
+```
+
+The generated block points agents back to `afctl protocol` and the canonical
+`docs/agent-protocol-v1.md`; it intentionally does not duplicate the full
+workflow in every repository.
 
 ## Data locations
 

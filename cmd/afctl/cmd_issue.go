@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/abevz/af-coordinator/internal/client"
@@ -209,72 +210,32 @@ func runIssueGet(ctx context.Context, c *client.Client, args []string) error {
 	return nil
 }
 
-func runIssueList(ctx context.Context, c *client.Client, args []string) error {
-	project := ""
-	repo := ""
-	worktree := ""
-	status := ""
-	assignee := ""
-	issueType := ""
-	externalKey := ""
-	limit := 0
-	offset := 0
+const issueListUsage = `Usage: afctl issue list [filters]
+       afctl ls [filters]
 
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--project":
-			if i+1 < len(args) {
-				project = args[i+1]
-				i++
-			}
-		case "--repo":
-			if i+1 < len(args) {
-				repo = args[i+1]
-				i++
-			}
-		case "--worktree":
-			if i+1 < len(args) {
-				worktree = args[i+1]
-				i++
-			}
-		case "--status":
-			if i+1 < len(args) {
-				status = args[i+1]
-				i++
-			}
-		case "--assignee":
-			if i+1 < len(args) {
-				assignee = args[i+1]
-				i++
-			}
-		case "--type":
-			if i+1 < len(args) {
-				issueType = args[i+1]
-				i++
-			}
-		case "--external-key":
-			if i+1 < len(args) {
-				externalKey = args[i+1]
-				i++
-			}
-		case "--limit":
-			if i+1 < len(args) {
-				fmt.Sscanf(args[i+1], "%d", &limit)
-				i++
-			}
-		case "--offset":
-			if i+1 < len(args) {
-				fmt.Sscanf(args[i+1], "%d", &offset)
-				i++
-			}
-		}
+Filters:
+  --project <key[,key...]>       Project key(s); values are ORed
+  --type <task|bug|feature|epic|chore[,..]>
+                                  Issue type(s); values are ORed
+  --status <status[,status...]>  Status value(s); values are ORed
+  --repo <repo>                  Repository ID or logical name
+  --worktree <worktree>          Worktree ID or path
+  --assignee <actor>             Exact assignee
+  --external-key <key>           Exact external key
+  --limit <n> --offset <n>       Reserved pagination parameters
+`
+
+func runIssueList(ctx context.Context, c *client.Client, args []string) error {
+	params, help, err := parseIssueListArgs(args)
+	if err != nil {
+		return err
+	}
+	if help {
+		fmt.Fprint(os.Stdout, issueListUsage)
+		return nil
 	}
 
-	// limit/offset are defined for future use; pass them through when the API supports pagination
-	_ = limit
-	_ = offset
-
-	issues, err := c.ListIssues(ctx, project, repo, worktree, status, assignee, issueType, externalKey)
+	issues, err := c.ListIssuesWithFilters(ctx, params)
 	if err != nil {
 		fail(err)
 	}
@@ -288,6 +249,65 @@ func runIssueList(ctx context.Context, c *client.Client, args []string) error {
 	}
 	printIssuesTable(issues)
 	return nil
+}
+
+func parseIssueListArgs(args []string) (core.IssueListParams, bool, error) {
+	var params core.IssueListParams
+	for i := 0; i < len(args); i++ {
+		flag := args[i]
+		if flag == "--help" || flag == "-h" {
+			return core.IssueListParams{}, true, nil
+		}
+		switch flag {
+		case "--project", "--status", "--type", "--repo", "--worktree", "--assignee", "--external-key", "--limit", "--offset":
+		default:
+			return core.IssueListParams{}, false, fmt.Errorf("error: unknown flag: %s", flag)
+		}
+
+		value, err := issueListFlagValue(args, i, flag)
+		if err != nil {
+			return core.IssueListParams{}, false, err
+		}
+
+		switch flag {
+		case "--project":
+			var values []string
+			values, err = core.NormalizeIssueListValues([]string{value})
+			params.Projects = append(params.Projects, values...)
+		case "--status":
+			var values []string
+			values, err = core.NormalizeIssueListValues([]string{value})
+			params.Statuses = append(params.Statuses, values...)
+		case "--type":
+			var values []string
+			values, err = core.NormalizeIssueListValues([]string{value})
+			params.IssueTypes = append(params.IssueTypes, values...)
+		case "--repo":
+			params.Repo = value
+		case "--worktree":
+			params.Worktree = value
+		case "--assignee":
+			params.Assignee = value
+		case "--external-key":
+			params.ExternalKey = value
+		case "--limit", "--offset":
+			if _, parseErr := strconv.Atoi(value); parseErr != nil {
+				return core.IssueListParams{}, false, fmt.Errorf("error: %s requires an integer", flag)
+			}
+		}
+		if err != nil {
+			return core.IssueListParams{}, false, fmt.Errorf("error: %s %w", flag, err)
+		}
+		i++
+	}
+	return params, false, nil
+}
+
+func issueListFlagValue(args []string, index int, flag string) (string, error) {
+	if index+1 >= len(args) || strings.HasPrefix(args[index+1], "--") {
+		return "", fmt.Errorf("error: %s requires a value", flag)
+	}
+	return args[index+1], nil
 }
 
 func runIssueReady(ctx context.Context, c *client.Client, args []string) error {

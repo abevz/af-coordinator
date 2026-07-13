@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -176,6 +177,41 @@ func TestListIssuesEncodesExternalKeyQuery(t *testing.T) {
 	issues, err := c.ListIssues(context.Background(), "afc", "", "", "", "", "", "gh://abevz/af-coordinator/issues/26")
 	if err != nil {
 		t.Fatalf("ListIssues() error = %v", err)
+	}
+	if len(issues) != 0 {
+		t.Fatalf("expected empty issue list, got %d", len(issues))
+	}
+}
+
+func TestListIssuesWithFiltersEncodesRepeatedQuery(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/issues" {
+			t.Fatalf("path = %q, want /v1/issues", r.URL.Path)
+		}
+		query := r.URL.Query()
+		if got, want := query["project"], []string{"afc", "aion"}; !reflect.DeepEqual(got, want) {
+			t.Fatalf("project = %q, want %q", got, want)
+		}
+		if got, want := query["type"], []string{"epic", "chore"}; !reflect.DeepEqual(got, want) {
+			t.Fatalf("type = %q, want %q", got, want)
+		}
+		if got, want := query["status"], []string{"open", "in_progress"}; !reflect.DeepEqual(got, want) {
+			t.Fatalf("status = %q, want %q", got, want)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"issues":[]}`))
+	}))
+	defer server.Close()
+
+	c := testClient(t, server)
+	issues, err := c.ListIssuesWithFilters(context.Background(), core.IssueListParams{
+		Projects:   []string{"afc", "aion"},
+		IssueTypes: []string{"epic", "chore"},
+		Statuses:   []string{"open", "in_progress"},
+	})
+	if err != nil {
+		t.Fatalf("ListIssuesWithFilters() error = %v", err)
 	}
 	if len(issues) != 0 {
 		t.Fatalf("expected empty issue list, got %d", len(issues))
