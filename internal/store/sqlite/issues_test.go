@@ -6,6 +6,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -484,6 +486,9 @@ func TestClaimIssue(t *testing.T) {
 	if claim.ExpiresAt == "" {
 		t.Error("expected non-empty expires_at")
 	}
+	if claim.AttemptID == "" {
+		t.Error("expected non-empty attempt_id")
+	}
 
 	// Verify issue status changed.
 	got, lease, err := GetIssue(context.Background(), db, issue.ID)
@@ -498,6 +503,119 @@ func TestClaimIssue(t *testing.T) {
 	}
 	if lease.Holder != "agent-1" {
 		t.Errorf("expected holder 'agent-1', got %q", lease.Holder)
+	}
+	if lease.AttemptID != claim.AttemptID || lease.SessionID != "" {
+		t.Fatalf("unexpected compatibility lease telemetry: %+v", lease)
+	}
+}
+
+func TestClaimIssueRecordsAttemptAndSessionWithoutLeakingToken(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+	if _, err := CreateProject(context.Background(), db, "test", "Test", ""); err != nil {
+		t.Fatal(err)
+	}
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{
+		ScopeKind: "project", Title: "Attempt telemetry",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	claim, err := ClaimIssueWithSession(context.Background(), db, issue.ID, "agent-1", 900, "session-42")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claim.AttemptID == "" {
+		t.Fatal("expected non-empty attempt_id")
+	}
+
+	_, lease, err := GetIssue(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lease == nil || lease.AttemptID != claim.AttemptID || lease.SessionID != "session-42" {
+		t.Fatalf("unexpected active lease: %+v", lease)
+	}
+
+	events, err := ListEvents(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	last := events[len(events)-1]
+	if last.EventType != "issue_claimed" {
+		t.Fatalf("event_type = %q, want issue_claimed", last.EventType)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(last.PayloadJSON), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload["attempt_id"] != claim.AttemptID || payload["session_id"] != "session-42" ||
+		payload["ttl_seconds"] != float64(900) || payload["expires_at"] != claim.ExpiresAt {
+		t.Fatalf("unexpected claim payload: %v", payload)
+	}
+	if strings.Contains(last.PayloadJSON, claim.LeaseToken) {
+		t.Fatalf("claim event leaked lease token: %s", last.PayloadJSON)
+	}
+}
+
+func TestLazyReclaimRecordsExpiredAttemptBeforeReplacement(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+	if _, err := CreateProject(context.Background(), db, "test", "Test", ""); err != nil {
+		t.Fatal(err)
+	}
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{
+		ScopeKind: "project", Title: "Expired attempt",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := ClaimIssueWithSession(context.Background(), db, issue.ID, "agent-1", 60, "session-old")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE leases SET expires_at = ? WHERE issue_id = ?`,
+		time.Now().UTC().Add(-time.Minute).Format(time.RFC3339), issue.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	second, err := ClaimIssueWithSession(context.Background(), db, issue.ID, "agent-2", 120, "session-new")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.AttemptID == first.AttemptID {
+		t.Fatalf("replacement reused attempt_id %q", second.AttemptID)
+	}
+
+	events, err := ListEvents(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expiredIndex, replacementIndex := -1, -1
+	for index, event := range events {
+		switch event.EventType {
+		case "lease_expired":
+			expiredIndex = index
+			var payload map[string]string
+			if err := json.Unmarshal([]byte(event.PayloadJSON), &payload); err != nil {
+				t.Fatal(err)
+			}
+			if payload["attempt_id"] != first.AttemptID || payload["end_reason"] != "expired" ||
+				payload["session_id"] != "session-old" {
+				t.Fatalf("unexpected expiry payload: %v", payload)
+			}
+			if strings.Contains(event.PayloadJSON, first.LeaseToken) {
+				t.Fatalf("expiry event leaked lease token: %s", event.PayloadJSON)
+			}
+		case "issue_claimed":
+			if strings.Contains(event.PayloadJSON, second.AttemptID) {
+				replacementIndex = index
+			}
+		}
+	}
+	if expiredIndex < 0 || replacementIndex < 0 || expiredIndex >= replacementIndex {
+		t.Fatalf("expected lease_expired before replacement issue_claimed, got indexes %d and %d", expiredIndex, replacementIndex)
 	}
 }
 
@@ -533,6 +651,65 @@ func TestClaimIssueAlreadyClaimed(t *testing.T) {
 	}
 	if apiErr.Code != core.ErrLeaseHeld {
 		t.Errorf("expected code %q, got %q", core.ErrLeaseHeld, apiErr.Code)
+	}
+}
+
+func TestConcurrentClaimsProduceOneAttemptWinner(t *testing.T) {
+	db := newTestDB(t)
+	db.SetMaxOpenConns(1)
+	if _, err := CreateProject(context.Background(), db, "test", "Test", ""); err != nil {
+		t.Fatal(err)
+	}
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{
+		ScopeKind: "project", Title: "Concurrent claim",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const claimants = 4
+	start := make(chan struct{})
+	errs := make(chan error, claimants)
+	var wg sync.WaitGroup
+	for index := 0; index < claimants; index++ {
+		wg.Add(1)
+		go func(index int) {
+			defer wg.Done()
+			<-start
+			_, err := ClaimIssueWithSession(context.Background(), db, issue.ID, "agent", 60, "session-concurrent")
+			errs <- err
+		}(index)
+	}
+	close(start)
+	wg.Wait()
+	close(errs)
+
+	succeeded := 0
+	for err := range errs {
+		if err == nil {
+			succeeded++
+			continue
+		}
+		var apiErr core.APIError
+		if !errors.As(err, &apiErr) || apiErr.Code != core.ErrLeaseHeld {
+			t.Fatalf("concurrent claim error = %v, want lease_held", err)
+		}
+	}
+	if succeeded != 1 {
+		t.Fatalf("successful concurrent claims = %d, want 1", succeeded)
+	}
+	events, err := ListEvents(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claims := 0
+	for _, event := range events {
+		if event.EventType == "issue_claimed" {
+			claims++
+		}
+	}
+	if claims != 1 {
+		t.Fatalf("issue_claimed events = %d, want 1", claims)
 	}
 }
 
@@ -616,6 +793,13 @@ func TestHeartbeatLease(t *testing.T) {
 	if newExpires == claim.ExpiresAt {
 		t.Error("expected new expires_at to differ from original")
 	}
+	events, err := ListEvents(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 2 || events[1].EventType != "issue_claimed" {
+		t.Fatalf("heartbeat appended an event: %+v", events)
+	}
 }
 
 func TestHeartbeatLeaseWrongToken(t *testing.T) {
@@ -677,6 +861,21 @@ func TestReleaseLease(t *testing.T) {
 	}
 	if lease != nil {
 		t.Error("expected lease to be nil after release")
+	}
+	events, err := ListEvents(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	last := events[len(events)-1]
+	var payload map[string]string
+	if err := json.Unmarshal([]byte(last.PayloadJSON), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if last.EventType != "issue_released" || payload["attempt_id"] != claim.AttemptID || payload["end_reason"] != "released" {
+		t.Fatalf("unexpected release event: type=%q payload=%v", last.EventType, payload)
+	}
+	if strings.Contains(last.PayloadJSON, claim.LeaseToken) {
+		t.Fatalf("release event leaked lease token: %s", last.PayloadJSON)
 	}
 }
 
@@ -1216,6 +1415,8 @@ func TestCloseIssue(t *testing.T) {
 	}
 	var payload struct {
 		Resolution string   `json:"resolution"`
+		AttemptID  string   `json:"attempt_id"`
+		EndReason  string   `json:"end_reason"`
 		FromStatus string   `json:"from_status"`
 		ToStatus   string   `json:"to_status"`
 		Branch     string   `json:"branch"`
@@ -1229,8 +1430,12 @@ func TestCloseIssue(t *testing.T) {
 	if payload.Resolution != "done" || payload.Branch != "codex/afc-27" ||
 		payload.PRURL != "https://github.com/abevz/af-coordinator/pull/27" ||
 		payload.CommitSHA != "ba6d011" || payload.FromStatus != "in_progress" ||
-		payload.ToStatus != "done" {
+		payload.ToStatus != "done" || payload.AttemptID != claim.AttemptID ||
+		payload.EndReason != "done" {
 		t.Fatalf("unexpected close payload: %+v", payload)
+	}
+	if strings.Contains(last.PayloadJSON, claim.LeaseToken) {
+		t.Fatalf("close event leaked lease token: %s", last.PayloadJSON)
 	}
 }
 

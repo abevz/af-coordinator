@@ -27,6 +27,7 @@ type fakeClient struct {
 	lastIssueID           string
 	lastHolder            string
 	lastTTL               int
+	lastSessionID         string
 	lastLeaseToken        string
 	lastNoteAuthor        string
 	lastNoteBody          string
@@ -46,6 +47,13 @@ func (f *fakeClient) ClaimIssue(_ context.Context, issueID, holder string, ttlSe
 	f.lastIssueID = issueID
 	f.lastHolder = holder
 	f.lastTTL = ttlSeconds
+	return f.claimResp, nil
+}
+func (f *fakeClient) ClaimIssueWithSession(_ context.Context, issueID, holder string, ttlSeconds int, sessionID string) (core.ClaimResponse, error) {
+	f.lastIssueID = issueID
+	f.lastHolder = holder
+	f.lastTTL = ttlSeconds
+	f.lastSessionID = sessionID
 	return f.claimResp, nil
 }
 func (f *fakeClient) HeartbeatLease(_ context.Context, issueID, leaseToken string, ttlSeconds int) (string, error) {
@@ -123,7 +131,7 @@ func TestToolCallClaimIssueUsesDefaultActor(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      json.RawMessage("3"),
 		Method:  "tools/call",
-		Params:  json.RawMessage(`{"name":"claim_issue","arguments":{"issue_id":"afc-28","ttl_seconds":900}}`),
+		Params:  json.RawMessage(`{"name":"claim_issue","arguments":{"issue_id":"afc-28","ttl_seconds":900,"session_id":"session-28"}}`),
 	})
 
 	if resp == nil || resp.Error != nil {
@@ -131,6 +139,9 @@ func TestToolCallClaimIssueUsesDefaultActor(t *testing.T) {
 	}
 	if fake.lastHolder != "codex-actor" {
 		t.Fatalf("holder = %q, want %q", fake.lastHolder, "codex-actor")
+	}
+	if fake.lastSessionID != "session-28" {
+		t.Fatalf("session_id = %q, want %q", fake.lastSessionID, "session-28")
 	}
 	callResult := resp.Result.(map[string]any)
 	if callResult["isError"] != nil {

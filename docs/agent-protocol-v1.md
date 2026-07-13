@@ -20,9 +20,12 @@ Every agent session follows this cycle:
 
 2. **Claim it**
    ```
-   afctl issue claim <short_id> --actor <name> --ttl 900
+   afctl issue claim <short_id> --actor <name> --ttl 900 [--session-id <non-secret-id>]
    ```
-   Exports `lease_token`. Keep it secret — it proves your right to mutate the issue.
+   Exports `lease_token` and `attempt_id`. Keep the token secret — it proves
+   your right to mutate the issue. The attempt ID is safe lifecycle
+   correlation; an optional session ID must also be non-secret and never
+   changes the acting identity.
 
    Default TTL is 3600s. Use `--ttl 900` for shorter leases.
 

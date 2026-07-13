@@ -262,7 +262,13 @@ func (c *Client) ListIssues(ctx context.Context, project, repo, worktree, status
 
 // ClaimIssue sends a POST /v1/issues/{issueID}/claim request.
 func (c *Client) ClaimIssue(ctx context.Context, issueID, holder string, ttlSeconds int) (core.ClaimResponse, error) {
-	body := core.ClaimRequest{Holder: holder, TTLSeconds: ttlSeconds}
+	return c.ClaimIssueWithSession(ctx, issueID, holder, ttlSeconds, "")
+}
+
+// ClaimIssueWithSession sends a claim with optional non-secret session
+// correlation metadata. Session identity never replaces the lease holder.
+func (c *Client) ClaimIssueWithSession(ctx context.Context, issueID, holder string, ttlSeconds int, sessionID string) (core.ClaimResponse, error) {
+	body := core.ClaimRequest{Holder: holder, TTLSeconds: ttlSeconds, SessionID: sessionID}
 	var result core.ClaimResponse
 	if err := c.doJSON(ctx, http.MethodPost, "/v1/issues/"+issueID+"/claim", body, &result); err != nil {
 		return core.ClaimResponse{}, err

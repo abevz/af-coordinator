@@ -154,7 +154,7 @@ func handleClaimIssue(st store.CoordinatorStore, logger *slog.Logger) http.Handl
 			req.TTLSeconds = 3600
 		}
 
-		resp, err := st.ClaimIssue(r.Context(), issueID, req.Holder, req.TTLSeconds)
+		resp, err := st.ClaimIssueWithSession(r.Context(), issueID, req.Holder, req.TTLSeconds, req.SessionID)
 		if err != nil {
 			if apiErr, ok := errAsAPIError(err); ok {
 				switch apiErr.Code {

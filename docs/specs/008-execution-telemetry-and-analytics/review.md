@@ -1,6 +1,6 @@
 # Review
 
-Status: in progress; `afc-49` and `afc-50` completed.
+Status: in progress; `afc-49` through `afc-51` completed.
 
 ## Planning Review
 
@@ -26,8 +26,8 @@ Status: in progress; `afc-49` and `afc-50` completed.
 - The first report should be a local derived read model, not a new telemetry
   stack or mutable analytics store.
 
-There are no unresolved design blockers for starting `afc-49` or `afc-50` once
-the operator chooses this track.
+There are no unresolved design blockers for starting `afc-49` through `afc-51`
+once the operator chooses this track.
 
 ## `afc-49` — Preserve Causal Event Order
 
@@ -84,9 +84,40 @@ the operator chooses this track.
   non-mutating installed-binary operator-route probe returned typed
   `not_found` as expected.
 
+## `afc-51` — Record Lease Attempts And Outcomes
+
+### What shipped
+
+- Migration `0006_lease_attempts.sql` adds `attempt_id` and `session_id` to
+  the current lease. Existing live leases are deterministically backfilled as
+  `legacy-<issue-id>` before a unique attempt index is created.
+- Each successful claim generates and returns a non-secret `attempt_id`; callers
+  may provide an optional non-secret `session_id` without altering actor
+  ownership semantics. API, client, CLI, MCP, schema, and protocol surfaces
+  expose the compatible optional session field.
+- Claim, release, ordinary close, and lazy expiry/reclaim events carry attempt
+  outcome evidence. Lazy reclaim records `lease_expired` for the old attempt
+  before appending the replacement claim; heartbeats do not append events.
+- Event payloads deliberately exclude lease tokens. The active lease exposes
+  attempt/session identifiers only, never the secret token.
+
+### What was verified
+
+- Store, API, client, MCP, CLI, migration, and compatibility regressions cover
+  claim/release/close/expiry/reclaim/heartbeat behavior, omitted session IDs,
+  and absence of lease tokens from public evidence.
+- Concurrent claim regression verifies exactly one winner and one durable claim
+  event.
+- `go test ./...`, `go build -buildvcs=false ./...`, `make test` (race), and
+  `git diff --check` pass; the two protocol copies remain byte-identical.
+- Scratch-daemon flow verified attempt/session persistence, close and release
+  outcomes, no-event heartbeat, and ordered lazy reclaim. The installed daemon
+  was rebuilt and restarted successfully; a read-only live check confirmed
+  migration backfill and no public lease token.
+
 ## Implementation Review Checklist
 
-When the deferred tasks are completed, update this file with:
+When the remaining deferred tasks are completed, update this file with:
 
 - migration and compatibility results;
 - focused regression-test evidence per task;

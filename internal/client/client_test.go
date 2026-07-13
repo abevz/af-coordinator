@@ -182,6 +182,32 @@ func TestListIssuesEncodesExternalKeyQuery(t *testing.T) {
 	}
 }
 
+func TestClaimIssueWithSessionSendsCorrelationAndReturnsAttempt(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/issues/i1/claim" {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		var req core.ClaimRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatal(err)
+		}
+		if req.Holder != "agent" || req.TTLSeconds != 900 || req.SessionID != "session-1" {
+			t.Fatalf("unexpected claim request: %+v", req)
+		}
+		_, _ = w.Write([]byte(`{"lease_token":"secret","expires_at":"2026-07-13T21:00:00Z","attempt_id":"attempt-1"}`))
+	}))
+	defer server.Close()
+
+	claim, err := testClient(t, server).ClaimIssueWithSession(context.Background(), "i1", "agent", 900, "session-1")
+	if err != nil {
+		t.Fatalf("ClaimIssueWithSession() error = %v", err)
+	}
+	if claim.AttemptID != "attempt-1" {
+		t.Fatalf("attempt_id = %q", claim.AttemptID)
+	}
+}
+
 func TestCloseIssueReturnsStructuredResult(t *testing.T) {
 	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

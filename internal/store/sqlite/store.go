@@ -111,6 +111,10 @@ func (s *Store) ClaimIssue(ctx context.Context, issueID, holder string, ttlSecon
 	return ClaimIssue(ctx, s.db, issueID, holder, ttlSeconds)
 }
 
+func (s *Store) ClaimIssueWithSession(ctx context.Context, issueID, holder string, ttlSeconds int, sessionID string) (core.ClaimResponse, error) {
+	return ClaimIssueWithSession(ctx, s.db, issueID, holder, ttlSeconds, sessionID)
+}
+
 func (s *Store) HeartbeatLease(ctx context.Context, issueID, leaseToken string, ttlSeconds int) (string, error) {
 	return HeartbeatLease(ctx, s.db, issueID, leaseToken, ttlSeconds)
 }

@@ -305,6 +305,12 @@ issue is claimed if and only if it has an unexpired lease. This keeps one
 source of truth and removes the possibility of a status stuck at claimed
 after its lease died.
 
+Every successful claim also receives a daemon-generated, non-secret
+`attempt_id`. The live lease holds only the current attempt; the append-only
+event stream preserves claim, release, close, and lazy-expiry outcomes. An
+optional non-secret `session_id` is caller correlation data, separate from the
+holder identity and lease token.
+
 While an unexpired lease exists, only its holder may mutate the issue.
 
 ### Lease expiry
@@ -313,8 +319,9 @@ Expiry is lazy: any lease with `expires_at` in the past is treated as
 absent by every check (claim, mutation, ready). No background process is
 required for correctness.
 
-An optional background sweeper may delete expired lease rows and append a
-single `lease_expired` event per lease for the activity timeline.
+Lazy reclaim records one `lease_expired` event for the old attempt before the
+replacement `issue_claimed` event. An optional background sweeper may use the
+same event contract when it cleans up expired rows.
 
 ### Heartbeats
 

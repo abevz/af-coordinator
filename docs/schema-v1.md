@@ -228,7 +228,9 @@ create table dependencies (
 
 An expired lease (`expires_at` in the past) is treated as absent everywhere.
 Heartbeats update `expires_at` and `updated_at` only; they do not create
-events.
+events. `attempt_id` is a daemon-generated, non-secret identity for the
+current lease episode. `session_id` is optional caller-supplied, non-secret
+correlation metadata; it never replaces the lease holder or token.
 
 ```sql
 create table leases (
@@ -236,10 +238,16 @@ create table leases (
   holder text not null,
   lease_token text not null unique,
   expires_at text not null,
+  attempt_id text not null,
+  session_id text not null default '',
   created_at text not null,
   updated_at text not null
 );
 ```
+
+Migration `0006_lease_attempts.sql` assigns `legacy-<issue_id>` attempt IDs to
+leases that existed before attempt telemetry, so later release or close events
+remain attributable without fabricating a token.
 
 ### notes
 
@@ -314,6 +322,9 @@ create index idx_dependencies_depends_on
 
 create index idx_leases_expires_at
   on leases(expires_at);
+
+create unique index idx_leases_attempt_id
+  on leases(attempt_id);
 
 create index idx_events_issue_sequence
   on events(issue_id, sequence);

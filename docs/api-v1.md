@@ -219,14 +219,18 @@ This is the compact route-to-implementation inventory for the current daemon.
 
 ## Leases
 
-- `POST /v1/issues/{issue_id}/claim` — body: `holder`, `ttl_seconds`;
-  returns `lease_token`, `expires_at`; fails `lease_held` if an unexpired
-  lease exists; moves the issue `open -> in_progress`; epics are rejected
-  with `validation_failed`
+- `POST /v1/issues/{issue_id}/claim` — body: `holder`, `ttl_seconds`, and
+  optional non-secret `session_id`; returns `lease_token`, `expires_at`, and
+  daemon-generated `attempt_id`. The attempt ID correlates lifecycle events;
+  the lease token remains secret and never appears in events or issue reads.
+  Claim fails `lease_held` if an unexpired lease exists, moves the issue
+  `open -> in_progress`, and rejects epics with `validation_failed`.
 - `POST /v1/issues/{issue_id}/heartbeat` — body: `lease_token`,
   `ttl_seconds`; extends `expires_at`; appends no event
 - `POST /v1/issues/{issue_id}/release` — body: `lease_token`; deletes the
-  lease, moves `in_progress -> open` unless left `blocked`
+  lease, moves `in_progress -> open` unless left `blocked`, and records the
+  attempt outcome. Lazy replacement of an expired lease emits `lease_expired`
+  before the next `issue_claimed` event.
 
 ## Notes, links, dependencies, events
 

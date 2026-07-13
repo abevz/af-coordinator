@@ -90,6 +90,8 @@ type IssueLease struct {
 	Holder     string `json:"holder"`
 	LeaseToken string `json:"-"`
 	ExpiresAt  string `json:"expires_at"`
+	AttemptID  string `json:"attempt_id"`
+	SessionID  string `json:"session_id,omitempty"`
 }
 
 // CreateIssueRequest is the JSON body for POST /v1/issues.
@@ -122,12 +124,14 @@ type IssueListParams struct {
 type ClaimRequest struct {
 	Holder     string `json:"holder"`
 	TTLSeconds int    `json:"ttl_seconds"`
+	SessionID  string `json:"session_id,omitempty"`
 }
 
 // ClaimResponse is returned on successful claim.
 type ClaimResponse struct {
 	LeaseToken string `json:"lease_token"`
 	ExpiresAt  string `json:"expires_at"`
+	AttemptID  string `json:"attempt_id"`
 }
 
 // HeartbeatRequest is the JSON body for POST /v1/issues/{issue_id}/heartbeat.
