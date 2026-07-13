@@ -65,12 +65,22 @@ func Migrate(ctx context.Context, db *sql.DB, migrationsFS fs.FS) error {
 			return fmt.Errorf("read migration %s: %w", name, err)
 		}
 
-		if _, err := db.ExecContext(ctx, string(data)); err != nil {
+		tx, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			return fmt.Errorf("begin migration %s: %w", name, err)
+		}
+
+		if _, err := tx.ExecContext(ctx, string(data)); err != nil {
+			_ = tx.Rollback()
 			return fmt.Errorf("apply migration %s: %w", name, err)
 		}
 
-		if _, err := db.ExecContext(ctx, "INSERT INTO _migrations (name, applied_at) VALUES (?, ?)", name, time.Now().UTC().Format(time.RFC3339)); err != nil {
+		if _, err := tx.ExecContext(ctx, "INSERT INTO _migrations (name, applied_at) VALUES (?, ?)", name, time.Now().UTC().Format(time.RFC3339)); err != nil {
+			_ = tx.Rollback()
 			return fmt.Errorf("record migration %s: %w", name, err)
+		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("commit migration %s: %w", name, err)
 		}
 	}
 

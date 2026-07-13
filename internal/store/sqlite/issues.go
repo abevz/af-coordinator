@@ -1201,7 +1201,7 @@ func ListEvents(ctx context.Context, db *sql.DB, issueID string) ([]core.Event, 
 	}
 
 	rows, err := db.QueryContext(ctx,
-		`SELECT id, issue_id, actor, event_type, payload_json, created_at FROM events WHERE issue_id = ? ORDER BY created_at ASC`,
+		`SELECT sequence, id, issue_id, actor, event_type, payload_json, created_at FROM events WHERE issue_id = ? ORDER BY sequence ASC`,
 		issueID,
 	)
 	if err != nil {
@@ -1213,7 +1213,7 @@ func ListEvents(ctx context.Context, db *sql.DB, issueID string) ([]core.Event, 
 	for rows.Next() {
 		var e core.Event
 		var issueID sql.NullString
-		if err := rows.Scan(&e.ID, &issueID, &e.Actor, &e.EventType, &e.PayloadJSON, &e.CreatedAt); err != nil {
+		if err := rows.Scan(&e.Sequence, &e.ID, &issueID, &e.Actor, &e.EventType, &e.PayloadJSON, &e.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scan event: %w", err)
 		}
 		if issueID.Valid {
@@ -1231,18 +1231,22 @@ func ListEvents(ctx context.Context, db *sql.DB, issueID string) ([]core.Event, 
 }
 
 type eventCursor struct {
+	Sequence int64 `json:"sequence"`
+}
+
+type legacyEventCursor struct {
 	ID        string `json:"id"`
 	CreatedAt string `json:"created_at"`
 }
 
 // ListGlobalEvents returns a global cursor-paginated event stream ordered by
-// created_at and ID.
+// daemon-assigned sequence.
 func ListGlobalEvents(ctx context.Context, db *sql.DB, since string, limit int) (core.EventPage, error) {
 	if limit <= 0 {
 		limit = 100
 	}
 
-	cursor, err := decodeEventCursor(since)
+	cursor, err := decodeEventCursor(ctx, db, since)
 	if err != nil {
 		return core.EventPage{}, err
 	}
@@ -1252,20 +1256,20 @@ func ListGlobalEvents(ctx context.Context, db *sql.DB, since string, limit int) 
 	)
 	if cursor == nil {
 		rows, err = db.QueryContext(ctx,
-			`SELECT id, issue_id, actor, event_type, payload_json, created_at
+			`SELECT sequence, id, issue_id, actor, event_type, payload_json, created_at
 			 FROM events
-			 ORDER BY created_at ASC, id ASC
+			 ORDER BY sequence ASC
 			 LIMIT ?`,
 			limit,
 		)
 	} else {
 		rows, err = db.QueryContext(ctx,
-			`SELECT id, issue_id, actor, event_type, payload_json, created_at
+			`SELECT sequence, id, issue_id, actor, event_type, payload_json, created_at
 			 FROM events
-			 WHERE created_at > ? OR (created_at = ? AND id > ?)
-			 ORDER BY created_at ASC, id ASC
+			 WHERE sequence > ?
+			 ORDER BY sequence ASC
 			 LIMIT ?`,
-			cursor.CreatedAt, cursor.CreatedAt, cursor.ID, limit,
+			cursor.Sequence, limit,
 		)
 	}
 	if err != nil {
@@ -1277,7 +1281,7 @@ func ListGlobalEvents(ctx context.Context, db *sql.DB, since string, limit int) 
 	for rows.Next() {
 		var e core.Event
 		var issueID sql.NullString
-		if err := rows.Scan(&e.ID, &issueID, &e.Actor, &e.EventType, &e.PayloadJSON, &e.CreatedAt); err != nil {
+		if err := rows.Scan(&e.Sequence, &e.ID, &issueID, &e.Actor, &e.EventType, &e.PayloadJSON, &e.CreatedAt); err != nil {
 			return core.EventPage{}, fmt.Errorf("scan global event: %w", err)
 		}
 		if issueID.Valid {
@@ -1298,7 +1302,7 @@ func ListGlobalEvents(ctx context.Context, db *sql.DB, since string, limit int) 
 	}
 	if len(page.Events) > 0 {
 		last := page.Events[len(page.Events)-1]
-		next, err := encodeEventCursor(eventCursor{ID: last.ID, CreatedAt: last.CreatedAt})
+		next, err := encodeEventCursor(eventCursor{Sequence: last.Sequence})
 		if err != nil {
 			return core.EventPage{}, err
 		}
@@ -1312,31 +1316,69 @@ func encodeEventCursor(cursor eventCursor) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("marshal event cursor: %w", err)
 	}
-	return "v1." + base64.RawURLEncoding.EncodeToString(data), nil
+	return "v2." + base64.RawURLEncoding.EncodeToString(data), nil
 }
 
-func decodeEventCursor(since string) (*eventCursor, error) {
+func decodeEventCursor(ctx context.Context, db *sql.DB, since string) (*eventCursor, error) {
 	if since == "" {
 		return nil, nil
 	}
-	if !strings.HasPrefix(since, "v1.") {
-		return nil, core.NewAPIError(core.ErrValidationFailed, "since cursor must start with v1.")
+
+	decode := func(encoded string, destination any) error {
+		raw, err := base64.RawURLEncoding.DecodeString(encoded)
+		if err != nil {
+			return core.NewAPIError(core.ErrValidationFailed, "since cursor is invalid")
+		}
+		if err := json.Unmarshal(raw, destination); err != nil {
+			return core.NewAPIError(core.ErrValidationFailed, "since cursor is invalid")
+		}
+		return nil
 	}
-	raw, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(since, "v1."))
-	if err != nil {
-		return nil, core.NewAPIError(core.ErrValidationFailed, "since cursor is invalid")
+
+	switch {
+	case strings.HasPrefix(since, "v2."):
+		var cursor eventCursor
+		if err := decode(strings.TrimPrefix(since, "v2."), &cursor); err != nil {
+			return nil, err
+		}
+		if cursor.Sequence <= 0 {
+			return nil, core.NewAPIError(core.ErrValidationFailed, "since cursor is invalid")
+		}
+		var exists int
+		err := db.QueryRowContext(ctx, `SELECT 1 FROM events WHERE sequence = ?`, cursor.Sequence).Scan(&exists)
+		if err == sql.ErrNoRows {
+			return nil, core.NewAPIError(core.ErrValidationFailed, "since cursor does not reference an event")
+		}
+		if err != nil {
+			return nil, fmt.Errorf("resolve event cursor: %w", err)
+		}
+		return &cursor, nil
+	case strings.HasPrefix(since, "v1."):
+		var legacy legacyEventCursor
+		if err := decode(strings.TrimPrefix(since, "v1."), &legacy); err != nil {
+			return nil, err
+		}
+		if legacy.ID == "" || legacy.CreatedAt == "" {
+			return nil, core.NewAPIError(core.ErrValidationFailed, "since cursor is invalid")
+		}
+		if _, err := time.Parse(time.RFC3339, legacy.CreatedAt); err != nil {
+			return nil, core.NewAPIError(core.ErrValidationFailed, "since cursor is invalid")
+		}
+		var sequence int64
+		err := db.QueryRowContext(ctx,
+			`SELECT sequence FROM events WHERE id = ? AND created_at = ?`,
+			legacy.ID, legacy.CreatedAt,
+		).Scan(&sequence)
+		if err == sql.ErrNoRows {
+			return nil, core.NewAPIError(core.ErrValidationFailed, "since cursor does not reference an event")
+		}
+		if err != nil {
+			return nil, fmt.Errorf("resolve legacy event cursor: %w", err)
+		}
+		return &eventCursor{Sequence: sequence}, nil
+	default:
+		return nil, core.NewAPIError(core.ErrValidationFailed, "since cursor must start with v2. or v1.")
 	}
-	var cursor eventCursor
-	if err := json.Unmarshal(raw, &cursor); err != nil {
-		return nil, core.NewAPIError(core.ErrValidationFailed, "since cursor is invalid")
-	}
-	if cursor.ID == "" || cursor.CreatedAt == "" {
-		return nil, core.NewAPIError(core.ErrValidationFailed, "since cursor is invalid")
-	}
-	if _, err := time.Parse(time.RFC3339, cursor.CreatedAt); err != nil {
-		return nil, core.NewAPIError(core.ErrValidationFailed, "since cursor is invalid")
-	}
-	return &cursor, nil
 }
 
 // isSQLiteConstraintError checks if an error is a SQLite constraint violation.

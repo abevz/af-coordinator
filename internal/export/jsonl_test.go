@@ -104,6 +104,52 @@ func TestWriteJSONL(t *testing.T) {
 	if sawEvent.EventType != "issue_created" || sawEvent.PayloadJSON != `{"title":"Ship export"}` {
 		t.Fatalf("unexpected event payload: %+v", sawEvent)
 	}
+	if sawEvent.Sequence == 0 {
+		t.Fatalf("exported event sequence = 0, want daemon-assigned sequence")
+	}
+}
+
+func TestWriteJSONLOrdersEventsBySequence(t *testing.T) {
+	db := newExportTestDB(t)
+	const createdAt = "2026-07-13T20:00:00Z"
+	if _, err := db.Exec(
+		`INSERT INTO events (id, issue_id, actor, event_type, payload_json, created_at) VALUES
+		 ('event-z', NULL, 'agent', 'first_inserted', '{}', ?),
+		 ('event-a', NULL, 'agent', 'second_inserted', '{}', ?)`,
+		createdAt, createdAt,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	var buf bytes.Buffer
+	if err := coordinatorexport.WriteJSONL(context.Background(), sqlite.NewStore(db), &buf); err != nil {
+		t.Fatalf("WriteJSONL() error = %v", err)
+	}
+
+	var events []core.Event
+	for _, line := range strings.Split(strings.TrimSpace(buf.String()), "\n") {
+		var record struct {
+			Type    string          `json:"type"`
+			Payload json.RawMessage `json:"payload"`
+		}
+		if err := json.Unmarshal([]byte(line), &record); err != nil {
+			t.Fatal(err)
+		}
+		if record.Type != "event" {
+			continue
+		}
+		var event core.Event
+		if err := json.Unmarshal(record.Payload, &event); err != nil {
+			t.Fatal(err)
+		}
+		events = append(events, event)
+	}
+	if len(events) != 2 {
+		t.Fatalf("event count = %d, want 2", len(events))
+	}
+	if events[0].ID != "event-z" || events[1].ID != "event-a" || events[0].Sequence >= events[1].Sequence {
+		t.Fatalf("events not sequence ordered: %#v", events)
+	}
 }
 
 func newExportTestDB(t *testing.T) *sql.DB {

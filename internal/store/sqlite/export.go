@@ -141,9 +141,9 @@ func (s *Store) ListAllNotes(ctx context.Context) ([]core.Note, error) {
 
 func (s *Store) ListAllEvents(ctx context.Context) ([]core.Event, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, issue_id, actor, event_type, payload_json, created_at
+		`SELECT sequence, id, issue_id, actor, event_type, payload_json, created_at
 		 FROM events
-		 ORDER BY created_at ASC, id ASC`,
+		 ORDER BY sequence ASC`,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("query events: %w", err)
@@ -155,6 +155,7 @@ func (s *Store) ListAllEvents(ctx context.Context) ([]core.Event, error) {
 		var event core.Event
 		var issueID sql.NullString
 		if err := rows.Scan(
+			&event.Sequence,
 			&event.ID,
 			&issueID,
 			&event.Actor,

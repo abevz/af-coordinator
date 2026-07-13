@@ -7,6 +7,7 @@ import (
 	"github.com/abevz/af-coordinator/migrations"
 
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -1675,6 +1676,54 @@ func TestWatchEventsInvalidCursor(t *testing.T) {
 	}
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("expected 400 Bad Request, got %d", resp.StatusCode)
+	}
+}
+
+func TestWatchEventsAcceptsLegacyCursor(t *testing.T) {
+	server, db := newTestServer(t)
+
+	const createdAt = "2026-07-13T20:00:00Z"
+	if _, err := db.Exec(
+		`INSERT INTO projects (id, key, name, description, next_issue_seq, created_at, updated_at)
+		 VALUES ('proj-1', 'test', 'Test', '', 1, ?, ?)`,
+		createdAt, createdAt,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(
+		`INSERT INTO issues (id, short_id, project_id, scope_kind, title, description, status, priority, assignee, version, created_at, updated_at)
+		 VALUES ('issue-1', 'test-1', 'proj-1', 'project', 'Eventful', '', 'open', 3, '', 1, ?, ?)`,
+		createdAt, createdAt,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(
+		`INSERT INTO events (id, issue_id, actor, event_type, payload_json, created_at) VALUES
+		 ('evt-1', 'issue-1', 'system', 'first_inserted', '{}', ?),
+		 ('evt-2', 'issue-1', 'system', 'second_inserted', '{}', ?)`,
+		createdAt, createdAt,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	legacy, err := json.Marshal(map[string]string{"id": "evt-1", "created_at": createdAt})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.Get(server.URL + "/v1/events?since=v1." + base64.RawURLEncoding.EncodeToString(legacy))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		t.Fatalf("expected 200 for legacy cursor, got %d", resp.StatusCode)
+	}
+	result := decodeJSON[core.EventPage](t, resp)
+	if len(result.Events) != 1 || result.Events[0].ID != "evt-2" {
+		t.Fatalf("legacy cursor events = %#v", result.Events)
+	}
+	if !strings.HasPrefix(result.NextSince, "v2.") {
+		t.Fatalf("next_since = %q, want v2 cursor", result.NextSince)
 	}
 }
 

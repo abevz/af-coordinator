@@ -22,6 +22,7 @@ type CreateNoteRequest struct {
 
 // Event represents an event in the issue activity timeline.
 type Event struct {
+	Sequence    int64  `json:"sequence"`
 	ID          string `json:"id"`
 	IssueID     string `json:"issue_id,omitempty"`
 	Actor       string `json:"actor"`

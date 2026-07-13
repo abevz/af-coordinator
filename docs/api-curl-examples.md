@@ -248,4 +248,9 @@ Example lines:
 {"type":"issue","payload":{"id":"...","short_id":"afc-29","title":"JSONL export"}}
 {"type":"dependency","payload":{"issue_id":"...","issue_short_id":"afc-29","depends_on_id":"...","depends_on_short_id":"afc-24","kind":"parent","created_at":"2026-07-08T16:07:00Z"}}
 {"type":"reference","payload":{"issue_id":"...","issue_short_id":"afc-29","artifact_id":"...","artifact_path":"docs/specs/005-aion-forge-integration-readiness/tasks.md","artifact_kind":"tasks","relation":"implements","link_created_at":"2026-07-08T16:08:00Z"}}
+{"type":"event","payload":{"sequence":42,"id":"...","event_type":"issue_closed","created_at":"2026-07-08T16:08:01Z"}}
 ```
+
+Event records are emitted in ascending `sequence`, not timestamp or UUID
+order. Legacy rows before `event_ordering_enabled` have deterministic ordering
+only; tied timestamps do not imply causal order.

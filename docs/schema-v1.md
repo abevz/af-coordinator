@@ -255,13 +255,16 @@ create table notes (
 
 ### events
 
-The event log is append-only and must survive its subject. The FK uses
-`on delete set null` so history is never cascaded away; `payload_json`
-should carry enough context (issue short id, title) to stay meaningful.
+The event log is append-only and must survive its subject. `sequence` is the
+daemon-assigned canonical causal order; `id` remains the stable public UUID.
+The FK uses `on delete set null` so history is never cascaded away;
+`payload_json` should carry enough context (issue short id, title) to stay
+meaningful.
 
 ```sql
 create table events (
-  id text primary key,
+  sequence integer primary key autoincrement,
+  id text not null unique,
   issue_id text references issues(id) on delete set null,
   actor text not null,
   event_type text not null,
@@ -312,12 +315,21 @@ create index idx_dependencies_depends_on
 create index idx_leases_expires_at
   on leases(expires_at);
 
-create index idx_events_issue_created_at
-  on events(issue_id, created_at);
+create index idx_events_issue_sequence
+  on events(issue_id, sequence);
+
+create index idx_events_sequence
+  on events(sequence);
 
 create index idx_worktrees_repository_path
   on worktrees(repository_id, absolute_path);
 ```
+
+Migration `0005_event_sequence.sql` copies legacy rows in deterministic
+`(created_at, id)` order, which is not retrospective causal evidence. If
+legacy rows exist, it then appends the `event_ordering_enabled` system event;
+its sequence is the exact-order cutoff. A fresh database has no legacy rows,
+so its cutoff is sequence `0`.
 
 ## Ready query shape
 
