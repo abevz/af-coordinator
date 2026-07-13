@@ -114,13 +114,16 @@ curl -s -X PATCH --unix-socket $AFC_SOCK \
 ## 4. The Agent Lifecycle (Claim, Heartbeat, Close)
 
 ### Claim an issue
-Claiming transitions the issue to `in_progress` and returns a secret `lease_token`.
+Claiming transitions the issue to `in_progress`, returns a secret `lease_token`,
+and returns a safe `attempt_id` for correlating lifecycle events. `session_id`
+is optional non-secret caller correlation metadata.
 ```bash
 curl -s -X POST --unix-socket $AFC_SOCK \
   -H "Content-Type: application/json" \
   -d '{
     "holder": "'"$AFC_ACTOR"'",
-    "ttl_seconds": 3600
+    "ttl_seconds": 3600,
+    "session_id": "codex-session-20260713"
   }' \
   http://localhost/v1/issues/afc-15/claim | jq
 ```

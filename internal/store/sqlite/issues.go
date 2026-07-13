@@ -319,8 +319,15 @@ func ListReadyIssues(ctx context.Context, db *sql.DB, projectID, repoID string) 
 	return issues, nil
 }
 
-// ClaimIssue acquires a lease on an issue, moving it from 'open' to 'in_progress'.
+// ClaimIssue acquires a lease without session correlation for compatibility.
 func ClaimIssue(ctx context.Context, db *sql.DB, issueID, holder string, ttlSeconds int) (core.ClaimResponse, error) {
+	return ClaimIssueWithSession(ctx, db, issueID, holder, ttlSeconds, "")
+}
+
+// ClaimIssueWithSession acquires a lease and creates the durable attempt
+// identity used by lifecycle events. Session IDs are optional caller supplied
+// correlation data; they do not affect holder or lease authorization.
+func ClaimIssueWithSession(ctx context.Context, db *sql.DB, issueID, holder string, ttlSeconds int, sessionID string) (core.ClaimResponse, error) {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return core.ClaimResponse{}, fmt.Errorf("begin tx: %w", err)
@@ -345,12 +352,14 @@ func ClaimIssue(ctx context.Context, db *sql.DB, issueID, holder string, ttlSeco
 			"issue cannot be claimed from status: "+status)
 	}
 
+	now := time.Now().UTC()
+	nowStr := now.Format(time.RFC3339)
+
 	// Check no unexpired lease exists.
 	var leaseCount int
-	nowRFC := time.Now().UTC().Format(time.RFC3339)
 	err = tx.QueryRowContext(ctx,
 		`SELECT count(*) FROM leases WHERE issue_id = ? AND expires_at > ?`,
-		issueID, nowRFC,
+		issueID, nowStr,
 	).Scan(&leaseCount)
 	if err != nil {
 		return core.ClaimResponse{}, fmt.Errorf("check lease: %w", err)
@@ -360,21 +369,45 @@ func ClaimIssue(ctx context.Context, db *sql.DB, issueID, holder string, ttlSeco
 			"issue is already claimed: "+issueID)
 	}
 
-	// Delete any expired lease first to avoid constraint violation on insert.
+	// A row that did not pass the active-lease query is an expired attempt.
+	// Record its terminal outcome before replacing it, so the event stream
+	// remains the complete attempt history.
+	var expiredAttemptID, expiredSessionID, expiredAt string
+	err = tx.QueryRowContext(ctx,
+		`SELECT attempt_id, session_id, expires_at FROM leases WHERE issue_id = ? AND expires_at <= ?`,
+		issueID, nowStr,
+	).Scan(&expiredAttemptID, &expiredSessionID, &expiredAt)
+	if err != nil && err != sql.ErrNoRows {
+		return core.ClaimResponse{}, fmt.Errorf("select expired lease: %w", err)
+	}
+	if err == nil {
+		payload := map[string]any{
+			"attempt_id": expiredAttemptID,
+			"end_reason": "expired",
+			"expired_at": expiredAt,
+			"session_id": expiredSessionID,
+		}
+		if err := insertEvent(ctx, tx, issueID, "system", "lease_expired", payload, nowStr); err != nil {
+			return core.ClaimResponse{}, err
+		}
+	}
+
+	// Delete the expired attempt before inserting its replacement.
 	_, err = tx.ExecContext(ctx, `DELETE FROM leases WHERE issue_id = ?`, issueID)
 	if err != nil {
 		return core.ClaimResponse{}, fmt.Errorf("delete expired lease: %w", err)
 	}
 
-	// Generate lease.
-	now := time.Now().UTC()
+	// Generate lease and a separate non-secret attempt ID. The lease token is
+	// intentionally never written to events or public issue responses.
 	leaseToken := uuid.New().String()
+	attemptID := uuid.New().String()
 	expiresAt := now.Add(time.Duration(ttlSeconds) * time.Second).Format(time.RFC3339)
 
 	_, err = tx.ExecContext(ctx,
-		`INSERT INTO leases (issue_id, holder, lease_token, expires_at, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?)`,
-		issueID, holder, leaseToken, expiresAt, now.Format(time.RFC3339), now.Format(time.RFC3339),
+		`INSERT INTO leases (issue_id, holder, lease_token, expires_at, attempt_id, session_id, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		issueID, holder, leaseToken, expiresAt, attemptID, sessionID, nowStr, nowStr,
 	)
 	if err != nil {
 		// Constraint violation (PK on issue_id) means another claim won while
@@ -387,7 +420,6 @@ func ClaimIssue(ctx context.Context, db *sql.DB, issueID, holder string, ttlSeco
 	}
 
 	// Update issue status and version.
-	nowStr := now.Format(time.RFC3339)
 	_, err = tx.ExecContext(ctx,
 		`UPDATE issues SET status = 'in_progress', claimed_at = ?, version = version + 1, updated_at = ? WHERE id = ?`,
 		nowStr, nowStr, issueID,
@@ -396,21 +428,21 @@ func ClaimIssue(ctx context.Context, db *sql.DB, issueID, holder string, ttlSeco
 		return core.ClaimResponse{}, fmt.Errorf("update issue: %w", err)
 	}
 
-	// Append event.
-	_, err = tx.ExecContext(ctx,
-		`INSERT INTO events (id, issue_id, actor, event_type, payload_json, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?)`,
-		uuid.New().String(), issueID, holder, "issue_claimed", `{}`, nowStr,
-	)
-	if err != nil {
-		return core.ClaimResponse{}, fmt.Errorf("insert event: %w", err)
+	payload := map[string]any{
+		"attempt_id":  attemptID,
+		"ttl_seconds": ttlSeconds,
+		"expires_at":  expiresAt,
+		"session_id":  sessionID,
+	}
+	if err := insertEvent(ctx, tx, issueID, holder, "issue_claimed", payload, nowStr); err != nil {
+		return core.ClaimResponse{}, err
 	}
 
 	if err := tx.Commit(); err != nil {
 		return core.ClaimResponse{}, fmt.Errorf("commit tx: %w", err)
 	}
 
-	return core.ClaimResponse{LeaseToken: leaseToken, ExpiresAt: expiresAt}, nil
+	return core.ClaimResponse{LeaseToken: leaseToken, ExpiresAt: expiresAt, AttemptID: attemptID}, nil
 }
 
 // HeartbeatLease extends the TTL on an existing lease.
@@ -461,11 +493,11 @@ func ReleaseLease(ctx context.Context, db *sql.DB, issueID, leaseToken string) e
 	defer func() { _ = tx.Rollback() }()
 
 	// Find the lease.
-	var holder string
+	var holder, attemptID string
 	err = tx.QueryRowContext(ctx,
-		`SELECT holder FROM leases WHERE issue_id = ? AND lease_token = ?`,
+		`SELECT holder, attempt_id FROM leases WHERE issue_id = ? AND lease_token = ?`,
 		issueID, leaseToken,
-	).Scan(&holder)
+	).Scan(&holder, &attemptID)
 	if err == sql.ErrNoRows {
 		return core.NewAPIError(core.ErrLeaseExpired, "lease not found")
 	}
@@ -497,14 +529,11 @@ func ReleaseLease(ctx context.Context, db *sql.DB, issueID, leaseToken string) e
 		return fmt.Errorf("update issue: %w", err)
 	}
 
-	// Append event.
-	_, err = tx.ExecContext(ctx,
-		`INSERT INTO events (id, issue_id, actor, event_type, payload_json, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?)`,
-		uuid.New().String(), issueID, holder, "issue_released", `{}`, now,
-	)
-	if err != nil {
-		return fmt.Errorf("insert event: %w", err)
+	if err := insertEvent(ctx, tx, issueID, holder, "issue_released", map[string]any{
+		"attempt_id": attemptID,
+		"end_reason": "released",
+	}, now); err != nil {
+		return err
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -516,11 +545,11 @@ func ReleaseLease(ctx context.Context, db *sql.DB, issueID, leaseToken string) e
 
 func getActiveLease(ctx context.Context, db *sql.DB, issueID string) (*core.IssueLease, error) {
 	row := db.QueryRowContext(ctx,
-		`SELECT holder, lease_token, expires_at FROM leases WHERE issue_id = ? AND expires_at > ?`,
+		`SELECT holder, lease_token, expires_at, attempt_id, session_id FROM leases WHERE issue_id = ? AND expires_at > ?`,
 		issueID, time.Now().UTC().Format(time.RFC3339),
 	)
 	var lease core.IssueLease
-	err := row.Scan(&lease.Holder, &lease.LeaseToken, &lease.ExpiresAt)
+	err := row.Scan(&lease.Holder, &lease.LeaseToken, &lease.ExpiresAt, &lease.AttemptID, &lease.SessionID)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -756,11 +785,11 @@ func CloseIssue(ctx context.Context, db *sql.DB, issueID string, req core.CloseI
 		return core.CloseIssueResult{}, err
 	}
 
-	var leaseToken string
+	var leaseToken, attemptID string
 	err = tx.QueryRowContext(ctx,
-		`SELECT lease_token FROM leases WHERE issue_id = ? AND expires_at > ?`,
+		`SELECT lease_token, attempt_id FROM leases WHERE issue_id = ? AND expires_at > ?`,
 		issueID, now,
-	).Scan(&leaseToken)
+	).Scan(&leaseToken, &attemptID)
 	if err == sql.ErrNoRows {
 		return core.CloseIssueResult{}, core.NewAPIError(core.ErrLeaseExpired,
 			"an active lease is required to close an issue")
@@ -794,6 +823,8 @@ func CloseIssue(ctx context.Context, db *sql.DB, issueID string, req core.CloseI
 	}
 
 	payload := terminalEventPayload(issue.Status, req.Resolution, issue.ExternalKey)
+	payload["attempt_id"] = attemptID
+	payload["end_reason"] = req.Resolution
 	if req.Branch != "" {
 		payload["branch"] = req.Branch
 	}

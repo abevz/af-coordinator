@@ -42,6 +42,7 @@ type CoordinatorStore interface {
 	ListIssues(ctx context.Context, params core.IssueListParams) ([]core.Issue, error)
 	ListReadyIssues(ctx context.Context, projectID, repoID string) ([]core.Issue, error)
 	ClaimIssue(ctx context.Context, issueID, holder string, ttlSeconds int) (core.ClaimResponse, error)
+	ClaimIssueWithSession(ctx context.Context, issueID, holder string, ttlSeconds int, sessionID string) (core.ClaimResponse, error)
 	HeartbeatLease(ctx context.Context, issueID, leaseToken string, ttlSeconds int) (string, error)
 	ReleaseLease(ctx context.Context, issueID, leaseToken string) error
 	UpdateIssue(ctx context.Context, issueID string, req core.UpdateIssueRequest) (core.Issue, error)

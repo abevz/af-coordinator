@@ -8,6 +8,7 @@ import (
 	"testing"
 	"testing/fstest"
 
+	"github.com/abevz/af-coordinator/internal/core"
 	"github.com/abevz/af-coordinator/migrations"
 	_ "modernc.org/sqlite"
 )
@@ -121,6 +122,54 @@ func TestMigrateEventSequencePreservesLegacyOrder(t *testing.T) {
 		if want[i].id != "" && got[i].id != want[i].id {
 			t.Fatalf("event %d id = %q, want %q", i, got[i].id, want[i].id)
 		}
+	}
+}
+
+func TestMigrateLeaseAttemptsBackfillsExistingLease(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	db.SetMaxOpenConns(1)
+	if _, err := db.Exec("PRAGMA foreign_keys=ON"); err != nil {
+		t.Fatal(err)
+	}
+
+	legacyMigrations := embeddedMigrations(t,
+		"0001_schema_v1.sql", "0002_issue_type.sql", "0003_acceptance_criteria.sql",
+		"0004_issue_external_key.sql", "0005_event_sequence.sql",
+	)
+	if err := Migrate(context.Background(), db, legacyMigrations); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := CreateProject(context.Background(), db, "test", "Test", ""); err != nil {
+		t.Fatal(err)
+	}
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{
+		ScopeKind: "project", Title: "Legacy lease",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const now = "2026-07-13T20:00:00Z"
+	if _, err := db.Exec(
+		`INSERT INTO leases (issue_id, holder, lease_token, expires_at, created_at, updated_at)
+		 VALUES (?, 'legacy-agent', 'legacy-token', '2026-07-13T21:00:00Z', ?, ?)`,
+		issue.ID, now, now,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Migrate(context.Background(), db, embeddedMigrations(t, "0006_lease_attempts.sql")); err != nil {
+		t.Fatal(err)
+	}
+	var attemptID, sessionID string
+	if err := db.QueryRow(`SELECT attempt_id, session_id FROM leases WHERE issue_id = ?`, issue.ID).Scan(&attemptID, &sessionID); err != nil {
+		t.Fatal(err)
+	}
+	if attemptID != "legacy-"+issue.ID || sessionID != "" {
+		t.Fatalf("legacy lease telemetry = (%q, %q)", attemptID, sessionID)
 	}
 }
 

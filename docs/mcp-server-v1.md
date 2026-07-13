@@ -25,6 +25,11 @@ it as the default actor/holder/author when the request does not pass one.
 - `list_notes`
 - `list_issue_events`
 - `close_issue`
+- `operator_close_issue`
+- `operator_reopen_issue`
+
+`claim_issue` accepts optional non-secret `session_id` correlation metadata
+and returns the daemon-generated `attempt_id` with the secret lease token.
 
 ## Design constraints
 

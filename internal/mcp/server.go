@@ -26,6 +26,7 @@ type CoordinatorClient interface {
 	GetIssue(ctx context.Context, issueID string) (core.Issue, *core.IssueLease, error)
 	ListReadyIssues(ctx context.Context, project, repo string) ([]core.Issue, error)
 	ClaimIssue(ctx context.Context, issueID, holder string, ttlSeconds int) (core.ClaimResponse, error)
+	ClaimIssueWithSession(ctx context.Context, issueID, holder string, ttlSeconds int, sessionID string) (core.ClaimResponse, error)
 	HeartbeatLease(ctx context.Context, issueID, leaseToken string, ttlSeconds int) (string, error)
 	CreateNote(ctx context.Context, issueID, author, body string) (core.Note, error)
 	ListNotes(ctx context.Context, issueID string) ([]core.Note, error)
@@ -221,6 +222,7 @@ func (s *Server) callTool(ctx context.Context, params toolCallParams) (any, erro
 			Holder     string `json:"holder"`
 			Actor      string `json:"actor"`
 			TTLSeconds int    `json:"ttl_seconds"`
+			SessionID  string `json:"session_id"`
 		}
 		if err := unmarshalArgs(params.Arguments, &args); err != nil {
 			return nil, err
@@ -232,7 +234,7 @@ func (s *Server) callTool(ctx context.Context, params toolCallParams) (any, erro
 		if err != nil {
 			return nil, err
 		}
-		return s.client.ClaimIssue(ctx, args.IssueID, holder, args.TTLSeconds)
+		return s.client.ClaimIssueWithSession(ctx, args.IssueID, holder, args.TTLSeconds, args.SessionID)
 	case "heartbeat_issue":
 		var args struct {
 			IssueID    string `json:"issue_id"`
@@ -396,6 +398,7 @@ func (s *Server) tools() []map[string]any {
 			{name: "holder", fieldType: "string", description: "Optional holder name; falls back to actor or AF_COORDINATOR_ACTOR."},
 			{name: "actor", fieldType: "string", description: "Optional actor fallback for the holder field."},
 			{name: "ttl_seconds", fieldType: "integer", description: "Optional lease TTL in seconds; daemon default applies when omitted."},
+			{name: "session_id", fieldType: "string", description: "Optional non-secret caller session correlation ID."},
 		})),
 		toolDefinition("heartbeat_issue", "Extend an active lease.", objectSchema([]schemaField{
 			{name: "issue_id", fieldType: "string", description: "Issue UUID or short id.", required: true},

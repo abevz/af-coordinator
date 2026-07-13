@@ -4,9 +4,9 @@ Task IDs are live af-coordinator short IDs in project `afc`. This file owns
 scope and dependency intent; use `afctl issue get afc-<N> --full` for current
 status, claims, notes, links, and closure audit.
 
-The operator selected this track on 2026-07-13. `afc-49` and `afc-50` are
-complete; later implementation tasks remain deferred until their dependency
-order is reached.
+The operator selected this track on 2026-07-13. `afc-49` through `afc-51` are
+complete; the remaining implementation tasks stay deferred until their
+dependency order is reached.
 
 | ID | Type | Pri | Status | Title | Depends on |
 |----|------|-----|--------|-------|------------|
@@ -14,7 +14,7 @@ order is reached.
 | `afc-48` | chore | P1 | done | Specify execution telemetry and analytics track | parent `afc-47` |
 | `afc-49` | bug | P1 | done | Preserve causal event order with monotonic sequence | `afc-48` |
 | `afc-50` | bug | P1 | done | Enforce close authorization and terminal transitions | `afc-48` |
-| `afc-51` | feature | P2 | deferred | Record execution attempts and lease outcomes | `afc-48`, `afc-49` |
+| `afc-51` | feature | P2 | done | Record execution attempts and lease outcomes | `afc-48`, `afc-49` |
 | `afc-52` | feature | P2 | deferred | Add atomic HANDOFF and release flow | `afc-48`, `afc-49`, `afc-50` |
 | `afc-53` | feature | P2 | deferred | Add project execution statistics report | `afc-48`, `afc-49`, `afc-50`, `afc-51`, `afc-52` |
 

@@ -319,12 +319,13 @@ func runIssueReady(ctx context.Context, c *client.Client, args []string) error {
 
 func runIssueClaim(ctx context.Context, c *client.Client, args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("%s", "Usage: afctl issue claim <issue-id> [--holder <name>|--actor <name>] [--ttl <seconds>]")
+		return fmt.Errorf("%s", "Usage: afctl issue claim <issue-id> [--holder <name>|--actor <name>] [--ttl <seconds>] [--session-id <id>]")
 	}
 
 	issueID := args[0]
 	holder := ""
 	ttl := 3600
+	sessionID := ""
 
 	for i := 1; i < len(args); i++ {
 		switch args[i] {
@@ -338,6 +339,11 @@ func runIssueClaim(ctx context.Context, c *client.Client, args []string) error {
 				fmt.Sscanf(args[i+1], "%d", &ttl)
 				i++
 			}
+		case "--session-id":
+			if i+1 < len(args) {
+				sessionID = args[i+1]
+				i++
+			}
 		}
 	}
 
@@ -347,7 +353,7 @@ func runIssueClaim(ctx context.Context, c *client.Client, args []string) error {
 		return fmt.Errorf("%s", err)
 	}
 
-	resp, err := c.ClaimIssue(ctx, issueID, holder, ttl)
+	resp, err := c.ClaimIssueWithSession(ctx, issueID, holder, ttl, sessionID)
 	if err != nil {
 		fail(err)
 	}
@@ -356,6 +362,7 @@ func runIssueClaim(ctx context.Context, c *client.Client, args []string) error {
 		return nil
 	}
 	fmt.Printf("Lease Token: %s\n", resp.LeaseToken)
+	fmt.Printf("Attempt ID:  %s\n", resp.AttemptID)
 	fmt.Printf("Expires At:  %s\n", resp.ExpiresAt)
 	return nil
 }
