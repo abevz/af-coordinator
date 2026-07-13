@@ -155,10 +155,9 @@ afctl issue dependency add utils-12 --depends-on utils-11 --kind blocks
 afctl ls --project utils --status open     # what remains
 afctl show --full utils-10                 # epic with its trail
 
-# 5. When the last child is done, close the epic by hand
-afctl issue close utils-10 --resolution done --expected-version N \
-  --branch codex/utils-10 --commit-sha abc1234 \
-  --note "all children done; restic in production since afc-…"
+# 5. When the last child is done, explicitly close the unclaimable epic
+afctl issue operator-close utils-10 --resolution done --expected-version N \
+  --reason "all children done; restic in production since afc-…"
 ```
 
 `parent` links are structure only — they do not block anything. A child

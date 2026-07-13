@@ -336,13 +336,18 @@ would make an unclaimed issue uneditable.
 
 | Operation | Requires |
 |---|---|
-| status transition, close, edits under an active claim | `lease_token` + `expected_version` |
+| agent close and edits under an active claim | `lease_token` + `expected_version` |
+| operator close or reopen | `actor`, `expected_version`, non-empty `reason`; never a lease token |
 | metadata edit of an unclaimed issue (title, priority, description) | `expected_version` only |
 | append note, link artifact | nothing (append-only) |
 
-In all cases: if someone else holds an unexpired lease, mutation is
-rejected. Every successful mutation increments `version` and appends an
-event in the same transaction.
+Outside the explicit local operator override, if someone else holds an
+unexpired lease, mutation is rejected. Every successful mutation increments
+`version` and appends an event in the same transaction.
+
+Generic update only handles metadata and non-terminal routing. Terminal close
+uses the agent lease path, while unclaimable epics and deliberate
+administrative close/reopen use explicit local operator paths with a reason.
 
 ### Optimistic concurrency
 
@@ -462,6 +467,8 @@ Every important change should append an event:
 - issue updated
 - note added
 - issue closed
+- issue operator-closed
+- issue reopened
 - dependency added or removed
 - lease expired (from the sweeper, at most one per lease)
 
@@ -490,6 +497,8 @@ Core commands:
 - `afctl issue note`
 - `afctl issue events`
 - `afctl issue close`
+- `afctl issue operator-close`
+- `afctl issue operator-reopen`
 - `afctl project add`
 - `afctl repo add`
 - `afctl worktree register`

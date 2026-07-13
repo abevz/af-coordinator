@@ -402,6 +402,85 @@ func handleCloseIssue(st store.CoordinatorStore, logger *slog.Logger) http.Handl
 	}
 }
 
+func handleOperatorCloseIssue(st store.CoordinatorStore, logger *slog.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		issueID, ok := resolveIssueID(st, w, r)
+		if !ok {
+			return
+		}
+
+		var req core.OperatorCloseIssueRequest
+		decoder := json.NewDecoder(r.Body)
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, core.ErrValidationFailed, "invalid JSON body")
+			return
+		}
+		if req.Actor == "" || req.Reason == "" || req.ExpectedVersion <= 0 {
+			writeError(w, http.StatusBadRequest, core.ErrValidationFailed,
+				"actor, reason, and expected_version are required")
+			return
+		}
+
+		result, err := st.OperatorCloseIssue(r.Context(), issueID, req)
+		if err != nil {
+			writeIssueMutationError(w, logger, "operator close issue", issueID, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, result)
+	}
+}
+
+func handleOperatorReopenIssue(st store.CoordinatorStore, logger *slog.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		issueID, ok := resolveIssueID(st, w, r)
+		if !ok {
+			return
+		}
+
+		var req core.OperatorReopenIssueRequest
+		decoder := json.NewDecoder(r.Body)
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, core.ErrValidationFailed, "invalid JSON body")
+			return
+		}
+		if req.Actor == "" || req.Reason == "" || req.ExpectedVersion <= 0 {
+			writeError(w, http.StatusBadRequest, core.ErrValidationFailed,
+				"actor, reason, and expected_version are required")
+			return
+		}
+
+		issue, err := st.OperatorReopenIssue(r.Context(), issueID, req)
+		if err != nil {
+			writeIssueMutationError(w, logger, "operator reopen issue", issueID, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]core.Issue{"issue": issue})
+	}
+}
+
+func writeIssueMutationError(w http.ResponseWriter, logger *slog.Logger, operation, issueID string, err error) {
+	if apiErr, ok := errAsAPIError(err); ok {
+		switch apiErr.Code {
+		case core.ErrConflict:
+			writeError(w, http.StatusConflict, core.ErrConflict, apiErr.Message)
+			return
+		case core.ErrLeaseExpired:
+			writeError(w, http.StatusGone, core.ErrLeaseExpired, apiErr.Message)
+			return
+		case core.ErrNotFound:
+			writeError(w, http.StatusNotFound, core.ErrNotFound, apiErr.Message)
+			return
+		case core.ErrValidationFailed:
+			writeError(w, http.StatusBadRequest, core.ErrValidationFailed, apiErr.Message)
+			return
+		}
+	}
+	logger.Error("failed to "+operation, "issue_id", issueID, "error", err)
+	writeError(w, http.StatusInternalServerError, "internal_error", "failed to "+operation)
+}
+
 func handleAddDependency(st store.CoordinatorStore, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		issueID, ok := resolveIssueID(st, w, r)

@@ -66,6 +66,8 @@ func registerRoutes(mux *http.ServeMux, db *sql.DB, logger *slog.Logger) {
 	mux.HandleFunc("POST /v1/issues/{issue_id}/release", handleReleaseLease(st, logger))
 	mux.HandleFunc("PATCH /v1/issues/{issue_id}", handleUpdateIssue(st, logger))
 	mux.HandleFunc("POST /v1/issues/{issue_id}/close", handleCloseIssue(st, logger))
+	mux.HandleFunc("POST /v1/issues/{issue_id}/operator-close", handleOperatorCloseIssue(st, logger))
+	mux.HandleFunc("POST /v1/issues/{issue_id}/operator-reopen", handleOperatorReopenIssue(st, logger))
 	mux.HandleFunc("POST /v1/issues/{issue_id}/dependencies", handleAddDependency(st, logger))
 	mux.HandleFunc("DELETE /v1/issues/{issue_id}/dependencies/{depends_on}", handleRemoveDependency(st, logger))
 	mux.HandleFunc("POST /v1/issues/{issue_id}/links", handleLinkArtifact(st, logger))
@@ -1420,8 +1422,21 @@ func TestCloseIssue(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	leaseToken := "test-close-token"
+	_, err = db.Exec(
+		`INSERT INTO leases (issue_id, holder, lease_token, expires_at, created_at, updated_at)
+		 VALUES (?, 'test', ?, ?, ?, ?)`,
+		issueID, leaseToken, time.Now().UTC().Add(time.Minute).Format(time.RFC3339), now, now,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(`UPDATE issues SET status = 'in_progress', version = 2 WHERE id = ?`, issueID)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	body := `{"resolution":"done","branch":"codex/afc-27","pr_url":"https://github.com/abevz/af-coordinator/pull/27","commit_sha":"ba6d011","expected_version":1,"actor":"test"}`
+	body := `{"resolution":"done","branch":"codex/afc-27","pr_url":"https://github.com/abevz/af-coordinator/pull/27","commit_sha":"ba6d011","expected_version":2,"lease_token":"test-close-token","actor":"test"}`
 	req, err := http.NewRequest("POST", server.URL+"/v1/issues/"+issueID+"/close", strings.NewReader(body))
 	if err != nil {
 		t.Fatal(err)
@@ -1460,6 +1475,109 @@ func TestCloseIssue(t *testing.T) {
 	}
 	if result.ClosedAt == "" {
 		t.Fatal("expected closed_at in close response")
+	}
+}
+
+func TestOperatorCloseAndReopenIssue(t *testing.T) {
+	server, db := newTestServer(t)
+	now := time.Now().UTC().Format(time.RFC3339)
+	if _, err := db.Exec(
+		`INSERT INTO projects (id, key, name, description, next_issue_seq, created_at, updated_at)
+		 VALUES ('proj-1', 'test', 'Test', '', 1, ?, ?)`, now, now,
+	); err != nil {
+		t.Fatal(err)
+	}
+	issueID := "issue-operator"
+	if _, err := db.Exec(
+		`INSERT INTO issues (id, short_id, project_id, scope_kind, issue_type, title, description, status, priority, assignee, version, created_at, updated_at)
+		 VALUES (?, 'test-1', 'proj-1', 'project', 'epic', 'Closable epic', '', 'open', 3, '', 1, ?, ?)`,
+		issueID, now, now,
+	); err != nil {
+		t.Fatal(err)
+	}
+	rejectedReq, err := http.NewRequest(http.MethodPost, server.URL+"/v1/issues/"+issueID+"/operator-close",
+		strings.NewReader(`{"resolution":"done","expected_version":1,"actor":"operator","reason":"all child work complete","lease_token":"fake"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rejectedReq.Header.Set("Content-Type", "application/json")
+	rejectedResp, err := http.DefaultClient.Do(rejectedReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rejectedResp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("operator close with lease token status = %d, want %d", rejectedResp.StatusCode, http.StatusBadRequest)
+	}
+	_ = rejectedResp.Body.Close()
+
+	closeReq, err := http.NewRequest(http.MethodPost, server.URL+"/v1/issues/"+issueID+"/operator-close",
+		strings.NewReader(`{"resolution":"done","expected_version":1,"actor":"operator","reason":"all child work complete"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	closeReq.Header.Set("Content-Type", "application/json")
+	closeResp, err := http.DefaultClient.Do(closeReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if closeResp.StatusCode != http.StatusOK {
+		t.Fatalf("operator close status = %d", closeResp.StatusCode)
+	}
+	_ = closeResp.Body.Close()
+
+	reopenReq, err := http.NewRequest(http.MethodPost, server.URL+"/v1/issues/"+issueID+"/operator-reopen",
+		strings.NewReader(`{"expected_version":2,"actor":"operator","reason":"parent requires follow-up"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reopenReq.Header.Set("Content-Type", "application/json")
+	reopenResp, err := http.DefaultClient.Do(reopenReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopenResp.Body.Close()
+	if reopenResp.StatusCode != http.StatusOK {
+		t.Fatalf("operator reopen status = %d", reopenResp.StatusCode)
+	}
+	result := decodeJSON[struct {
+		Issue struct {
+			Status   string `json:"status"`
+			ClosedAt string `json:"closed_at"`
+		} `json:"issue"`
+	}](t, reopenResp)
+	if result.Issue.Status != "open" || result.Issue.ClosedAt != "" {
+		t.Fatalf("unexpected reopen response: %+v", result.Issue)
+	}
+}
+
+func TestCloseIssueWithoutLeaseReturnsGone(t *testing.T) {
+	server, db := newTestServer(t)
+	now := time.Now().UTC().Format(time.RFC3339)
+	if _, err := db.Exec(
+		`INSERT INTO projects (id, key, name, description, next_issue_seq, created_at, updated_at)
+		 VALUES ('proj-1', 'test', 'Test', '', 1, ?, ?)`, now, now,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(
+		`INSERT INTO issues (id, short_id, project_id, scope_kind, title, description, status, priority, assignee, version, created_at, updated_at)
+		 VALUES ('issue-1', 'test-1', 'proj-1', 'project', 'Unleased', '', 'open', 3, '', 1, ?, ?)`, now, now,
+	); err != nil {
+		t.Fatal(err)
+	}
+	req, err := http.NewRequest(http.MethodPost, server.URL+"/v1/issues/issue-1/close",
+		strings.NewReader(`{"resolution":"done","expected_version":1,"lease_token":"missing","actor":"test"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusGone {
+		t.Fatalf("close without lease status = %d, want %d", resp.StatusCode, http.StatusGone)
 	}
 }
 

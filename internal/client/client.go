@@ -308,6 +308,27 @@ func (c *Client) CloseIssue(ctx context.Context, issueID string, req core.CloseI
 	return result, nil
 }
 
+// OperatorCloseIssue sends a POST /v1/issues/{issueID}/operator-close request.
+// This local operator path is explicit and intentionally has no lease token.
+func (c *Client) OperatorCloseIssue(ctx context.Context, issueID string, req core.OperatorCloseIssueRequest) (core.CloseIssueResult, error) {
+	var result core.CloseIssueResult
+	if err := c.doJSON(ctx, http.MethodPost, "/v1/issues/"+issueID+"/operator-close", req, &result); err != nil {
+		return core.CloseIssueResult{}, err
+	}
+	return result, nil
+}
+
+// OperatorReopenIssue sends a POST /v1/issues/{issueID}/operator-reopen request.
+func (c *Client) OperatorReopenIssue(ctx context.Context, issueID string, req core.OperatorReopenIssueRequest) (core.Issue, error) {
+	var result struct {
+		Issue core.Issue `json:"issue"`
+	}
+	if err := c.doJSON(ctx, http.MethodPost, "/v1/issues/"+issueID+"/operator-reopen", req, &result); err != nil {
+		return core.Issue{}, err
+	}
+	return result.Issue, nil
+}
+
 // LinkArtifact sends a POST /v1/issues/{issueID}/links request.
 func (c *Client) LinkArtifact(ctx context.Context, issueID string, req core.LinkArtifactRequest) error {
 	return c.doJSON(ctx, http.MethodPost, "/v1/issues/"+issueID+"/links", req, nil)

@@ -127,6 +127,14 @@ func (s *Store) CloseIssue(ctx context.Context, issueID string, req core.CloseIs
 	return CloseIssue(ctx, s.db, issueID, req)
 }
 
+func (s *Store) OperatorCloseIssue(ctx context.Context, issueID string, req core.OperatorCloseIssueRequest) (core.CloseIssueResult, error) {
+	return OperatorCloseIssue(ctx, s.db, issueID, req)
+}
+
+func (s *Store) OperatorReopenIssue(ctx context.Context, issueID string, req core.OperatorReopenIssueRequest) (core.Issue, error) {
+	return OperatorReopenIssue(ctx, s.db, issueID, req)
+}
+
 func (s *Store) AddDependency(ctx context.Context, issueID string, req core.AddDependencyRequest) error {
 	return AddDependency(ctx, s.db, issueID, req)
 }

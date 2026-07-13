@@ -129,6 +129,10 @@ This is the compact route-to-implementation inventory for the current daemon.
   `sqlite.UpdateIssue`
 - `POST /v1/issues/{issue_id}/close` -> `handleCloseIssue` ->
   `sqlite.CloseIssue`
+- `POST /v1/issues/{issue_id}/operator-close` -> `handleOperatorCloseIssue` ->
+  `sqlite.OperatorCloseIssue`
+- `POST /v1/issues/{issue_id}/operator-reopen` -> `handleOperatorReopenIssue` ->
+  `sqlite.OperatorReopenIssue`
 - `POST /v1/issues/{issue_id}/dependencies` -> `handleAddDependency` ->
   `sqlite.AddDependency`
 - `DELETE /v1/issues/{issue_id}/dependencies/{depends_on}?kind=` ->
@@ -191,15 +195,27 @@ This is the compact route-to-implementation inventory for the current daemon.
   epics (they are containers, not units of work). When `repo` is given
   alongside `project`, repository logical-name resolution is scoped to that
   project; without `project`, prefer repository UUIDs over ambiguous names.
-- `PATCH /v1/issues/{issue_id}` — edit metadata and status (`title`, `issue_type`,
-  `external_key`, `description`, `acceptance_criteria`, `priority`, `assignee`, `status`); requires
-  `expected_version`, plus `lease_token` if the issue is claimed
-- `POST /v1/issues/{issue_id}/close` — requires `lease_token` +
-  `expected_version`; body: `resolution` (`done` | `cancelled`), optional
-  `branch`, `pr_url`, `commit_sha`, and optional `note` (appends note and
-  closes atomically). The response echoes the structured close metadata and
+- `PATCH /v1/issues/{issue_id}` — edit metadata and non-terminal routing
+  (`title`, `issue_type`, `external_key`, `description`,
+  `acceptance_criteria`, `priority`, `assignee`, `status`); requires
+  `expected_version`, plus `lease_token` if the issue is claimed. It cannot
+  close or reopen an issue.
+- `POST /v1/issues/{issue_id}/close` — agent close; requires an active,
+  matching `lease_token` and `expected_version`. Body: `resolution` (`done`
+  | `cancelled`), optional `branch`, `pr_url`, `commit_sha`, and optional
+  `note` (appends note and closes atomically). Repeated, stale, expired, and
+  unleased closes fail. The response echoes the structured close metadata and
   `closed_at`; when the issue already carries an `external_key`, the close
   response and `issue_closed` event include it too.
+- `POST /v1/issues/{issue_id}/operator-close` — explicit local-operator close
+  for unclaimable epics or administrative resolution. Requires
+  `resolution`, `expected_version`, `actor`, and non-empty `reason`; it never
+  accepts a lease token and emits `issue_operator_closed` with the source and
+  target status.
+- `POST /v1/issues/{issue_id}/operator-reopen` — explicit local-operator path
+  for reopening `done` or `cancelled` work. Requires `expected_version`,
+  `actor`, and non-empty `reason`; it never accepts a lease token and emits
+  `issue_reopened` with the source and target status.
 
 ## Leases
 

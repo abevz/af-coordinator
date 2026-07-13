@@ -12,23 +12,27 @@ import (
 )
 
 type fakeClient struct {
-	healthResp     core.Health
-	getIssueResp   core.Issue
-	getLeaseResp   *core.IssueLease
-	readyResp      []core.Issue
-	claimResp      core.ClaimResponse
-	heartbeatResp  string
-	noteResp       core.Note
-	notesResp      []core.Note
-	eventsResp     []core.Event
-	closeResp      core.CloseIssueResult
-	lastIssueID    string
-	lastHolder     string
-	lastTTL        int
-	lastLeaseToken string
-	lastNoteAuthor string
-	lastNoteBody   string
-	lastCloseReq   core.CloseIssueRequest
+	healthResp            core.Health
+	getIssueResp          core.Issue
+	getLeaseResp          *core.IssueLease
+	readyResp             []core.Issue
+	claimResp             core.ClaimResponse
+	heartbeatResp         string
+	noteResp              core.Note
+	notesResp             []core.Note
+	eventsResp            []core.Event
+	closeResp             core.CloseIssueResult
+	operatorCloseResp     core.CloseIssueResult
+	operatorReopenResp    core.Issue
+	lastIssueID           string
+	lastHolder            string
+	lastTTL               int
+	lastLeaseToken        string
+	lastNoteAuthor        string
+	lastNoteBody          string
+	lastCloseReq          core.CloseIssueRequest
+	lastOperatorCloseReq  core.OperatorCloseIssueRequest
+	lastOperatorReopenReq core.OperatorReopenIssueRequest
 }
 
 func (f *fakeClient) Health(context.Context) (core.Health, error) { return f.healthResp, nil }
@@ -64,6 +68,16 @@ func (f *fakeClient) CloseIssue(_ context.Context, issueID string, req core.Clos
 	f.lastIssueID = issueID
 	f.lastCloseReq = req
 	return f.closeResp, nil
+}
+func (f *fakeClient) OperatorCloseIssue(_ context.Context, issueID string, req core.OperatorCloseIssueRequest) (core.CloseIssueResult, error) {
+	f.lastIssueID = issueID
+	f.lastOperatorCloseReq = req
+	return f.operatorCloseResp, nil
+}
+func (f *fakeClient) OperatorReopenIssue(_ context.Context, issueID string, req core.OperatorReopenIssueRequest) (core.Issue, error) {
+	f.lastIssueID = issueID
+	f.lastOperatorReopenReq = req
+	return f.operatorReopenResp, nil
 }
 
 func TestHandleInitialize(t *testing.T) {
@@ -150,6 +164,52 @@ func TestToolCallCloseIssuePassesStructuredMetadata(t *testing.T) {
 	}
 	if fake.lastCloseReq.Branch != "codex/afc-28" || fake.lastCloseReq.PRURL != "https://example/pr/28" || fake.lastCloseReq.CommitSHA != "ddb6d05" {
 		t.Fatalf("unexpected close request: %+v", fake.lastCloseReq)
+	}
+}
+
+func TestOperatorToolsUseExplicitTokenlessRequests(t *testing.T) {
+	fake := &fakeClient{
+		operatorCloseResp:  core.CloseIssueResult{Status: "closed", Resolution: "done"},
+		operatorReopenResp: core.Issue{Status: "open"},
+	}
+	s := NewServer(fake, "operator", "0055")
+
+	for _, test := range []struct {
+		name string
+		args string
+	}{
+		{
+			name: "operator close",
+			args: `{"name":"operator_close_issue","arguments":{"issue_id":"afc-50","resolution":"done","expected_version":1,"reason":"parent complete"}}`,
+		},
+		{
+			name: "operator reopen",
+			args: `{"name":"operator_reopen_issue","arguments":{"issue_id":"afc-50","expected_version":2,"reason":"needs follow-up"}}`,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			resp := s.handleRequest(context.Background(), rpcRequest{
+				JSONRPC: "2.0", ID: json.RawMessage("5"), Method: "tools/call", Params: json.RawMessage(test.args),
+			})
+			if resp == nil || resp.Error != nil {
+				t.Fatalf("expected operator tool result, got %+v", resp)
+			}
+		})
+	}
+	if fake.lastOperatorCloseReq.Reason != "parent complete" || fake.lastOperatorCloseReq.Actor != "operator" {
+		t.Fatalf("unexpected operator close request: %+v", fake.lastOperatorCloseReq)
+	}
+	if fake.lastOperatorReopenReq.Reason != "needs follow-up" || fake.lastOperatorReopenReq.Actor != "operator" {
+		t.Fatalf("unexpected operator reopen request: %+v", fake.lastOperatorReopenReq)
+	}
+
+	resp := s.handleRequest(context.Background(), rpcRequest{
+		JSONRPC: "2.0", ID: json.RawMessage("6"), Method: "tools/call",
+		Params: json.RawMessage(`{"name":"operator_close_issue","arguments":{"issue_id":"afc-50","resolution":"done","expected_version":1,"reason":"parent complete","lease_token":"fake"}}`),
+	})
+	result := resp.Result.(map[string]any)
+	if result["isError"] != true {
+		t.Fatalf("operator tool accepted a lease token: %+v", result)
 	}
 }
 

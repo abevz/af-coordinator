@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -30,6 +31,8 @@ type CoordinatorClient interface {
 	ListNotes(ctx context.Context, issueID string) ([]core.Note, error)
 	ListEvents(ctx context.Context, issueID string) ([]core.Event, error)
 	CloseIssue(ctx context.Context, issueID string, req core.CloseIssueRequest) (core.CloseIssueResult, error)
+	OperatorCloseIssue(ctx context.Context, issueID string, req core.OperatorCloseIssueRequest) (core.CloseIssueResult, error)
+	OperatorReopenIssue(ctx context.Context, issueID string, req core.OperatorReopenIssueRequest) (core.Issue, error)
 }
 
 // Server is a tiny MCP stdio server that wraps the daemon API.
@@ -327,6 +330,52 @@ func (s *Server) callTool(ctx context.Context, params toolCallParams) (any, erro
 			Actor:           actor,
 			Note:            args.Note,
 		})
+	case "operator_close_issue":
+		var args struct {
+			IssueID         string `json:"issue_id"`
+			Resolution      string `json:"resolution"`
+			ExpectedVersion int    `json:"expected_version"`
+			Reason          string `json:"reason"`
+			Actor           string `json:"actor"`
+		}
+		if err := unmarshalArgs(params.Arguments, &args); err != nil {
+			return nil, err
+		}
+		if args.IssueID == "" || args.Resolution == "" || args.ExpectedVersion <= 0 || strings.TrimSpace(args.Reason) == "" {
+			return nil, fmt.Errorf("issue_id, resolution, expected_version, and reason are required")
+		}
+		actor, err := s.resolveActor(args.Actor, "")
+		if err != nil {
+			return nil, err
+		}
+		return s.client.OperatorCloseIssue(ctx, args.IssueID, core.OperatorCloseIssueRequest{
+			Resolution:      args.Resolution,
+			ExpectedVersion: args.ExpectedVersion,
+			Actor:           actor,
+			Reason:          args.Reason,
+		})
+	case "operator_reopen_issue":
+		var args struct {
+			IssueID         string `json:"issue_id"`
+			ExpectedVersion int    `json:"expected_version"`
+			Reason          string `json:"reason"`
+			Actor           string `json:"actor"`
+		}
+		if err := unmarshalArgs(params.Arguments, &args); err != nil {
+			return nil, err
+		}
+		if args.IssueID == "" || args.ExpectedVersion <= 0 || strings.TrimSpace(args.Reason) == "" {
+			return nil, fmt.Errorf("issue_id, expected_version, and reason are required")
+		}
+		actor, err := s.resolveActor(args.Actor, "")
+		if err != nil {
+			return nil, err
+		}
+		return s.client.OperatorReopenIssue(ctx, args.IssueID, core.OperatorReopenIssueRequest{
+			ExpectedVersion: args.ExpectedVersion,
+			Actor:           actor,
+			Reason:          args.Reason,
+		})
 	default:
 		return nil, fmt.Errorf("unknown tool: %s", params.Name)
 	}
@@ -375,6 +424,19 @@ func (s *Server) tools() []map[string]any {
 			{name: "commit_sha", fieldType: "string", description: "Optional commit SHA to record in close metadata."},
 			{name: "note", fieldType: "string", description: "Optional closing note appended atomically before close."},
 			{name: "actor", fieldType: "string", description: "Optional actor; falls back to AF_COORDINATOR_ACTOR."},
+		})),
+		toolDefinition("operator_close_issue", "Explicit local operator closure for unclaimable or administratively managed work; it never accepts a lease token.", objectSchema([]schemaField{
+			{name: "issue_id", fieldType: "string", description: "Issue UUID or short id.", required: true},
+			{name: "resolution", fieldType: "string", description: "Resolution: done or cancelled.", required: true},
+			{name: "expected_version", fieldType: "integer", description: "Current issue version.", required: true},
+			{name: "reason", fieldType: "string", description: "Why an operator is closing the work.", required: true},
+			{name: "actor", fieldType: "string", description: "Optional operator identity; falls back to AF_COORDINATOR_ACTOR."},
+		})),
+		toolDefinition("operator_reopen_issue", "Explicit local operator reopen for terminal work; it never accepts a lease token.", objectSchema([]schemaField{
+			{name: "issue_id", fieldType: "string", description: "Issue UUID or short id.", required: true},
+			{name: "expected_version", fieldType: "integer", description: "Current issue version.", required: true},
+			{name: "reason", fieldType: "string", description: "Why the terminal work is reopening.", required: true},
+			{name: "actor", fieldType: "string", description: "Optional operator identity; falls back to AF_COORDINATOR_ACTOR."},
 		})),
 	}
 }
@@ -496,7 +558,9 @@ func unmarshalArgs(raw json.RawMessage, target any) error {
 	if len(raw) == 0 {
 		raw = []byte("{}")
 	}
-	if err := json.Unmarshal(raw, target); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(target); err != nil {
 		return fmt.Errorf("invalid tool arguments: %w", err)
 	}
 	return nil

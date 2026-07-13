@@ -51,3 +51,23 @@ func TestRunIssueUnlinkRequiresFlagValues(t *testing.T) {
 		})
 	}
 }
+
+func TestOperatorCommandsRejectLeaseTokenFlag(t *testing.T) {
+	t.Parallel()
+
+	err := runIssue(context.Background(), nil, []string{
+		"operator-close", "afc-50", "--resolution", "done", "--expected-version", "1",
+		"--reason", "completed parent", "--lease-token", "fake",
+	})
+	if err == nil || !strings.Contains(err.Error(), "unknown flag") {
+		t.Fatalf("operator-close error = %v, want unknown flag", err)
+	}
+
+	err = runIssue(context.Background(), nil, []string{
+		"operator-reopen", "afc-50", "--expected-version", "2", "--reason", "needs work",
+		"--lease-token", "fake",
+	})
+	if err == nil || !strings.Contains(err.Error(), "unknown flag") {
+		t.Fatalf("operator-reopen error = %v, want unknown flag", err)
+	}
+}

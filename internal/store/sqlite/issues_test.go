@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"context"
+	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -1157,6 +1158,14 @@ func TestCloseIssue(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	claim, err := ClaimIssue(context.Background(), db, issue.ID, "tester", 60)
+	if err != nil {
+		t.Fatal(err)
+	}
+	issue, _, err = GetIssue(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	result, err := CloseIssue(context.Background(), db, issue.ID, core.CloseIssueRequest{
 		Resolution:      "done",
@@ -1164,6 +1173,7 @@ func TestCloseIssue(t *testing.T) {
 		PRURL:           "https://github.com/abevz/af-coordinator/pull/27",
 		CommitSHA:       "ba6d011",
 		ExpectedVersion: issue.Version,
+		LeaseToken:      claim.LeaseToken,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1206,6 +1216,8 @@ func TestCloseIssue(t *testing.T) {
 	}
 	var payload struct {
 		Resolution string   `json:"resolution"`
+		FromStatus string   `json:"from_status"`
+		ToStatus   string   `json:"to_status"`
 		Branch     string   `json:"branch"`
 		PRURL      string   `json:"pr_url"`
 		CommitSHA  string   `json:"commit_sha"`
@@ -1216,7 +1228,8 @@ func TestCloseIssue(t *testing.T) {
 	}
 	if payload.Resolution != "done" || payload.Branch != "codex/afc-27" ||
 		payload.PRURL != "https://github.com/abevz/af-coordinator/pull/27" ||
-		payload.CommitSHA != "ba6d011" {
+		payload.CommitSHA != "ba6d011" || payload.FromStatus != "in_progress" ||
+		payload.ToStatus != "done" {
 		t.Fatalf("unexpected close payload: %+v", payload)
 	}
 }
@@ -1237,10 +1250,19 @@ func TestCloseIssueCancelled(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	claim, err := ClaimIssue(context.Background(), db, issue.ID, "tester", 60)
+	if err != nil {
+		t.Fatal(err)
+	}
+	issue, _, err = GetIssue(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	_, err = CloseIssue(context.Background(), db, issue.ID, core.CloseIssueRequest{
 		Resolution:      "cancelled",
 		ExpectedVersion: issue.Version,
+		LeaseToken:      claim.LeaseToken,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1289,6 +1311,263 @@ func TestCloseIssueVersionConflict(t *testing.T) {
 	}
 }
 
+func TestCloseIssueRequiresActiveMatchingLeaseAndNonTerminalIssue(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		prepare    func(t *testing.T, db *sql.DB, issue core.Issue) (core.Issue, string)
+		resolution string
+		wantCode   string
+	}{
+		{
+			name:       "missing lease",
+			resolution: "done",
+			wantCode:   core.ErrLeaseExpired,
+			prepare: func(_ *testing.T, _ *sql.DB, issue core.Issue) (core.Issue, string) {
+				return issue, ""
+			},
+		},
+		{
+			name:       "expired lease",
+			resolution: "done",
+			wantCode:   core.ErrLeaseExpired,
+			prepare: func(t *testing.T, db *sql.DB, issue core.Issue) (core.Issue, string) {
+				claim, err := ClaimIssue(context.Background(), db, issue.ID, "agent", 60)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := db.Exec(`UPDATE leases SET expires_at = '2026-07-13T19:00:00Z' WHERE issue_id = ?`, issue.ID); err != nil {
+					t.Fatal(err)
+				}
+				updated, _, err := GetIssue(context.Background(), db, issue.ID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				return updated, claim.LeaseToken
+			},
+		},
+		{
+			name:       "wrong lease token",
+			resolution: "done",
+			wantCode:   core.ErrLeaseExpired,
+			prepare: func(t *testing.T, db *sql.DB, issue core.Issue) (core.Issue, string) {
+				if _, err := ClaimIssue(context.Background(), db, issue.ID, "agent", 60); err != nil {
+					t.Fatal(err)
+				}
+				updated, _, err := GetIssue(context.Background(), db, issue.ID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				return updated, "wrong-token"
+			},
+		},
+		{
+			name:       "already terminal",
+			resolution: "done",
+			wantCode:   core.ErrValidationFailed,
+			prepare: func(t *testing.T, db *sql.DB, issue core.Issue) (core.Issue, string) {
+				if _, err := db.Exec(`UPDATE issues SET status = 'cancelled', version = version + 1 WHERE id = ?`, issue.ID); err != nil {
+					t.Fatal(err)
+				}
+				updated, _, err := GetIssue(context.Background(), db, issue.ID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				return updated, ""
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			db := newTestDB(t)
+			if _, err := CreateProject(context.Background(), db, "test", "Test", ""); err != nil {
+				t.Fatal(err)
+			}
+			issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: test.name})
+			if err != nil {
+				t.Fatal(err)
+			}
+			issue, token := test.prepare(t, db, issue)
+
+			_, err = CloseIssue(context.Background(), db, issue.ID, core.CloseIssueRequest{
+				Resolution:      test.resolution,
+				ExpectedVersion: issue.Version,
+				LeaseToken:      token,
+				Actor:           "agent",
+			})
+			if err == nil {
+				t.Fatalf("CloseIssue() succeeded, want %s", test.wantCode)
+			}
+			var apiErr core.APIError
+			if !errors.As(err, &apiErr) || apiErr.Code != test.wantCode {
+				t.Fatalf("CloseIssue() error = %v, want %s", err, test.wantCode)
+			}
+		})
+	}
+}
+
+func TestUpdateIssueRejectsTerminalTransitions(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name    string
+		current string
+		target  string
+	}{
+		{name: "close through update", current: "open", target: "done"},
+		{name: "reopen through update", current: "cancelled", target: "open"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			db := newTestDB(t)
+			if _, err := CreateProject(context.Background(), db, "test", "Test", ""); err != nil {
+				t.Fatal(err)
+			}
+			issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: test.name})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if test.current != "open" {
+				if _, err := db.Exec(`UPDATE issues SET status = ? WHERE id = ?`, test.current, issue.ID); err != nil {
+					t.Fatal(err)
+				}
+			}
+			current, _, err := GetIssue(context.Background(), db, issue.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			_, err = UpdateIssue(context.Background(), db, issue.ID, core.UpdateIssueRequest{
+				Status:          test.target,
+				ExpectedVersion: current.Version,
+				Actor:           "agent",
+			})
+			if err == nil {
+				t.Fatal("UpdateIssue() succeeded, want validation error")
+			}
+			var apiErr core.APIError
+			if !errors.As(err, &apiErr) || apiErr.Code != core.ErrValidationFailed {
+				t.Fatalf("UpdateIssue() error = %v, want validation_failed", err)
+			}
+		})
+	}
+}
+
+func TestOperatorCloseIssueClosesUnclaimableEpicWithoutLeaseToken(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+	if _, err := CreateProject(context.Background(), db, "test", "Test", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	epic, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{
+		ScopeKind: "project",
+		IssueType: "epic",
+		Title:     "Operator closes this epic",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ClaimIssue(context.Background(), db, epic.ID, "agent", 60); err == nil {
+		t.Fatal("ClaimIssue() succeeded for an epic")
+	}
+
+	result, err := OperatorCloseIssue(context.Background(), db, epic.ID, core.OperatorCloseIssueRequest{
+		Resolution:      "done",
+		ExpectedVersion: epic.Version,
+		Actor:           "operator",
+		Reason:          "closing completed parent work",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != "closed" || result.Resolution != "done" {
+		t.Fatalf("unexpected close result: %+v", result)
+	}
+
+	events, err := ListEvents(context.Background(), db, epic.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	last := events[len(events)-1]
+	if last.EventType != "issue_operator_closed" {
+		t.Fatalf("event_type = %q, want issue_operator_closed", last.EventType)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(last.PayloadJSON), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload["from_status"] != "open" || payload["to_status"] != "done" ||
+		payload["reason"] != "closing completed parent work" {
+		t.Fatalf("unexpected operator-close payload: %v", payload)
+	}
+}
+
+func TestOperatorReopenIssueRequiresExplicitReasonAndEmitsEvent(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+	if _, err := CreateProject(context.Background(), db, "test", "Test", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{
+		ScopeKind: "project",
+		Title:     "Reopen me",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := OperatorCloseIssue(context.Background(), db, issue.ID, core.OperatorCloseIssueRequest{
+		Resolution:      "cancelled",
+		ExpectedVersion: issue.Version,
+		Actor:           "operator",
+		Reason:          "superseded",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	closed, _, err := GetIssue(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := OperatorReopenIssue(context.Background(), db, issue.ID, core.OperatorReopenIssueRequest{
+		ExpectedVersion: closed.Version,
+		Actor:           "operator",
+	}); err == nil {
+		t.Fatal("OperatorReopenIssue() succeeded without a reason")
+	}
+
+	reopened, err := OperatorReopenIssue(context.Background(), db, issue.ID, core.OperatorReopenIssueRequest{
+		ExpectedVersion: closed.Version,
+		Actor:           "operator",
+		Reason:          "work needs reassessment",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reopened.Status != "open" || reopened.ClosedAt != "" {
+		t.Fatalf("unexpected reopened issue: %+v", reopened)
+	}
+
+	events, err := ListEvents(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	last := events[len(events)-1]
+	if last.EventType != "issue_reopened" {
+		t.Fatalf("event_type = %q, want issue_reopened", last.EventType)
+	}
+	var payload map[string]string
+	if err := json.Unmarshal([]byte(last.PayloadJSON), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload["from_status"] != "cancelled" || payload["to_status"] != "open" ||
+		payload["reason"] != "work needs reassessment" {
+		t.Fatalf("unexpected reopen payload: %v", payload)
+	}
+}
+
 func TestCloseIssueIncludesIssueExternalKeyInPayloadAndResult(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
@@ -1305,10 +1584,19 @@ func TestCloseIssueIncludesIssueExternalKeyInPayloadAndResult(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	claim, err := ClaimIssue(context.Background(), db, issue.ID, "tester", 60)
+	if err != nil {
+		t.Fatal(err)
+	}
+	issue, _, err = GetIssue(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	result, err := CloseIssue(context.Background(), db, issue.ID, core.CloseIssueRequest{
 		Resolution:      "done",
 		ExpectedVersion: issue.Version,
+		LeaseToken:      claim.LeaseToken,
 	})
 	if err != nil {
 		t.Fatal(err)

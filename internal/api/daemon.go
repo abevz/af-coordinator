@@ -99,6 +99,8 @@ func RunDaemon(ctx context.Context, logger *slog.Logger, cfg config.Config, st s
 	mux.HandleFunc("POST /v1/issues/{issue_id}/release", handleReleaseLease(st, logger))
 	mux.HandleFunc("PATCH /v1/issues/{issue_id}", handleUpdateIssue(st, logger))
 	mux.HandleFunc("POST /v1/issues/{issue_id}/close", handleCloseIssue(st, logger))
+	mux.HandleFunc("POST /v1/issues/{issue_id}/operator-close", handleOperatorCloseIssue(st, logger))
+	mux.HandleFunc("POST /v1/issues/{issue_id}/operator-reopen", handleOperatorReopenIssue(st, logger))
 	mux.HandleFunc("POST /v1/issues/{issue_id}/dependencies", handleAddDependency(st, logger))
 	mux.HandleFunc("DELETE /v1/issues/{issue_id}/dependencies/{depends_on}", handleRemoveDependency(st, logger))
 	mux.HandleFunc("POST /v1/issues/{issue_id}/links", handleLinkArtifact(st, logger))
