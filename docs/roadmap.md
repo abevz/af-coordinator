@@ -12,9 +12,10 @@ order and close authorization trustworthy, then adds lease-attempt outcomes,
 atomic HANDOFF, and a local project statistics report.
 
 `afc-49` delivered causal event order, `afc-50` delivered close/reopen
-authorization, and `afc-51` delivered lease-attempt outcomes. The remaining
-implementation issues (`afc-52` and `afc-53`) remain deliberately deferred
-while the operator compares this track with Aion Forge Harness v2 Phase 4.
+authorization, `afc-51` delivered lease-attempt outcomes, and `afc-52`
+delivered atomic HANDOFF. The remaining implementation issue (`afc-53`) stays
+deliberately deferred while the operator compares this track with Aion Forge
+Harness v2 Phase 4.
 
 Delivery order is:
 

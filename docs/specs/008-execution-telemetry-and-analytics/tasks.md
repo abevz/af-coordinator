@@ -4,8 +4,8 @@ Task IDs are live af-coordinator short IDs in project `afc`. This file owns
 scope and dependency intent; use `afctl issue get afc-<N> --full` for current
 status, claims, notes, links, and closure audit.
 
-The operator selected this track on 2026-07-13. `afc-49` through `afc-51` are
-complete; the remaining implementation tasks stay deferred until their
+The operator selected this track on 2026-07-13. `afc-49` through `afc-52` are
+complete; the remaining implementation task stays deferred until its
 dependency order is reached.
 
 | ID | Type | Pri | Status | Title | Depends on |
@@ -15,7 +15,7 @@ dependency order is reached.
 | `afc-49` | bug | P1 | done | Preserve causal event order with monotonic sequence | `afc-48` |
 | `afc-50` | bug | P1 | done | Enforce close authorization and terminal transitions | `afc-48` |
 | `afc-51` | feature | P2 | done | Record execution attempts and lease outcomes | `afc-48`, `afc-49` |
-| `afc-52` | feature | P2 | deferred | Add atomic HANDOFF and release flow | `afc-48`, `afc-49`, `afc-50` |
+| `afc-52` | feature | P2 | done | Add atomic HANDOFF and release flow | `afc-48`, `afc-49`, `afc-50` |
 | `afc-53` | feature | P2 | deferred | Add project execution statistics report | `afc-48`, `afc-49`, `afc-50`, `afc-51`, `afc-52` |
 
 All child tasks also carry a `parent` relationship to `afc-47`.

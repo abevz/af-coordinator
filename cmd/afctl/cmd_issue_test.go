@@ -71,3 +71,42 @@ func TestOperatorCommandsRejectLeaseTokenFlag(t *testing.T) {
 		t.Fatalf("operator-reopen error = %v, want unknown flag", err)
 	}
 }
+
+func TestIssueHandoffValidatesRequiredHandoffNote(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		args    []string
+		wantErr string
+	}{
+		{
+			name:    "missing token",
+			args:    []string{"handoff", "afc-52", "--note", "HANDOFF: next steps"},
+			wantErr: "--lease-token is required",
+		},
+		{
+			name:    "missing note",
+			args:    []string{"handoff", "afc-52", "--lease-token", "token"},
+			wantErr: "note is required",
+		},
+		{
+			name:    "malformed note",
+			args:    []string{"handoff", "afc-52", "--lease-token", "token", "--note", "continue later"},
+			wantErr: "note must begin with HANDOFF:",
+		},
+		{
+			name:    "unknown flag",
+			args:    []string{"handoff", "afc-52", "--lease-token", "token", "--note", "HANDOFF: next steps", "--author", "agent"},
+			wantErr: "unknown flag",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := runIssue(context.Background(), nil, tt.args)
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("error = %v, want %q", err, tt.wantErr)
+			}
+		})
+	}
+}

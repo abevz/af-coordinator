@@ -18,6 +18,7 @@ type fakeClient struct {
 	readyResp             []core.Issue
 	claimResp             core.ClaimResponse
 	heartbeatResp         string
+	handoffResp           core.HandoffResponse
 	noteResp              core.Note
 	notesResp             []core.Note
 	eventsResp            []core.Event
@@ -29,6 +30,7 @@ type fakeClient struct {
 	lastTTL               int
 	lastSessionID         string
 	lastLeaseToken        string
+	lastHandoffNote       string
 	lastNoteAuthor        string
 	lastNoteBody          string
 	lastCloseReq          core.CloseIssueRequest
@@ -61,6 +63,12 @@ func (f *fakeClient) HeartbeatLease(_ context.Context, issueID, leaseToken strin
 	f.lastLeaseToken = leaseToken
 	f.lastTTL = ttlSeconds
 	return f.heartbeatResp, nil
+}
+func (f *fakeClient) HandoffLease(_ context.Context, issueID, leaseToken, note string) (core.HandoffResponse, error) {
+	f.lastIssueID = issueID
+	f.lastLeaseToken = leaseToken
+	f.lastHandoffNote = note
+	return f.handoffResp, nil
 }
 func (f *fakeClient) CreateNote(_ context.Context, issueID, author, body string) (core.Note, error) {
 	f.lastIssueID = issueID
@@ -146,6 +154,35 @@ func TestToolCallClaimIssueUsesDefaultActor(t *testing.T) {
 	callResult := resp.Result.(map[string]any)
 	if callResult["isError"] != nil {
 		t.Fatalf("unexpected tool error result: %+v", callResult)
+	}
+}
+
+func TestToolCallHandoffIssueUsesAtomicClientPath(t *testing.T) {
+	fake := &fakeClient{handoffResp: core.HandoffResponse{Note: core.Note{ID: "n1"}}}
+	s := NewServer(fake, "codex-actor", "0055")
+	resp := s.handleRequest(context.Background(), rpcRequest{
+		JSONRPC: "2.0",
+		ID:      json.RawMessage("4"),
+		Method:  "tools/call",
+		Params:  json.RawMessage(`{"name":"handoff_issue","arguments":{"issue_id":"afc-52","lease_token":"lease","note":"HANDOFF: continue after review"}}`),
+	})
+
+	if resp == nil || resp.Error != nil {
+		t.Fatalf("expected handoff tool result, got %+v", resp)
+	}
+	if fake.lastIssueID != "afc-52" || fake.lastLeaseToken != "lease" || fake.lastHandoffNote != "HANDOFF: continue after review" {
+		t.Fatalf("unexpected handoff call: issue=%q token=%q note=%q", fake.lastIssueID, fake.lastLeaseToken, fake.lastHandoffNote)
+	}
+
+	invalid := s.handleRequest(context.Background(), rpcRequest{
+		JSONRPC: "2.0",
+		ID:      json.RawMessage("5"),
+		Method:  "tools/call",
+		Params:  json.RawMessage(`{"name":"handoff_issue","arguments":{"issue_id":"afc-52","lease_token":"lease","note":"continue after review"}}`),
+	})
+	result := invalid.Result.(map[string]any)
+	if result["isError"] != true {
+		t.Fatalf("malformed handoff unexpectedly succeeded: %+v", result)
 	}
 }
 

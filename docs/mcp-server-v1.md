@@ -21,6 +21,7 @@ it as the default actor/holder/author when the request does not pass one.
 - `list_ready_issues`
 - `claim_issue`
 - `heartbeat_issue`
+- `handoff_issue`
 - `add_note`
 - `list_notes`
 - `list_issue_events`
@@ -30,6 +31,8 @@ it as the default actor/holder/author when the request does not pass one.
 
 `claim_issue` accepts optional non-secret `session_id` correlation metadata
 and returns the daemon-generated `attempt_id` with the secret lease token.
+`handoff_issue` requires that active token plus a non-empty `note` beginning
+`HANDOFF:`; it invokes the daemon's atomic note-and-release path.
 
 ## Design constraints
 

@@ -307,7 +307,7 @@ after its lease died.
 
 Every successful claim also receives a daemon-generated, non-secret
 `attempt_id`. The live lease holds only the current attempt; the append-only
-event stream preserves claim, release, close, and lazy-expiry outcomes. An
+event stream preserves claim, release, handoff, close, and lazy-expiry outcomes. An
 optional non-secret `session_id` is caller correlation data, separate from the
 holder identity and lease token.
 
@@ -441,7 +441,9 @@ Claiming a `deferred` issue is not allowed; unpark it first.
 
 Claim creates the lease and moves `open -> in_progress` in one transaction.
 Release deletes the lease and moves `in_progress -> open` unless the issue
-was explicitly left `blocked`.
+was explicitly left `blocked`. Normal agent handoff adds a `HANDOFF:` note and
+then releases in the same transaction, preserving `note_added` before
+`issue_released`; bare release remains available for recovery.
 
 ## Dependency kinds
 
@@ -501,6 +503,7 @@ Core commands:
 - `afctl issue ready`
 - `afctl issue claim`
 - `afctl issue release`
+- `afctl issue handoff`
 - `afctl issue note`
 - `afctl issue events`
 - `afctl issue close`

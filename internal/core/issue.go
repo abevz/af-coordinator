@@ -145,6 +145,19 @@ type ReleaseRequest struct {
 	LeaseToken string `json:"lease_token"`
 }
 
+// HandoffRequest is the JSON body for POST /v1/issues/{issue_id}/handoff.
+// The server derives the note author from the active lease holder.
+type HandoffRequest struct {
+	LeaseToken string `json:"lease_token"`
+	Note       string `json:"note"`
+}
+
+// HandoffResponse is returned after atomically recording a HANDOFF note and
+// releasing the active lease.
+type HandoffResponse struct {
+	Note Note `json:"note"`
+}
+
 // UpdateIssueRequest is the JSON body for PATCH /v1/issues/{issue_id}.
 type UpdateIssueRequest struct {
 	Title              string `json:"title,omitempty"`
@@ -258,6 +271,18 @@ func ValidateCreateIssue(req CreateIssueRequest) error {
 	}
 	if len(errs) > 0 {
 		return fmt.Errorf("validation_failed: %s", strings.Join(errs, "; "))
+	}
+	return nil
+}
+
+// ValidateHandoffRequest checks the non-secret user input for an atomic
+// HANDOFF. The lease token is authorized separately by the store.
+func ValidateHandoffRequest(req HandoffRequest) error {
+	if strings.TrimSpace(req.Note) == "" {
+		return fmt.Errorf("note is required")
+	}
+	if !strings.HasPrefix(req.Note, "HANDOFF:") {
+		return fmt.Errorf("note must begin with HANDOFF:")
 	}
 	return nil
 }

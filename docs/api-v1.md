@@ -125,6 +125,8 @@ This is the compact route-to-implementation inventory for the current daemon.
   `sqlite.HeartbeatLease`
 - `POST /v1/issues/{issue_id}/release` -> `handleReleaseLease` ->
   `sqlite.ReleaseLease`
+- `POST /v1/issues/{issue_id}/handoff` -> `handleHandoffLease` ->
+  `sqlite.HandoffLease`
 - `PATCH /v1/issues/{issue_id}` -> `handleUpdateIssue` ->
   `sqlite.UpdateIssue`
 - `POST /v1/issues/{issue_id}/close` -> `handleCloseIssue` ->
@@ -231,6 +233,12 @@ This is the compact route-to-implementation inventory for the current daemon.
   lease, moves `in_progress -> open` unless left `blocked`, and records the
   attempt outcome. Lazy replacement of an expired lease emits `lease_expired`
   before the next `issue_claimed` event.
+- `POST /v1/issues/{issue_id}/handoff` — body: `lease_token`, `note`; requires
+  a non-empty note beginning `HANDOFF:` and atomically records it under the
+  active lease holder before releasing the lease. The event sequence is
+  `note_added` then `issue_released` with `end_reason: handoff`; lease tokens
+  never enter either event payload. Missing, wrong, or expired leases fail with
+  `lease_expired` and leave no note or release behind.
 
 ## Notes, links, dependencies, events
 

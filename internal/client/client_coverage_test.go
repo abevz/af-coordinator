@@ -66,6 +66,8 @@ func TestClientCoverage(t *testing.T) {
 			json.NewEncoder(w).Encode(map[string]any{"expires_at": time.Now().Format(time.RFC3339)})
 		case r.URL.Path == "/v1/issues/i1/release" && r.Method == "POST":
 			json.NewEncoder(w).Encode(core.Issue{ID: "i1"})
+		case r.URL.Path == "/v1/issues/i1/handoff" && r.Method == "POST":
+			json.NewEncoder(w).Encode(core.HandoffResponse{Note: core.Note{ID: "n1"}})
 		case r.URL.Path == "/v1/issues/i1/close" && r.Method == "POST":
 			json.NewEncoder(w).Encode(core.Issue{ID: "i1", Status: "closed"})
 		case r.URL.Path == "/v1/issues/i1/notes" && r.Method == "POST":
@@ -134,6 +136,7 @@ func TestClientCoverage(t *testing.T) {
 	_, _ = c.ClaimIssueWithSession(ctx, "i1", "actor", 10, "session-1")
 	_, _ = c.HeartbeatLease(ctx, "i1", "token", 10)
 	_ = c.ReleaseLease(ctx, "i1", "token")
+	_, _ = c.HandoffLease(ctx, "i1", "token", "HANDOFF: coverage")
 	_, _ = c.CloseIssue(ctx, "i1", core.CloseIssueRequest{})
 	_, _ = c.OperatorCloseIssue(ctx, "i1", core.OperatorCloseIssueRequest{})
 	_, _ = c.OperatorReopenIssue(ctx, "i1", core.OperatorReopenIssueRequest{})

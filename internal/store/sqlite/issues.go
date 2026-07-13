@@ -543,6 +543,89 @@ func ReleaseLease(ctx context.Context, db *sql.DB, issueID, leaseToken string) e
 	return nil
 }
 
+// HandoffLease records a required HANDOFF note and releases its active lease
+// in one transaction. The note is authored by the current lease holder, so a
+// caller cannot separate the handoff evidence from its authorized owner.
+func HandoffLease(ctx context.Context, db *sql.DB, issueID string, req core.HandoffRequest) (core.HandoffResponse, error) {
+	if err := core.ValidateHandoffRequest(req); err != nil {
+		return core.HandoffResponse{}, core.NewAPIError(core.ErrValidationFailed, err.Error())
+	}
+	if req.LeaseToken == "" {
+		return core.HandoffResponse{}, core.NewAPIError(core.ErrValidationFailed, "lease_token is required")
+	}
+
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return core.HandoffResponse{}, fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	var holder, attemptID string
+	err = tx.QueryRowContext(ctx,
+		`SELECT holder, attempt_id FROM leases
+		 WHERE issue_id = ? AND lease_token = ? AND expires_at > ?`,
+		issueID, req.LeaseToken, now,
+	).Scan(&holder, &attemptID)
+	if err == sql.ErrNoRows {
+		return core.HandoffResponse{}, core.NewAPIError(core.ErrLeaseExpired, "active lease not found")
+	}
+	if err != nil {
+		return core.HandoffResponse{}, fmt.Errorf("select active lease: %w", err)
+	}
+
+	note := core.Note{
+		ID:        uuid.New().String(),
+		IssueID:   issueID,
+		Author:    holder,
+		Body:      req.Note,
+		CreatedAt: now,
+	}
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO notes (id, issue_id, author, body, created_at) VALUES (?, ?, ?, ?, ?)`,
+		note.ID, note.IssueID, note.Author, note.Body, note.CreatedAt,
+	); err != nil {
+		return core.HandoffResponse{}, fmt.Errorf("insert handoff note: %w", err)
+	}
+	if err := insertEvent(ctx, tx, issueID, holder, "note_added", map[string]any{}, now); err != nil {
+		return core.HandoffResponse{}, err
+	}
+
+	result, err := tx.ExecContext(ctx,
+		`DELETE FROM leases WHERE issue_id = ? AND lease_token = ?`, issueID, req.LeaseToken)
+	if err != nil {
+		return core.HandoffResponse{}, fmt.Errorf("delete lease: %w", err)
+	}
+	if rows, err := result.RowsAffected(); err != nil {
+		return core.HandoffResponse{}, fmt.Errorf("handoff lease rows affected: %w", err)
+	} else if rows != 1 {
+		return core.HandoffResponse{}, core.NewAPIError(core.ErrLeaseExpired, "active lease not found")
+	}
+
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE issues SET
+		     status = CASE WHEN status = 'blocked' THEN 'blocked' ELSE 'open' END,
+		     claimed_at = NULL,
+		     version = version + 1,
+		     updated_at = ?
+		 WHERE id = ?`,
+		now, issueID,
+	); err != nil {
+		return core.HandoffResponse{}, fmt.Errorf("update issue: %w", err)
+	}
+	if err := insertEvent(ctx, tx, issueID, holder, "issue_released", map[string]any{
+		"attempt_id": attemptID,
+		"end_reason": "handoff",
+	}, now); err != nil {
+		return core.HandoffResponse{}, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return core.HandoffResponse{}, fmt.Errorf("commit handoff: %w", err)
+	}
+	return core.HandoffResponse{Note: note}, nil
+}
+
 func getActiveLease(ctx context.Context, db *sql.DB, issueID string) (*core.IssueLease, error) {
 	row := db.QueryRowContext(ctx,
 		`SELECT holder, lease_token, expires_at, attempt_id, session_id FROM leases WHERE issue_id = ? AND expires_at > ?`,
