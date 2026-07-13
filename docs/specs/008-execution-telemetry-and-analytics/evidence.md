@@ -80,5 +80,6 @@ afctl issue ready --project aion --json | jq 'length'
 afctl issue get utils-16 --full
 ```
 
-The detailed aggregate queries used during planning should become tested report
-logic under `afc-53`, not a permanent collection of shell pipelines.
+The detailed aggregate queries used during planning are now tested report logic
+under `afc-53`, including a sanitized normalized-export fixture rather than a
+permanent collection of shell pipelines.

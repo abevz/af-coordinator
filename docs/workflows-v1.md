@@ -105,6 +105,26 @@ show who has it.
 If you want the issue held for you, park it. If you don't mind whoever
 gets to it first, walk away — the system self-heals.
 
+## Inspecting project flow
+
+Use the read-only report when you need a project or repository-level view,
+not a list of actions to claim:
+
+```bash
+afctl stats --project afc --since 7d
+afctl stats --project afc --repo af-coordinator --since 2026-07-01T00:00:00Z
+afctl --json stats --project afc --since 24h | jq '.flow, .attempts, .coverage'
+```
+
+The human view shows current inventory plus flow and coverage summaries. JSON
+is a versioned report for automation. `since` is RFC 3339 or a positive Go
+duration; `until` is RFC 3339 and defaults to now. Inventory and note/spec
+coverage are current snapshots, while creation and transition metrics use the
+selected inclusive time window. Read the report's data-quality fields before
+making causal claims about events before the sequence cutoff. The report is
+local and read-only: it does not claim work, require a lease token, or rank
+agents.
+
 ## Issue types and epics
 
 Every issue has an `issue_type`: `task` (the default), `bug`, `feature`,

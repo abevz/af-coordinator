@@ -72,6 +72,14 @@ daemon-assigned event `sequence`. Treat `created_at` as wall-clock metadata:
 it can be tied and does not establish causal order. Legacy records before an
 `event_ordering_enabled` marker have deterministic display order only.
 
+## Read-only reporting
+
+Use `afctl stats [--project <key>] [--repo <name>] [--since <RFC3339|duration>]
+[--until <RFC3339>] [--json]` to inspect coordinator execution flow. It is a
+local read-only report: it needs no lease token, does not change issue state,
+and does not rank agents. Treat `data_quality` as the boundary for legacy event
+ordering before drawing causal conclusions.
+
 ## Exit codes
 
 Commands with `--json` succeed or fail with typed exit codes so the caller can react without parsing prose:

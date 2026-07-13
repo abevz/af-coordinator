@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/abevz/af-coordinator/internal/core"
+	"github.com/abevz/af-coordinator/internal/report"
 )
 
 func TestClientCoverage(t *testing.T) {
@@ -30,6 +31,8 @@ func TestClientCoverage(t *testing.T) {
 		switch {
 		case r.URL.Path == "/v1/health":
 			json.NewEncoder(w).Encode(core.Health{Status: "ok", Name: "test"})
+		case r.URL.Path == "/v1/stats" && r.Method == "GET":
+			json.NewEncoder(w).Encode(map[string]any{"report": report.Report{Version: "v1"}})
 		case r.URL.Path == "/v1/projects" && r.Method == "POST":
 			json.NewEncoder(w).Encode(core.Project{Key: "test", Name: "Test"})
 		case r.URL.Path == "/v1/projects" && r.Method == "GET":
@@ -110,6 +113,7 @@ func TestClientCoverage(t *testing.T) {
 
 	// Now call all methods to boost coverage
 	_, _ = c.Health(ctx)
+	_, _ = c.GetStats(ctx, report.Query{})
 
 	_, _ = c.CreateProject(ctx, "test", "Test", "desc")
 	_, _ = c.ListProjects(ctx)

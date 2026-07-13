@@ -4,7 +4,7 @@ Direction for af-coordinator beyond v1. The operational source of truth for
 this work is the coordinator itself (project `afc`); this document records
 the intent and the reasoning so the issues stay short.
 
-## Planned target: execution telemetry and analytics hardening (`afc-47`)
+## Completed target: execution telemetry and analytics hardening (`afc-47`)
 
 Packet `docs/specs/008-execution-telemetry-and-analytics/` captures gaps found
 from the first ten days of live multi-project use. It first makes causal event
@@ -12,10 +12,9 @@ order and close authorization trustworthy, then adds lease-attempt outcomes,
 atomic HANDOFF, and a local project statistics report.
 
 `afc-49` delivered causal event order, `afc-50` delivered close/reopen
-authorization, `afc-51` delivered lease-attempt outcomes, and `afc-52`
-delivered atomic HANDOFF. The remaining implementation issue (`afc-53`) stays
-deliberately deferred while the operator compares this track with Aion Forge
-Harness v2 Phase 4.
+authorization, `afc-51` delivered lease-attempt outcomes, `afc-52` delivered
+atomic HANDOFF, and `afc-53` delivered the local project statistics report.
+The track is complete.
 
 Delivery order is:
 

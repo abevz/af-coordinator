@@ -511,6 +511,7 @@ Core commands:
 - `afctl issue close`
 - `afctl issue operator-close`
 - `afctl issue operator-reopen`
+- `afctl stats` — local, read-only execution-flow report
 - `afctl project add`
 - `afctl repo add`
 - `afctl worktree register`
@@ -521,6 +522,13 @@ Core commands:
 
 The CLI supports query-style list filters while keeping rendered views and JSON
 arrays stable for automation.
+
+`afctl stats` calls `GET /v1/stats` and renders the same versioned report as
+JSON or a concise human view. Aggregation lives in `internal/report` behind a
+read-only store contract, so it reuses coordinator evidence without opening
+SQLite from CLI code, adding a rollup database, or reaching an external
+telemetry service. It reports system flow only; it deliberately has no agent
+ranking or productivity-score model.
 
 ## Integration model
 

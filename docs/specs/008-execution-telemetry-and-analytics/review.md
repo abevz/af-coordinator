@@ -1,6 +1,6 @@
 # Review
 
-Status: in progress; `afc-49` through `afc-52` completed.
+Status: complete; `afc-49` through `afc-53` completed.
 
 ## Planning Review
 
@@ -26,8 +26,7 @@ Status: in progress; `afc-49` through `afc-52` completed.
 - The first report should be a local derived read model, not a new telemetry
   stack or mutable analytics store.
 
-There are no unresolved design blockers for starting `afc-49` through `afc-52`
-once the operator chooses this track.
+There are no unresolved implementation or design blockers in this packet.
 
 ## `afc-49` — Preserve Causal Event Order
 
@@ -142,14 +141,41 @@ once the operator chooses this track.
   scratch-daemon flow, and installed-service verification passed; protocol
   copies remain byte-identical.
 
+## `afc-53` — Add Project Statistics
+
+### What shipped
+
+- Added the versioned, read-only `internal/report` aggregation layer and
+  `GET /v1/stats`. It derives inventory, throughput, lead-time percentiles,
+  attempt duration/churn/outcomes, HANDOFF compliance, note/spec/SCM coverage,
+  and legacy-ordering data quality directly from coordinator records.
+- Added `client.GetStats` plus `afctl stats` with project, repository, RFC 3339
+  or duration `since`, RFC 3339 `until`, stable JSON, and concise human
+  rendering. The report owns no database connection, mutable rollup, remote
+  dependency, productivity score, or agent ranking.
+- Defined report window, nearest-rank percentile, ratio, snapshot-coverage,
+  reopened, cancelled, deferred, and legacy-cutoff treatment in API, schema,
+  architecture, workflow, operations, curl, protocol, and export-facing docs.
+  The two protocol document copies remain byte-identical.
+
+### What was verified
+
+- Table-driven aggregation fixtures cover empty data, legacy cutoff, reopened
+  and cancelled work, deferred inventory, multi-attempt churn, expiry,
+  HANDOFF, SCM/spec coverage, ambiguous filters, and a sanitized normalized
+  export fixture.
+- API, client, CLI parser/JSON path, and human-rendering regressions cover the
+  versioned endpoint, filters, invalid windows, stable report decoding, and
+  visible metric/data-quality output.
+- `go test ./...`, `go build -buildvcs=false ./...`, `make test` (race), and
+  `git diff --check` passed.
+- `make build-install` and `make restart-service` installed the daemon and
+  CLI. The active user service passed `afctl health` (version `0055`) and both
+  JSON and human `afctl stats --project afc --since 24h` reads against live
+  coordinator data without mutation.
+- The report response and fixtures contain no lease tokens or note bodies.
+
 ## Implementation Review Checklist
 
-When the remaining deferred task is completed, update this file with:
-
-- migration and compatibility results;
-- focused regression-test evidence per task;
-- installed daemon/client verification after rebuild and restart;
-- reconciliation of `afctl stats` against a sanitized fixture and live export;
-- confirmation that lease tokens never appear in events, logs, reports, or
-  examples;
-- final decision on whether the packet and epic can be marked completed.
+All packet tasks are complete. The parent epic may be closed through the
+explicit local operator path after the `afc-53` closure audit is recorded.

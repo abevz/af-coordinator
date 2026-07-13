@@ -35,6 +35,7 @@ func registerRoutes(mux *http.ServeMux, db *sql.DB, logger *slog.Logger) {
 	mux.HandleFunc("/healthz", healthHandler)
 	mux.HandleFunc("/v1/health", healthHandler)
 	mux.HandleFunc("GET /v1/export/jsonl", handleExportJSONL(st, logger))
+	mux.HandleFunc("GET /v1/stats", handleStats(st, logger))
 
 	// Projects
 	mux.HandleFunc("POST /v1/projects", handleCreateProject(st, logger))
@@ -980,6 +981,55 @@ func TestListIssuesMultiValueFilters(t *testing.T) {
 		if result.Error.Code != core.ErrValidationFailed {
 			t.Fatalf("query %q: error code = %q, want %q", rawQuery, result.Error.Code, core.ErrValidationFailed)
 		}
+	}
+}
+
+func TestStats(t *testing.T) {
+	server, db := newTestServer(t)
+	now := "2026-07-13T10:00:00Z"
+	if _, err := db.Exec(
+		`INSERT INTO projects (id, key, name, description, next_issue_seq, created_at, updated_at)
+		 VALUES ('project-1', 'test', 'Test', '', 1, ?, ?)`, now, now,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(
+		`INSERT INTO issues (id, short_id, project_id, scope_kind, issue_type, title, description, status, priority, assignee, version, created_at, updated_at)
+		 VALUES ('issue-1', 'test-1', 'project-1', 'project', 'task', 'Issue', '', 'open', 3, '', 1, ?, ?)`, now, now,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	resp, err := http.Get(server.URL + "/v1/stats?project=test&since=2026-07-13T00%3A00%3A00Z&until=2026-07-14T00%3A00%3A00Z")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d", resp.StatusCode)
+	}
+	result := decodeJSON[struct {
+		Report struct {
+			Version   string `json:"version"`
+			Inventory struct {
+				Total int `json:"total"`
+			} `json:"inventory"`
+		} `json:"report"`
+	}](t, resp)
+	if result.Report.Version != "v1" || result.Report.Inventory.Total != 1 {
+		t.Fatalf("stats response = %#v", result)
+	}
+
+	resp, err = http.Get(server.URL + "/v1/stats?since=not-a-time")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusBadRequest {
+		resp.Body.Close()
+		t.Fatalf("expected 400 Bad Request, got %d", resp.StatusCode)
+	}
+	apiErr := decodeJSON[core.APIErrorResponse](t, resp)
+	if apiErr.Error.Code != core.ErrValidationFailed {
+		t.Fatalf("error code = %q, want %q", apiErr.Error.Code, core.ErrValidationFailed)
 	}
 }
 

@@ -286,6 +286,16 @@ create table events (
 );
 ```
 
+### Derived statistics
+
+`GET /v1/stats` and `afctl stats` add no tables, migrations, or mutable
+analytics state. The read-only report scans the normalized project,
+repository, issue, note, artifact-reference, and event records at request
+time. Event `sequence` remains the causal ordering source: the global
+`event_ordering_enabled` marker separates deterministic-but-legacy history
+from exact ordering. Report responses expose that cutoff and do not infer
+causal attempt order for events before it.
+
 ## Indexes
 
 ```sql

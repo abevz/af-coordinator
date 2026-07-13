@@ -165,5 +165,4 @@ analytics are out of scope until a measured need exists.
 5. `afc-53`: report layer and CLI/API statistics after the event contract is
    trustworthy.
 
-The implementation issues remain deferred until the operator chooses this
-track over, or after, Aion Forge Harness v2 Phase 4.
+All delivery slices were completed after the operator selected this track.
