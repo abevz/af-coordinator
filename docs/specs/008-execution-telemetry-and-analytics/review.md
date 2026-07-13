@@ -1,6 +1,6 @@
 # Review
 
-Status: in progress; `afc-49` through `afc-51` completed.
+Status: in progress; `afc-49` through `afc-52` completed.
 
 ## Planning Review
 
@@ -26,7 +26,7 @@ Status: in progress; `afc-49` through `afc-51` completed.
 - The first report should be a local derived read model, not a new telemetry
   stack or mutable analytics store.
 
-There are no unresolved design blockers for starting `afc-49` through `afc-51`
+There are no unresolved design blockers for starting `afc-49` through `afc-52`
 once the operator chooses this track.
 
 ## `afc-49` — Preserve Causal Event Order
@@ -115,9 +115,36 @@ once the operator chooses this track.
   was rebuilt and restarted successfully; a read-only live check confirmed
   migration backfill and no public lease token.
 
+## `afc-52` — Add Atomic HANDOFF
+
+### What shipped
+
+- `POST /v1/issues/{issue_id}/handoff` records a required `HANDOFF:` note and
+  releases the active lease in one SQLite transaction. The store derives the
+  note author from the lease holder and rejects missing, wrong, or expired
+  leases without changing state.
+- The durable sequence is `note_added` followed by `issue_released`; the
+  release records the existing attempt with `end_reason: handoff`, while lease
+  tokens remain absent from notes, public results, and event payloads.
+- API, client, `afctl issue handoff`, MCP `handoff_issue`, curl/schema/
+  architecture docs, and both byte-identical agent protocol copies expose the
+  same contract. Bare release remains available only for recovery and
+  compatibility.
+
+### What was verified
+
+- Store regressions cover successful lifecycle ordering, malformed/wrong/
+  expired credentials, and forced note-write or lease-delete failures with no
+  partial note, event, status, or lease mutation.
+- API, client, MCP, and CLI regressions validate the endpoint, request shape,
+  required `HANDOFF:` prefix, and MCP forwarding.
+- `go test ./...`, `go build -buildvcs=false ./...`, `make test` (race),
+  scratch-daemon flow, and installed-service verification passed; protocol
+  copies remain byte-identical.
+
 ## Implementation Review Checklist
 
-When the remaining deferred tasks are completed, update this file with:
+When the remaining deferred task is completed, update this file with:
 
 - migration and compatibility results;
 - focused regression-test evidence per task;

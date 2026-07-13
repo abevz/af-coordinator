@@ -261,6 +261,11 @@ create table notes (
 );
 ```
 
+An atomic HANDOFF writes its required `HANDOFF:` note under the active lease
+holder and releases that lease in one transaction. Its `note_added` event is
+allocated before the matching `issue_released` event, whose attempt outcome is
+`handoff`; neither event stores the lease token.
+
 ### events
 
 The event log is append-only and must survive its subject. `sequence` is the

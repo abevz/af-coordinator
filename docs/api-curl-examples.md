@@ -141,8 +141,21 @@ curl -s -X POST --unix-socket $AFC_SOCK \
   http://localhost/v1/issues/afc-15/heartbeat | jq
 ```
 
-### Release an issue (Back to Open)
-Releases the lease without closing the issue.
+### Hand off an issue (Back to Open)
+Records the required next-step note and releases the lease in one transaction.
+```bash
+curl -s -X POST --unix-socket $AFC_SOCK \
+  -H "Content-Type: application/json" \
+  -d '{
+    "lease_token": "'"$TOKEN"'",
+    "note": "HANDOFF: review the current branch, run go test ./..., then continue from the latest issue note."
+  }' \
+  http://localhost/v1/issues/afc-15/handoff | jq
+```
+
+### Bare release (Recovery)
+Releases the lease without a note. Reserve it for recovery and compatibility;
+normal agent stops should use the atomic HANDOFF endpoint above.
 ```bash
 curl -s -X POST --unix-socket $AFC_SOCK \
   -H "Content-Type: application/json" \

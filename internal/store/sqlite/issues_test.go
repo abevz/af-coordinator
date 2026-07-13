@@ -1944,6 +1944,257 @@ func TestReleaseLeaseAppendsEvent(t *testing.T) {
 	}
 }
 
+func TestHandoffLeaseRecordsNoteBeforeHandoffRelease(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	if _, err := CreateProject(context.Background(), db, "test", "Test", ""); err != nil {
+		t.Fatal(err)
+	}
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{
+		ScopeKind: "project",
+		Title:     "Atomic handoff",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	claim, err := ClaimIssue(context.Background(), db, issue.ID, "agent-1", 3600)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resp, err := HandoffLease(context.Background(), db, issue.ID, core.HandoffRequest{
+		LeaseToken: claim.LeaseToken,
+		Note:       "HANDOFF: implementation is ready for review",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Note.Author != "agent-1" || resp.Note.Body != "HANDOFF: implementation is ready for review" {
+		t.Fatalf("unexpected handoff note: %+v", resp.Note)
+	}
+
+	updated, lease, err := GetIssue(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Status != "open" {
+		t.Fatalf("status = %q, want open", updated.Status)
+	}
+	if lease != nil {
+		t.Fatalf("lease = %+v, want nil", lease)
+	}
+
+	notes, err := ListNotes(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(notes) != 1 || notes[0].ID != resp.Note.ID {
+		t.Fatalf("notes = %+v, want returned handoff note", notes)
+	}
+
+	events, err := ListEvents(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var noteAdded, released *core.Event
+	for i := range events {
+		event := &events[i]
+		if strings.Contains(event.PayloadJSON, claim.LeaseToken) {
+			t.Fatalf("event %s leaked lease token: %s", event.EventType, event.PayloadJSON)
+		}
+		switch event.EventType {
+		case "note_added":
+			noteAdded = event
+		case "issue_released":
+			released = event
+		}
+	}
+	if noteAdded == nil || released == nil {
+		t.Fatalf("expected note_added and issue_released events, got %+v", events)
+	}
+	if noteAdded.Sequence >= released.Sequence {
+		t.Fatalf("note sequence %d must precede release sequence %d", noteAdded.Sequence, released.Sequence)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(released.PayloadJSON), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload["attempt_id"] != claim.AttemptID || payload["end_reason"] != "handoff" {
+		t.Fatalf("release payload = %+v", payload)
+	}
+}
+
+func TestHandoffLeaseRejectsInvalidOrExpiredLeaseWithoutPartialState(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		request  func(core.ClaimResponse) core.HandoffRequest
+		expire   bool
+		wantCode string
+	}{
+		{
+			name: "missing note",
+			request: func(claim core.ClaimResponse) core.HandoffRequest {
+				return core.HandoffRequest{LeaseToken: claim.LeaseToken}
+			},
+			wantCode: core.ErrValidationFailed,
+		},
+		{
+			name: "malformed note",
+			request: func(claim core.ClaimResponse) core.HandoffRequest {
+				return core.HandoffRequest{LeaseToken: claim.LeaseToken, Note: "next steps"}
+			},
+			wantCode: core.ErrValidationFailed,
+		},
+		{
+			name: "missing token",
+			request: func(core.ClaimResponse) core.HandoffRequest {
+				return core.HandoffRequest{Note: "HANDOFF: next steps"}
+			},
+			wantCode: core.ErrValidationFailed,
+		},
+		{
+			name: "wrong token",
+			request: func(core.ClaimResponse) core.HandoffRequest {
+				return core.HandoffRequest{LeaseToken: "wrong-token", Note: "HANDOFF: next steps"}
+			},
+			wantCode: core.ErrLeaseExpired,
+		},
+		{
+			name: "expired token",
+			request: func(claim core.ClaimResponse) core.HandoffRequest {
+				return core.HandoffRequest{LeaseToken: claim.LeaseToken, Note: "HANDOFF: next steps"}
+			},
+			expire:   true,
+			wantCode: core.ErrLeaseExpired,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := newTestDB(t)
+			if _, err := CreateProject(context.Background(), db, "test", "Test", ""); err != nil {
+				t.Fatal(err)
+			}
+			issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: tt.name})
+			if err != nil {
+				t.Fatal(err)
+			}
+			claim, err := ClaimIssue(context.Background(), db, issue.ID, "agent-1", 3600)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tt.expire {
+				if _, err := db.Exec(`UPDATE leases SET expires_at = ? WHERE issue_id = ?`, time.Now().UTC().Add(-time.Second).Format(time.RFC3339), issue.ID); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			_, err = HandoffLease(context.Background(), db, issue.ID, tt.request(claim))
+			if err == nil {
+				t.Fatal("expected handoff error")
+			}
+			var apiErr core.APIError
+			if !errors.As(err, &apiErr) || apiErr.Code != tt.wantCode {
+				t.Fatalf("error = %v, want API code %q", err, tt.wantCode)
+			}
+
+			var leaseCount int
+			if err := db.QueryRow(`SELECT count(*) FROM leases WHERE issue_id = ?`, issue.ID).Scan(&leaseCount); err != nil {
+				t.Fatal(err)
+			}
+			if leaseCount != 1 {
+				t.Fatalf("lease count = %d, want 1", leaseCount)
+			}
+			notes, err := ListNotes(context.Background(), db, issue.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(notes) != 0 {
+				t.Fatalf("notes = %+v, want none", notes)
+			}
+			events, err := ListEvents(context.Background(), db, issue.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(events) != 2 {
+				t.Fatalf("events = %+v, want only issue_created and issue_claimed", events)
+			}
+		})
+	}
+}
+
+func TestHandoffLeaseRollsBackWhenNoteOrReleaseWriteFails(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		triggerSQL string
+	}{
+		{
+			name: "note write",
+			triggerSQL: `CREATE TRIGGER fail_handoff_note BEFORE INSERT ON notes
+				BEGIN SELECT RAISE(ABORT, 'note write failed'); END`,
+		},
+		{
+			name: "lease release",
+			triggerSQL: `CREATE TRIGGER fail_handoff_release BEFORE DELETE ON leases
+				BEGIN SELECT RAISE(ABORT, 'lease release failed'); END`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := newTestDB(t)
+			if _, err := CreateProject(context.Background(), db, "test", "Test", ""); err != nil {
+				t.Fatal(err)
+			}
+			issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: tt.name})
+			if err != nil {
+				t.Fatal(err)
+			}
+			claim, err := ClaimIssue(context.Background(), db, issue.ID, "agent-1", 3600)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := db.Exec(tt.triggerSQL); err != nil {
+				t.Fatal(err)
+			}
+
+			if _, err := HandoffLease(context.Background(), db, issue.ID, core.HandoffRequest{
+				LeaseToken: claim.LeaseToken,
+				Note:       "HANDOFF: retry after repair",
+			}); err == nil {
+				t.Fatal("expected handoff failure")
+			}
+
+			updated, lease, err := GetIssue(context.Background(), db, issue.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if updated.Status != "in_progress" || lease == nil {
+				t.Fatalf("partial handoff changed issue: status=%q lease=%+v", updated.Status, lease)
+			}
+			notes, err := ListNotes(context.Background(), db, issue.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(notes) != 0 {
+				t.Fatalf("notes = %+v, want rollback", notes)
+			}
+			events, err := ListEvents(context.Background(), db, issue.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(events) != 2 {
+				t.Fatalf("events = %+v, want rollback", events)
+			}
+		})
+	}
+}
+
 func TestCreateNoteAppendsEvent(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)

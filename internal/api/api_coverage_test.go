@@ -79,6 +79,7 @@ func TestApiCoverage_BadJSON(t *testing.T) {
 		{"POST", "/v1/issues/123/claim"},
 		{"POST", "/v1/issues/123/heartbeat"},
 		{"POST", "/v1/issues/123/release"},
+		{"POST", "/v1/issues/123/handoff"},
 		{"POST", "/v1/issues/123/close"},
 		{"POST", "/v1/issues/123/notes"},
 	}

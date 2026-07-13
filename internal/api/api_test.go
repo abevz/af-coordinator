@@ -64,6 +64,7 @@ func registerRoutes(mux *http.ServeMux, db *sql.DB, logger *slog.Logger) {
 	mux.HandleFunc("POST /v1/issues/{issue_id}/claim", handleClaimIssue(st, logger))
 	mux.HandleFunc("POST /v1/issues/{issue_id}/heartbeat", handleHeartbeatLease(st, logger))
 	mux.HandleFunc("POST /v1/issues/{issue_id}/release", handleReleaseLease(st, logger))
+	mux.HandleFunc("POST /v1/issues/{issue_id}/handoff", handleHandoffLease(st, logger))
 	mux.HandleFunc("PATCH /v1/issues/{issue_id}", handleUpdateIssue(st, logger))
 	mux.HandleFunc("POST /v1/issues/{issue_id}/close", handleCloseIssue(st, logger))
 	mux.HandleFunc("POST /v1/issues/{issue_id}/operator-close", handleOperatorCloseIssue(st, logger))
@@ -759,6 +760,90 @@ func TestClaimIssue(t *testing.T) {
 	}
 	if sessionID != "session-claim-1" {
 		t.Fatalf("session_id = %q", sessionID)
+	}
+}
+
+func TestHandoffLeaseRecordsNoteAndReleasesAtomically(t *testing.T) {
+	server, db := newTestServer(t)
+
+	if _, err := sqlite.CreateProject(context.Background(), db, "test", "Test", ""); err != nil {
+		t.Fatal(err)
+	}
+	issue, err := sqlite.CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{
+		ScopeKind: "project",
+		Title:     "Handoff through API",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	claim, err := sqlite.ClaimIssue(context.Background(), db, issue.ID, "api-agent", 3600)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	body, err := json.Marshal(core.HandoffRequest{
+		LeaseToken: claim.LeaseToken,
+		Note:       "HANDOFF: validate the API response",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, err := http.NewRequest(http.MethodPost, server.URL+"/v1/issues/"+issue.ID+"/handoff", strings.NewReader(string(body)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+	handoff := decodeJSON[core.HandoffResponse](t, resp)
+	if handoff.Note.Author != "api-agent" || handoff.Note.Body != "HANDOFF: validate the API response" {
+		t.Fatalf("handoff response = %+v", handoff)
+	}
+
+	updated, lease, err := sqlite.GetIssue(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Status != "open" || lease != nil {
+		t.Fatalf("unexpected post-handoff state: status=%q lease=%+v", updated.Status, lease)
+	}
+
+	invalid, err := sqlite.CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Invalid handoff"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	invalidClaim, err := sqlite.ClaimIssue(context.Background(), db, invalid.ID, "api-agent", 3600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	invalidBody, err := json.Marshal(core.HandoffRequest{LeaseToken: invalidClaim.LeaseToken, Note: "missing prefix"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	invalidReq, err := http.NewRequest(http.MethodPost, server.URL+"/v1/issues/"+invalid.ID+"/handoff", strings.NewReader(string(invalidBody)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	invalidReq.Header.Set("Content-Type", "application/json")
+	invalidResp, err := http.DefaultClient.Do(invalidReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer invalidResp.Body.Close()
+	if invalidResp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("invalid handoff status = %d, want %d", invalidResp.StatusCode, http.StatusBadRequest)
+	}
+	_, invalidLease, err := sqlite.GetIssue(context.Background(), db, invalid.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if invalidLease == nil {
+		t.Fatal("invalid API request released the lease")
 	}
 }
 

@@ -40,16 +40,21 @@ Every agent session follows this cycle:
    ```
    afctl issue note add <short_id> --actor <name> --body "message"
    ```
-   When stopping without closing, always leave a final note starting with `HANDOFF:` so the next agent knows where to start.
+   When stopping without closing, use the atomic handoff command so the final
+   `HANDOFF:` note and lease release cannot be separated.
 
-5. **Close or release**
+5. **Close or hand off**
    ```
    afctl issue close <short_id> --resolution done --expected-version N --lease-token <token> \
      --branch <branch> --pr-url <url> --commit-sha <sha> --note "what was done"
-   afctl issue release <short_id> --lease-token <token>
+   afctl issue handoff <short_id> --lease-token <token> \
+     --note "HANDOFF: next agent starts here"
    ```
 
-   Ordinary close always requires the active matching lease token. For an
+   Handoff requires a non-empty note beginning exactly `HANDOFF:` and commits
+   `note_added` before `issue_released` in one transaction. Use bare
+   `afctl issue release <short_id> --lease-token <token>` only for recovery or
+   compatibility. Ordinary close always requires the active matching lease token. For an
    unclaimable epic or deliberate administrative resolution, use the explicit
    local operator path instead; it requires a reason and never accepts a
    dummy token:

@@ -15,7 +15,7 @@ import (
 
 func runIssue(ctx context.Context, c *client.Client, args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("%s", "Usage: afctl issue <create|get|list|ready|claim|heartbeat|release|update|close|operator-close|operator-reopen>")
+		return fmt.Errorf("%s", "Usage: afctl issue <create|get|list|ready|claim|heartbeat|release|handoff|update|close|operator-close|operator-reopen>")
 	}
 
 	switch args[0] {
@@ -35,6 +35,8 @@ func runIssue(ctx context.Context, c *client.Client, args []string) error {
 		return runIssueHeartbeat(ctx, c, args[1:])
 	case "release":
 		return runIssueRelease(ctx, c, args[1:])
+	case "handoff":
+		return runIssueHandoff(ctx, c, args[1:])
 	case "update":
 		return runIssueUpdate(ctx, c, args[1:])
 	case "close":
@@ -437,6 +439,49 @@ func runIssueRelease(ctx context.Context, c *client.Client, args []string) error
 		return nil
 	}
 	fmt.Println("Lease released.")
+	return nil
+}
+
+func runIssueHandoff(ctx context.Context, c *client.Client, args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("%s", "Usage: afctl issue handoff <issue-id> --lease-token <token> --note \"HANDOFF: next steps\"")
+	}
+
+	issueID := args[0]
+	leaseToken := ""
+	note := ""
+	for i := 1; i < len(args); i++ {
+		switch args[i] {
+		case "--lease-token":
+			if i+1 < len(args) {
+				leaseToken = args[i+1]
+				i++
+			}
+		case "--note":
+			if i+1 < len(args) {
+				note = args[i+1]
+				i++
+			}
+		default:
+			return fmt.Errorf("unknown flag for issue handoff: %s", args[i])
+		}
+	}
+	if leaseToken == "" {
+		return fmt.Errorf("%s", "error: --lease-token is required")
+	}
+	if err := core.ValidateHandoffRequest(core.HandoffRequest{Note: note}); err != nil {
+		return fmt.Errorf("error: %v", err)
+	}
+
+	resp, err := c.HandoffLease(ctx, issueID, leaseToken, note)
+	if err != nil {
+		fail(err)
+	}
+	if jsonOutput {
+		json.NewEncoder(os.Stdout).Encode(resp)
+		return nil
+	}
+	fmt.Printf("Handoff note recorded: %s\nLease released.\n", resp.Note.ID)
 	return nil
 }
 

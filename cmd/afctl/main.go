@@ -138,6 +138,7 @@ Commands:
     claim               Claim an issue (acquire a lease)
     heartbeat           Extend an existing lease
     release             Release a claimed lease
+    handoff             Add a required HANDOFF note and release atomically
     update              Update issue fields (title, description, priority, assignee, status)
     close               Close an issue (resolution: done or cancelled) [--branch name] [--pr-url URL] [--commit-sha SHA] [--note "text"]
     link                Link an artifact to an issue

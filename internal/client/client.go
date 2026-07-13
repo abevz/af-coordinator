@@ -294,6 +294,16 @@ func (c *Client) ReleaseLease(ctx context.Context, issueID, leaseToken string) e
 	return c.doJSON(ctx, http.MethodPost, "/v1/issues/"+issueID+"/release", body, nil)
 }
 
+// HandoffLease sends a HANDOFF note and lease release as one atomic request.
+func (c *Client) HandoffLease(ctx context.Context, issueID, leaseToken, note string) (core.HandoffResponse, error) {
+	body := core.HandoffRequest{LeaseToken: leaseToken, Note: note}
+	var result core.HandoffResponse
+	if err := c.doJSON(ctx, http.MethodPost, "/v1/issues/"+issueID+"/handoff", body, &result); err != nil {
+		return core.HandoffResponse{}, err
+	}
+	return result, nil
+}
+
 // UpdateIssue sends a PATCH /v1/issues/{issueID} request.
 func (c *Client) UpdateIssue(ctx context.Context, issueID string, req core.UpdateIssueRequest) (core.Issue, error) {
 	var result struct {

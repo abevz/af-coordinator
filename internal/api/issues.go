@@ -256,6 +256,51 @@ func handleReleaseLease(st store.CoordinatorStore, logger *slog.Logger) http.Han
 	}
 }
 
+func handleHandoffLease(st store.CoordinatorStore, logger *slog.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		issueID, ok := resolveIssueID(st, w, r)
+		if !ok {
+			return
+		}
+
+		var req core.HandoffRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, core.ErrValidationFailed, "invalid JSON body")
+			return
+		}
+		if req.LeaseToken == "" {
+			writeError(w, http.StatusBadRequest, core.ErrValidationFailed, "lease_token is required")
+			return
+		}
+		if err := core.ValidateHandoffRequest(req); err != nil {
+			writeError(w, http.StatusBadRequest, core.ErrValidationFailed, err.Error())
+			return
+		}
+
+		resp, err := st.HandoffLease(r.Context(), issueID, req)
+		if err != nil {
+			if apiErr, ok := errAsAPIError(err); ok {
+				switch apiErr.Code {
+				case core.ErrLeaseExpired:
+					writeError(w, http.StatusGone, core.ErrLeaseExpired, apiErr.Message)
+					return
+				case core.ErrNotFound:
+					writeError(w, http.StatusNotFound, core.ErrNotFound, apiErr.Message)
+					return
+				case core.ErrValidationFailed:
+					writeError(w, http.StatusBadRequest, core.ErrValidationFailed, apiErr.Message)
+					return
+				}
+			}
+			logger.Error("failed to hand off lease", "issue_id", issueID, "error", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "failed to hand off lease")
+			return
+		}
+
+		writeJSON(w, http.StatusOK, resp)
+	}
+}
+
 func handleListReadyIssues(st store.CoordinatorStore, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		projectFilter := r.URL.Query().Get("project")

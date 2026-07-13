@@ -232,6 +232,37 @@ func TestCloseIssueReturnsStructuredResult(t *testing.T) {
 	}
 }
 
+func TestHandoffLeasePostsRequiredNote(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf("method = %q, want POST", r.Method)
+		}
+		if r.URL.Path != "/v1/issues/i1/handoff" {
+			t.Fatalf("path = %q", r.URL.Path)
+		}
+		var req core.HandoffRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatal(err)
+		}
+		if req.LeaseToken != "test-token" || req.Note != "HANDOFF: continue from test" {
+			t.Fatalf("request = %+v", req)
+		}
+		json.NewEncoder(w).Encode(core.HandoffResponse{Note: core.Note{
+			ID: "n1", IssueID: "i1", Author: "agent", Body: req.Note,
+		}})
+	}))
+	defer server.Close()
+
+	result, err := testClient(t, server).HandoffLease(context.Background(), "i1", "test-token", "HANDOFF: continue from test")
+	if err != nil {
+		t.Fatalf("HandoffLease() error = %v", err)
+	}
+	if result.Note.ID != "n1" || result.Note.Body != "HANDOFF: continue from test" {
+		t.Fatalf("result = %+v", result)
+	}
+}
+
 func TestOperatorIssueMethodsUseExplicitTokenlessPaths(t *testing.T) {
 	t.Parallel()
 	requests := 0

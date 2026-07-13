@@ -123,6 +123,10 @@ func (s *Store) ReleaseLease(ctx context.Context, issueID, leaseToken string) er
 	return ReleaseLease(ctx, s.db, issueID, leaseToken)
 }
 
+func (s *Store) HandoffLease(ctx context.Context, issueID string, req core.HandoffRequest) (core.HandoffResponse, error) {
+	return HandoffLease(ctx, s.db, issueID, req)
+}
+
 func (s *Store) UpdateIssue(ctx context.Context, issueID string, req core.UpdateIssueRequest) (core.Issue, error) {
 	return UpdateIssue(ctx, s.db, issueID, req)
 }

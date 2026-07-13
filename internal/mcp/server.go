@@ -28,6 +28,7 @@ type CoordinatorClient interface {
 	ClaimIssue(ctx context.Context, issueID, holder string, ttlSeconds int) (core.ClaimResponse, error)
 	ClaimIssueWithSession(ctx context.Context, issueID, holder string, ttlSeconds int, sessionID string) (core.ClaimResponse, error)
 	HeartbeatLease(ctx context.Context, issueID, leaseToken string, ttlSeconds int) (string, error)
+	HandoffLease(ctx context.Context, issueID, leaseToken, note string) (core.HandoffResponse, error)
 	CreateNote(ctx context.Context, issueID, author, body string) (core.Note, error)
 	ListNotes(ctx context.Context, issueID string) ([]core.Note, error)
 	ListEvents(ctx context.Context, issueID string) ([]core.Event, error)
@@ -252,6 +253,22 @@ func (s *Server) callTool(ctx context.Context, params toolCallParams) (any, erro
 			return nil, err
 		}
 		return map[string]any{"expires_at": expiresAt}, nil
+	case "handoff_issue":
+		var args struct {
+			IssueID    string `json:"issue_id"`
+			LeaseToken string `json:"lease_token"`
+			Note       string `json:"note"`
+		}
+		if err := unmarshalArgs(params.Arguments, &args); err != nil {
+			return nil, err
+		}
+		if args.IssueID == "" || args.LeaseToken == "" {
+			return nil, fmt.Errorf("issue_id and lease_token are required")
+		}
+		if err := core.ValidateHandoffRequest(core.HandoffRequest{Note: args.Note}); err != nil {
+			return nil, err
+		}
+		return s.client.HandoffLease(ctx, args.IssueID, args.LeaseToken, args.Note)
 	case "add_note":
 		var args struct {
 			IssueID string `json:"issue_id"`
@@ -404,6 +421,11 @@ func (s *Server) tools() []map[string]any {
 			{name: "issue_id", fieldType: "string", description: "Issue UUID or short id.", required: true},
 			{name: "lease_token", fieldType: "string", description: "Current lease token.", required: true},
 			{name: "ttl_seconds", fieldType: "integer", description: "Optional lease TTL in seconds; daemon default applies when omitted."},
+		})),
+		toolDefinition("handoff_issue", "Atomically add a required HANDOFF note and release an active lease.", objectSchema([]schemaField{
+			{name: "issue_id", fieldType: "string", description: "Issue UUID or short id.", required: true},
+			{name: "lease_token", fieldType: "string", description: "Active lease token.", required: true},
+			{name: "note", fieldType: "string", description: "Non-empty note beginning with HANDOFF:.", required: true},
 		})),
 		toolDefinition("add_note", "Append a note to an issue.", objectSchema([]schemaField{
 			{name: "issue_id", fieldType: "string", description: "Issue UUID or short id.", required: true},
