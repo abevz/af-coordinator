@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"testing"
@@ -2397,6 +2398,91 @@ func TestListGlobalEventsInvalidCursor(t *testing.T) {
 	}
 	if apiErr.Code != core.ErrValidationFailed {
 		t.Fatalf("expected code %q, got %q", core.ErrValidationFailed, apiErr.Code)
+	}
+
+	unknown, err := encodeEventCursor(eventCursor{Sequence: 999})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = ListGlobalEvents(context.Background(), db, unknown, 100)
+	if err == nil {
+		t.Fatal("expected unknown v2 cursor error")
+	}
+	if !errors.As(err, &apiErr) || apiErr.Code != core.ErrValidationFailed {
+		t.Fatalf("expected validation error for unknown v2 cursor, got %v", err)
+	}
+}
+
+func TestEventSequenceOrdersSameSecondTimelineAndPagination(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	project, err := CreateProject(context.Background(), db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const createdAt = "2026-07-13T20:00:00Z"
+	if _, err := db.Exec(
+		`INSERT INTO issues (id, short_id, project_id, scope_kind, title, description, status, priority, assignee, version, created_at, updated_at)
+		 VALUES ('issue-1', 'test-1', ?, 'project', 'Sequence', '', 'open', 3, '', 1, ?, ?)`,
+		project.ID, createdAt, createdAt,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(
+		`INSERT INTO events (id, issue_id, actor, event_type, payload_json, created_at) VALUES
+		 ('event-z', 'issue-1', 'agent', 'first_inserted', '{}', ?),
+		 ('event-a', 'issue-1', 'agent', 'second_inserted', '{}', ?),
+		 ('event-m', 'issue-1', 'agent', 'third_inserted', '{}', ?)`,
+		createdAt, createdAt, createdAt,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	timeline, err := ListEvents(context.Background(), db, "issue-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantIDs := []string{"event-z", "event-a", "event-m"}
+	if len(timeline) != len(wantIDs) {
+		t.Fatalf("timeline events = %d, want %d", len(timeline), len(wantIDs))
+	}
+	for i, want := range wantIDs {
+		if timeline[i].ID != want || timeline[i].Sequence != int64(i+1) {
+			t.Fatalf("timeline[%d] = %#v, want id=%q sequence=%d", i, timeline[i], want, i+1)
+		}
+	}
+
+	first, err := ListGlobalEvents(context.Background(), db, "", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := ListGlobalEvents(context.Background(), db, first.NextSince, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	third, err := ListGlobalEvents(context.Background(), db, second.NextSince, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Events[0].ID != "event-z" || second.Events[0].ID != "event-a" || third.Events[0].ID != "event-m" {
+		t.Fatalf("pagination order = %q, %q, %q", first.Events[0].ID, second.Events[0].ID, third.Events[0].ID)
+	}
+	if first.NextSince[:3] != "v2." {
+		t.Fatalf("next_since = %q, want v2 cursor", first.NextSince)
+	}
+
+	legacyJSON, err := json.Marshal(legacyEventCursor{ID: "event-z", CreatedAt: createdAt})
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacySince := "v1." + base64.RawURLEncoding.EncodeToString(legacyJSON)
+	legacyPage, err := ListGlobalEvents(context.Background(), db, legacySince, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(legacyPage.Events) != 2 || legacyPage.Events[0].ID != "event-a" || legacyPage.Events[1].ID != "event-m" {
+		t.Fatalf("legacy cursor page = %#v", legacyPage.Events)
 	}
 }
 

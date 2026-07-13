@@ -182,9 +182,11 @@ This is the compact route-to-implementation inventory for the current daemon.
   `issue_id`, `issue_short_id`, `depends_on_id`, `depends_on_short_id`
 - `GET  /v1/issues?project=&repo=&worktree=&status=&assignee=&type=&external_key=` — query
 - `GET  /v1/events?since=&limit=&wait_ms=` — global cursor-paginated event
-  stream; `since` is an opaque cursor returned as `next_since`, `limit`
-  defaults to 100 and is capped at 500, and `wait_ms` enables bounded long-poll
-  up to 30000 ms
+  stream ordered by `event.sequence`; `since` is an opaque `v2` cursor returned
+  as `next_since`, `limit` defaults to 100 and is capped at 500, and `wait_ms`
+  enables bounded long-poll up to 30000 ms. During the compatibility window,
+  the daemon also resolves an existing `v1` `(created_at, id)` cursor to its
+  migrated sequence; malformed or unknown cursors return `validation_failed`.
 - `GET  /v1/issues/ready?project=&repo=` — computed ready view; excludes
   epics (they are containers, not units of work). When `repo` is given
   alongside `project`, repository logical-name resolution is scoped to that
@@ -224,4 +226,5 @@ This is the compact route-to-implementation inventory for the current daemon.
   (`depends_on`, `kind`); rejects `blocks` cycles with `dependency_cycle`.
   Supported `kind` values: `blocks` (default), `parent`, `related`, `discovered-from`
 - `DELETE /v1/issues/{issue_id}/dependencies/{depends_on}?kind=` — remove
-- `GET  /v1/issues/{issue_id}/events` — activity timeline
+- `GET  /v1/issues/{issue_id}/events` — activity timeline ordered by
+  `event.sequence`; every event response includes `sequence`

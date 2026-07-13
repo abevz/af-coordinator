@@ -1,6 +1,6 @@
 # Review
 
-Status: planning complete; implementation not started.
+Status: in progress; `afc-49` completed.
 
 ## Planning Review
 
@@ -28,6 +28,31 @@ Status: planning complete; implementation not started.
 
 There are no unresolved design blockers for starting `afc-49` or `afc-50` once
 the operator chooses this track.
+
+## `afc-49` — Preserve Causal Event Order
+
+### What shipped
+
+- Migration `0005_event_sequence.sql` rebuilds `events` with a monotonic
+  `sequence` primary key, deterministically migrates legacy rows, and appends
+  an `event_ordering_enabled` cutoff marker only when legacy history exists.
+- Timelines, global pagination, and JSONL export use sequence order; event
+  responses now expose `sequence`.
+- New `v2` cursors encode the sequence. Existing `v1` timestamp/ID cursors are
+  resolved to the migrated event for the compatibility window and unknown
+  cursors fail with `validation_failed` instead of skipping data.
+- API, schema, architecture, workflow, protocol, and export documentation now
+  describe the ordering contract. The two protocol document copies remain
+  byte-identical.
+
+### What was verified
+
+- `go test ./...`
+- Migration regression: real embedded pre-0005 migrations, deterministic
+  same-second legacy ordering, and cutoff marker.
+- Store, API, and export regressions for same-second order, pagination without
+  duplicates, v1 cursor compatibility, rejected unknown v2 cursors, and JSONL
+  sequence order.
 
 ## Implementation Review Checklist
 

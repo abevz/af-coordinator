@@ -23,7 +23,8 @@ right now", recomputed on every call. When your lease expires, the issue
 reappears in `ready` for everyone — but nothing about the issue itself is
 lost: status stays `in_progress`, `claimed_at` stays set, the event log
 keeps your claim, and your notes remain. Expiry deletes your exclusive
-right to the issue, not your trail on it.
+right to the issue, not your trail on it. Read event history in `sequence`
+order: timestamps can be tied and do not establish causality.
 
 ## Working solo on a backlog
 

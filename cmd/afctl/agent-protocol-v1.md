@@ -46,6 +46,13 @@ Every agent session follows this cycle:
    afctl issue release <short_id> --lease-token <token>
    ```
 
+## Event ordering
+
+Issue timelines, the global event feed, and JSONL export are ordered by the
+daemon-assigned event `sequence`. Treat `created_at` as wall-clock metadata:
+it can be tied and does not establish causal order. Legacy records before an
+`event_ordering_enabled` marker have deterministic display order only.
+
 ## Exit codes
 
 Commands with `--json` succeed or fail with typed exit codes so the caller can react without parsing prose:

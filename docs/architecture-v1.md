@@ -466,8 +466,11 @@ Every important change should append an event:
 - lease expired (from the sweeper, at most one per lease)
 
 The event log is the audit trail and recovery aid. It is append-only and
-must survive its subjects: nothing cascades events away, and issues and
-projects are never hard-deleted in v1.
+ordered by a daemon-assigned monotonic `sequence`, allocated in the same
+transaction as the domain mutation. It must survive its subjects: nothing
+cascades events away, and issues and projects are never hard-deleted in v1.
+Legacy records before the `event_ordering_enabled` marker have a deterministic
+display order only; equal timestamps are not causal evidence.
 
 Over time, this should support a user-facing activity timeline comparable to
 the good parts of Beads comments/history, but backed by daemon-owned writes.
