@@ -174,18 +174,28 @@ func GetIssue(ctx context.Context, db *sql.DB, id string) (core.Issue, *core.Iss
 func ListIssues(ctx context.Context, db *sql.DB, params core.IssueListParams) ([]core.Issue, error) {
 	var where []string
 	args := []interface{}{time.Now().UTC().Format(time.RFC3339)}
-	var projectID string
+	projectKeys := issueListFilterValues(params.Projects, params.Project)
+	projectIDs := make([]string, 0, len(projectKeys))
 
-	if params.Project != "" {
-		proj, err := GetProjectByKey(ctx, db, params.Project)
+	for _, projectKey := range projectKeys {
+		proj, err := GetProjectByKey(ctx, db, projectKey)
 		if err != nil {
 			return nil, fmt.Errorf("resolve project: %w", err)
 		}
-		projectID = proj.ID
-		where = append(where, "i.project_id = ?")
-		args = append(args, projectID)
+		projectIDs = append(projectIDs, proj.ID)
+	}
+	if len(projectIDs) > 0 {
+		appendIssueListInFilter(&where, &args, "i.project_id", projectIDs)
 	}
 	if params.Repo != "" {
+		if len(projectIDs) > 1 {
+			return nil, core.NewAPIError(core.ErrValidationFailed,
+				"repo filter requires exactly one project")
+		}
+		projectID := ""
+		if len(projectIDs) == 1 {
+			projectID = projectIDs[0]
+		}
 		repo, err := GetRepoInProject(ctx, db, projectID, params.Repo)
 		if err != nil {
 			return nil, fmt.Errorf("resolve repo: %w", err)
@@ -201,17 +211,15 @@ func ListIssues(ctx context.Context, db *sql.DB, params core.IssueListParams) ([
 		where = append(where, "i.worktree_id = ?")
 		args = append(args, wt.ID)
 	}
-	if params.Status != "" {
-		where = append(where, "i.status = ?")
-		args = append(args, params.Status)
+	if statuses := issueListFilterValues(params.Statuses, params.Status); len(statuses) > 0 {
+		appendIssueListInFilter(&where, &args, "i.status", statuses)
 	}
 	if params.Assignee != "" {
 		where = append(where, "i.assignee = ?")
 		args = append(args, params.Assignee)
 	}
-	if params.IssueType != "" {
-		where = append(where, "i.issue_type = ?")
-		args = append(args, params.IssueType)
+	if issueTypes := issueListFilterValues(params.IssueTypes, params.IssueType); len(issueTypes) > 0 {
+		appendIssueListInFilter(&where, &args, "i.issue_type", issueTypes)
 	}
 	if params.ExternalKey != "" {
 		where = append(where, "i.external_key = ?")
@@ -227,7 +235,7 @@ func ListIssues(ctx context.Context, db *sql.DB, params core.IssueListParams) ([
 	if len(where) > 0 {
 		query += " WHERE " + strings.Join(where, " AND ")
 	}
-	query += " ORDER BY i.updated_at DESC"
+	query += " ORDER BY i.updated_at DESC, i.id ASC"
 
 	rows, err := db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -255,6 +263,25 @@ func ListIssues(ctx context.Context, db *sql.DB, params core.IssueListParams) ([
 		}
 	}
 	return issues, nil
+}
+
+func issueListFilterValues(values []string, fallback string) []string {
+	if len(values) > 0 {
+		return values
+	}
+	if fallback == "" {
+		return nil
+	}
+	return []string{fallback}
+}
+
+func appendIssueListInFilter(where *[]string, args *[]interface{}, column string, values []string) {
+	placeholders := make([]string, len(values))
+	for i, value := range values {
+		placeholders[i] = "?"
+		*args = append(*args, value)
+	}
+	*where = append(*where, column+" IN ("+strings.Join(placeholders, ", ")+")")
 }
 
 // ListReadyIssues returns issues that are actionable (not terminal), not currently leased,

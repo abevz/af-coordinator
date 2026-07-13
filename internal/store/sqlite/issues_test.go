@@ -365,6 +365,76 @@ func TestListIssuesFilterByStatus(t *testing.T) {
 	}
 }
 
+func TestListIssuesFilterByMultipleValues(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	for _, project := range []struct{ key, name string }{
+		{key: "afc", name: "AF Coordinator"},
+		{key: "aion", name: "Aion Forge"},
+	} {
+		if _, err := CreateProject(ctx, db, project.key, project.name, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	wrongProject, err := CreateIssue(ctx, db, "afc", core.CreateIssueRequest{
+		ScopeKind: "project", Title: "Wrong type", IssueType: "bug",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	epic, err := CreateIssue(ctx, db, "afc", core.CreateIssueRequest{
+		ScopeKind: "project", Title: "AF epic", IssueType: "epic",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	chore, err := CreateIssue(ctx, db, "aion", core.CreateIssueRequest{
+		ScopeKind: "project", Title: "Aion chore", IssueType: "chore",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrongStatus, err := CreateIssue(ctx, db, "aion", core.CreateIssueRequest{
+		ScopeKind: "project", Title: "Wrong status", IssueType: "epic",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, update := range []struct {
+		id        string
+		status    string
+		updatedAt string
+	}{
+		{id: wrongProject.ID, status: "open", updatedAt: "2026-07-13T10:00:00Z"},
+		{id: epic.ID, status: "open", updatedAt: "2026-07-13T11:00:00Z"},
+		{id: chore.ID, status: "in_progress", updatedAt: "2026-07-13T12:00:00Z"},
+		{id: wrongStatus.ID, status: "done", updatedAt: "2026-07-13T13:00:00Z"},
+	} {
+		if _, err := db.Exec(`UPDATE issues SET status = ?, updated_at = ? WHERE id = ?`, update.status, update.updatedAt, update.id); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	issues, err := ListIssues(ctx, db, core.IssueListParams{
+		Projects:   []string{"afc", "aion"},
+		IssueTypes: []string{"epic", "chore"},
+		Statuses:   []string{"open", "in_progress"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(issues) != 2 {
+		t.Fatalf("expected 2 matching issues, got %d", len(issues))
+	}
+	if issues[0].ID != chore.ID || issues[1].ID != epic.ID {
+		t.Fatalf("ordered issue IDs = [%s %s], want [%s %s]", issues[0].ID, issues[1].ID, chore.ID, epic.ID)
+	}
+}
+
 func TestListIssuesFilterByExternalKey(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)

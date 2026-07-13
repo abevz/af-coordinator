@@ -54,7 +54,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	if filtered[0] != "init" && filtered[0] != "protocol" {
+	if shouldCheckDaemonVersion(filtered) {
 		if h, err := c.Health(ctx); err == nil {
 			if h.Version != "" && h.Version != build.Version {
 				fmt.Fprintf(os.Stderr, "afctl %s != daemon %s; restart af-coordinatord\n", build.Version, h.Version)
@@ -97,6 +97,18 @@ func main() {
 	if err != nil {
 		fail(err)
 	}
+}
+
+func shouldCheckDaemonVersion(args []string) bool {
+	if len(args) == 0 || args[0] == "init" || args[0] == "protocol" {
+		return false
+	}
+	for _, arg := range args[1:] {
+		if arg == "--help" || arg == "-h" {
+			return false
+		}
+	}
+	return true
 }
 
 func printUsage() {
@@ -150,7 +162,7 @@ Commands:
     dependency          Manage issue dependencies
       add               Add a dependency between two issues
       remove            Remove a dependency between two issues
-  ls [flags]             List issues (shortcut for issue list)
+  ls [filters]           List issues (shortcut for issue list; use --help for filters)
   show <issue-id> [--full] Show issue details (shortcut for issue get)
 `)
 }

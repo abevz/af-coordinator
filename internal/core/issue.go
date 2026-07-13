@@ -118,6 +118,35 @@ type IssueListParams struct {
 	Assignee    string
 	IssueType   string
 	ExternalKey string
+	Projects    []string
+	Statuses    []string
+	IssueTypes  []string
+}
+
+// NormalizeIssueListValues splits comma-separated filter values, trims
+// surrounding whitespace, and rejects empty elements. It accepts repeated
+// query values so HTTP and CLI callers can share the same normalization.
+func NormalizeIssueListValues(values []string) ([]string, error) {
+	if len(values) == 0 {
+		return nil, nil
+	}
+
+	normalized := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		for _, element := range strings.Split(value, ",") {
+			element = strings.TrimSpace(element)
+			if element == "" {
+				return nil, fmt.Errorf("filter values must not contain empty elements")
+			}
+			if _, ok := seen[element]; ok {
+				continue
+			}
+			seen[element] = struct{}{}
+			normalized = append(normalized, element)
+		}
+	}
+	return normalized, nil
 }
 
 // ClaimRequest is the JSON body for POST /v1/issues/{issue_id}/claim.
