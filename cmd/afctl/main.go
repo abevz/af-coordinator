@@ -84,6 +84,8 @@ func main() {
 		err = runArtifact(ctx, c, filtered[1:])
 	case "export":
 		err = runExport(ctx, c, filtered[1:])
+	case "stats":
+		err = runStats(ctx, c, filtered[1:])
 	case "issue":
 		err = runIssue(ctx, c, filtered[1:])
 	case "ls":
@@ -142,6 +144,7 @@ Commands:
     list                List artifacts
   export                Export coordinator state
     jsonl               Stream normalized JSONL to stdout
+  stats [filters]       Show read-only project execution statistics
   issue                 Manage issues
     create              Create a new issue
     get                 Get an issue by ID or short_id [--full]

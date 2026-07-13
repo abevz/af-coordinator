@@ -1,7 +1,6 @@
 # Execution Telemetry And Analytics Hardening
 
-Status: in progress; `afc-49` through `afc-52` are implemented, with the
-remaining slice deferred.
+Status: complete; `afc-49` through `afc-53` are implemented and verified.
 
 This packet hardens the audit contract that already backs af-coordinator and
 then adds a small, local execution report over trustworthy coordinator data.
@@ -20,10 +19,9 @@ attempt describes ownership of coordinator work. Temporal, Aion Forge, or
 another runner still owns workflow retries, process state, and execution
 internals.
 
-The operator selected this track and `afc-49` through `afc-52` are completed
-delivery slices. The remaining implementation issue remains deferred. Live status,
-claims, dependencies, notes, and closure audit remain in af-coordinator; the
-files in this packet own scope and design.
+The operator selected this track and all delivery slices are complete. Live
+status, claims, dependencies, notes, and closure audit remain in
+af-coordinator; the files in this packet own scope and design.
 
 Supporting evidence is recorded in `evidence.md`. The canonical task slices
 and dependency order are in `tasks.md`.

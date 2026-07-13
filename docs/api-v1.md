@@ -13,13 +13,14 @@ curl --unix-socket ~/.local/state/af-coordinator/af-coordinator.sock \
 
 ## Implementation layout
 
-The API stack is intentionally thin and split into six layers:
+The API stack is intentionally thin and split into seven layers:
 
 - daemon entrypoint: `cmd/af-coordinatord/main.go`
 - route registration and JSON helpers: `internal/api/daemon.go`,
   `internal/api/errors.go`
 - endpoint handlers: `internal/api/projects.go`, `repos.go`, `worktrees.go`,
-  `artifacts.go`, `issues.go`
+  `artifacts.go`, `issues.go`, `stats.go`
+- read-only execution-statistics aggregation: `internal/report`
 - typed client over the unix socket: `internal/client/client.go`
 - API-facing store boundary: `internal/store`
 - persistence and most business rules: `internal/store/sqlite/*.go`
@@ -154,6 +155,11 @@ This is the compact route-to-implementation inventory for the current daemon.
 - `GET /v1/events?since=&limit=&wait_ms=` -> `handleWatchEvents` ->
   `sqlite.ListGlobalEvents`
 
+### `internal/api/stats.go`
+
+- `GET /v1/stats?project=&repo=&since=&until=` -> `handleStats` ->
+  `report.Build` over the API-facing read-only store contract
+
 ## Registry
 
 - `POST /v1/projects` — create project (`key`, `name`, `description`);
@@ -176,6 +182,30 @@ This is the compact route-to-implementation inventory for the current daemon.
   `kind`, `title`). Performs an upsert: if the artifact already exists by
   `(repo, relative_path)`, updates `title` and `kind` without changing ID.
 - `GET  /v1/artifacts?repo=` — list
+
+## Statistics
+
+- `GET /v1/stats?project=&repo=&since=&until=` — a versioned, read-only
+  execution-flow report in a `{ "report": ... }` envelope. `project` is a
+  project key; `repo` is a repository UUID or logical name (names must be
+  unambiguous without `project`); `since` accepts RFC 3339 or a positive Go
+  duration such as `24h`; `until` accepts RFC 3339 and defaults to the daemon
+  clock. Invalid or inverted windows return `validation_failed`.
+- Inventory, ready, in-progress, note coverage, and spec-link coverage are
+  current snapshots of the selected scope. Created and transition metrics use
+  the inclusive `[since, until]` window; an omitted `since` includes retained
+  history. SCM close-metadata coverage uses each issue's latest terminal close
+  in that window.
+- Percentiles are seconds, use nearest-rank selection, and always include
+  `sample_size`. Ratios include `numerator` and `denominator`; a zero
+  denominator reports a zero ratio rather than an invented percentage.
+- `data_quality.exact_ordering_from_sequence` is the global
+  `event_ordering_enabled` cutoff. Events before it have deterministic legacy
+  display order only, so `legacy_events_included` is true whenever the scoped
+  time window contains one. The endpoint derives directly from coordinator
+  records and does not create rollup tables or contact a telemetry service.
+- The report is system-flow evidence, not an agent leaderboard or productivity
+  score. Lease tokens, note bodies, and other secrets are never included.
 
 ## Issues
 

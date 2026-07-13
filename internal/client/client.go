@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/abevz/af-coordinator/internal/core"
+	"github.com/abevz/af-coordinator/internal/report"
 )
 
 // ClientError is a structured error returned when the daemon responds with an API error envelope.
@@ -58,6 +59,35 @@ func (c *Client) Health(ctx context.Context) (core.Health, error) {
 		return core.Health{}, err
 	}
 	return result, nil
+}
+
+// GetStats sends a GET /v1/stats request with optional scope and time filters.
+func (c *Client) GetStats(ctx context.Context, query report.Query) (report.Report, error) {
+	path := "/v1/stats"
+	values := url.Values{}
+	if query.Project != "" {
+		values.Set("project", query.Project)
+	}
+	if query.Repo != "" {
+		values.Set("repo", query.Repo)
+	}
+	if query.Since != "" {
+		values.Set("since", query.Since)
+	}
+	if query.Until != "" {
+		values.Set("until", query.Until)
+	}
+	if len(values) > 0 {
+		path += "?" + values.Encode()
+	}
+
+	var result struct {
+		Report report.Report `json:"report"`
+	}
+	if err := c.doJSON(ctx, http.MethodGet, path, nil, &result); err != nil {
+		return report.Report{}, err
+	}
+	return result.Report, nil
 }
 
 // CreateProject sends a POST /v1/projects request.

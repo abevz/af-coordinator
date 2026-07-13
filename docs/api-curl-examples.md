@@ -22,6 +22,18 @@ export AFC_ACTOR="my-curl-script"
 curl -s --unix-socket $AFC_SOCK http://localhost/v1/health | jq
 ```
 
+### Read execution statistics
+The report is read-only. `since` accepts RFC 3339 or a positive Go duration;
+`until` accepts RFC 3339 and defaults to the daemon clock.
+```bash
+curl -s --unix-socket $AFC_SOCK \
+  "http://localhost/v1/stats?project=afc&since=24h" | jq '.report'
+```
+
+The response reports current inventory and coverage together with windowed
+flow metrics. Inspect `data_quality` before treating legacy events as causal
+history; report data never includes lease tokens or note bodies.
+
 ---
 
 ## 2. Reading Issues
@@ -297,4 +309,6 @@ Example lines:
 
 Event records are emitted in ascending `sequence`, not timestamp or UUID
 order. Legacy rows before `event_ordering_enabled` have deterministic ordering
-only; tied timestamps do not imply causal order.
+only; tied timestamps do not imply causal order. `GET /v1/stats` derives its
+point-in-time report from the same normalized coordinator record families; it
+is an envelope response, not another JSONL record type.

@@ -68,6 +68,7 @@ func RunDaemon(ctx context.Context, logger *slog.Logger, cfg config.Config, st s
 	mux.HandleFunc("/healthz", healthHandler)
 	mux.HandleFunc("/v1/health", healthHandler)
 	mux.HandleFunc("GET /v1/export/jsonl", handleExportJSONL(st, logger))
+	mux.HandleFunc("GET /v1/stats", handleStats(st, logger))
 
 	// Project registration.
 	mux.HandleFunc("POST /v1/projects", handleCreateProject(st, logger))

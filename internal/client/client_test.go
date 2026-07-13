@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/abevz/af-coordinator/internal/core"
+	"github.com/abevz/af-coordinator/internal/report"
 )
 
 func TestClientError_Error(t *testing.T) {
@@ -215,6 +216,36 @@ func TestListIssuesWithFiltersEncodesRepeatedQuery(t *testing.T) {
 	}
 	if len(issues) != 0 {
 		t.Fatalf("expected empty issue list, got %d", len(issues))
+	}
+}
+
+func TestGetStatsEncodesFilters(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/stats" {
+			t.Fatalf("path = %q, want /v1/stats", r.URL.Path)
+		}
+		query := r.URL.Query()
+		if query.Get("project") != "afc" || query.Get("repo") != "repo-id" || query.Get("since") != "24h" || query.Get("until") != "2026-07-14T00:00:00Z" {
+			t.Fatalf("query = %q", r.URL.RawQuery)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"report":{"version":"v1"}}`))
+	}))
+	defer server.Close()
+
+	c := testClient(t, server)
+	stats, err := c.GetStats(context.Background(), report.Query{
+		Project: "afc",
+		Repo:    "repo-id",
+		Since:   "24h",
+		Until:   "2026-07-14T00:00:00Z",
+	})
+	if err != nil {
+		t.Fatalf("GetStats() error = %v", err)
+	}
+	if stats.Version != "v1" {
+		t.Fatalf("stats version = %q, want v1", stats.Version)
 	}
 }
 

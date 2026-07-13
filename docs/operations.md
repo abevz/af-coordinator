@@ -81,6 +81,20 @@ af-coordinatord
 Default socket: `~/.local/state/af-coordinator/af-coordinator.sock`
 Default database: `~/.local/share/af-coordinator/af-coordinator.db`
 
+## Execution statistics
+
+The daemon derives a local read-only report from its coordinator records; it
+does not need Prometheus, a rollup database, or network access:
+
+```bash
+afctl stats --project afc --since 7d
+afctl --json stats --project afc --repo af-coordinator --since 24h
+```
+
+Use RFC 3339 or a positive Go duration for `--since`; `--until` accepts RFC
+3339 and defaults to now. JSON includes the report version, window,
+denominators, percentile sample sizes, and the legacy event-ordering cutoff.
+
 ## Interacting via curl
 
 Since the daemon listens on a Unix socket, use `curl --unix-socket`:

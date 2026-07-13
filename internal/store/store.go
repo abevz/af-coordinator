@@ -6,6 +6,7 @@ import (
 	"io"
 
 	"github.com/abevz/af-coordinator/internal/core"
+	coordinatorexport "github.com/abevz/af-coordinator/internal/export"
 )
 
 // CoordinatorStore is the API-facing persistence contract.
@@ -59,4 +60,7 @@ type CoordinatorStore interface {
 	ListNotes(ctx context.Context, issueID string) ([]core.Note, error)
 	ListEvents(ctx context.Context, issueID string) ([]core.Event, error)
 	ListGlobalEvents(ctx context.Context, since string, limit int) (core.EventPage, error)
+	ListReferences(context.Context) ([]coordinatorexport.Reference, error)
+	ListAllNotes(context.Context) ([]core.Note, error)
+	ListAllEvents(context.Context) ([]core.Event, error)
 }
