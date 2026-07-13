@@ -15,7 +15,7 @@ import (
 
 func runIssue(ctx context.Context, c *client.Client, args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("%s", "Usage: afctl issue <create|get|list|ready|claim|heartbeat|release>")
+		return fmt.Errorf("%s", "Usage: afctl issue <create|get|list|ready|claim|heartbeat|release|update|close|operator-close|operator-reopen>")
 	}
 
 	switch args[0] {
@@ -39,6 +39,10 @@ func runIssue(ctx context.Context, c *client.Client, args []string) error {
 		return runIssueUpdate(ctx, c, args[1:])
 	case "close":
 		return runIssueClose(ctx, c, args[1:])
+	case "operator-close":
+		return runIssueOperatorClose(ctx, c, args[1:])
+	case "operator-reopen":
+		return runIssueOperatorReopen(ctx, c, args[1:])
 	case "link":
 		return runIssueLink(ctx, c, args[1:])
 	case "unlink":
@@ -601,6 +605,108 @@ func runIssueClose(ctx context.Context, c *client.Client, args []string) error {
 	if result.ExternalKey != "" {
 		fmt.Printf("External:    %s\n", result.ExternalKey)
 	}
+	return nil
+}
+
+func runIssueOperatorClose(ctx context.Context, c *client.Client, args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("%s", "Usage: afctl issue operator-close <issue-id> --resolution done|cancelled --expected-version N --reason \"why operator closure is needed\"")
+	}
+
+	issueID := args[0]
+	req := core.OperatorCloseIssueRequest{ExpectedVersion: -1}
+	for i := 1; i < len(args); i++ {
+		switch args[i] {
+		case "--resolution":
+			if i+1 < len(args) {
+				req.Resolution = args[i+1]
+				i++
+			}
+		case "--expected-version":
+			if i+1 < len(args) {
+				fmt.Sscanf(args[i+1], "%d", &req.ExpectedVersion)
+				i++
+			}
+		case "--reason":
+			if i+1 < len(args) {
+				req.Reason = args[i+1]
+				i++
+			}
+		default:
+			return fmt.Errorf("unknown flag for issue operator-close: %s", args[i])
+		}
+	}
+	if req.Resolution == "" {
+		return fmt.Errorf("%s", "error: --resolution is required (done or cancelled)")
+	}
+	if req.ExpectedVersion <= 0 {
+		return fmt.Errorf("%s", "error: --expected-version is required")
+	}
+	if strings.TrimSpace(req.Reason) == "" {
+		return fmt.Errorf("%s", "error: --reason is required")
+	}
+	actor, err := resolveActor("")
+	if err != nil {
+		return fmt.Errorf("error: %v\n", err)
+	}
+	req.Actor = actor
+
+	result, err := c.OperatorCloseIssue(ctx, issueID, req)
+	if err != nil {
+		fail(err)
+	}
+	if jsonOutput {
+		json.NewEncoder(os.Stdout).Encode(result)
+		return nil
+	}
+	fmt.Println("Issue closed by operator.")
+	return nil
+}
+
+func runIssueOperatorReopen(ctx context.Context, c *client.Client, args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("%s", "Usage: afctl issue operator-reopen <issue-id> --expected-version N --reason \"why work is reopening\"")
+	}
+
+	issueID := args[0]
+	req := core.OperatorReopenIssueRequest{ExpectedVersion: -1}
+	for i := 1; i < len(args); i++ {
+		switch args[i] {
+		case "--expected-version":
+			if i+1 < len(args) {
+				fmt.Sscanf(args[i+1], "%d", &req.ExpectedVersion)
+				i++
+			}
+		case "--reason":
+			if i+1 < len(args) {
+				req.Reason = args[i+1]
+				i++
+			}
+		default:
+			return fmt.Errorf("unknown flag for issue operator-reopen: %s", args[i])
+		}
+	}
+	if req.ExpectedVersion <= 0 {
+		return fmt.Errorf("%s", "error: --expected-version is required")
+	}
+	if strings.TrimSpace(req.Reason) == "" {
+		return fmt.Errorf("%s", "error: --reason is required")
+	}
+	actor, err := resolveActor("")
+	if err != nil {
+		return fmt.Errorf("error: %v\n", err)
+	}
+	req.Actor = actor
+
+	issue, err := c.OperatorReopenIssue(ctx, issueID, req)
+	if err != nil {
+		fail(err)
+	}
+	if jsonOutput {
+		json.NewEncoder(os.Stdout).Encode(issue)
+		return nil
+	}
+	fmt.Println("Issue reopened by operator.")
 	return nil
 }
 

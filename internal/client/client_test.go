@@ -3,6 +3,7 @@ package client
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"net"
 	"net/http"
@@ -202,6 +203,59 @@ func TestCloseIssueReturnsStructuredResult(t *testing.T) {
 	}
 	if result.Status != "closed" || result.Branch != "codex/afc-27" || result.ExternalKey != "temporal:workflow-456" {
 		t.Fatalf("unexpected result: %+v", result)
+	}
+}
+
+func TestOperatorIssueMethodsUseExplicitTokenlessPaths(t *testing.T) {
+	t.Parallel()
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		switch r.URL.Path {
+		case "/v1/issues/i1/operator-close":
+			if r.Method != http.MethodPost {
+				t.Fatalf("operator close method = %q", r.Method)
+			}
+			var req core.OperatorCloseIssueRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatal(err)
+			}
+			if req.Reason != "complete parent" || req.Actor != "operator" {
+				t.Fatalf("unexpected operator close request: %+v", req)
+			}
+			_, _ = w.Write([]byte(`{"status":"closed","resolution":"done"}`))
+		case "/v1/issues/i1/operator-reopen":
+			if r.Method != http.MethodPost {
+				t.Fatalf("operator reopen method = %q", r.Method)
+			}
+			var req core.OperatorReopenIssueRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatal(err)
+			}
+			if req.Reason != "needs follow-up" || req.Actor != "operator" {
+				t.Fatalf("unexpected operator reopen request: %+v", req)
+			}
+			_, _ = w.Write([]byte(`{"issue":{"id":"i1","status":"open"}}`))
+		default:
+			t.Fatalf("unexpected path %q", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	c := testClient(t, server)
+	if _, err := c.OperatorCloseIssue(context.Background(), "i1", core.OperatorCloseIssueRequest{
+		Resolution: "done", ExpectedVersion: 1, Actor: "operator", Reason: "complete parent",
+	}); err != nil {
+		t.Fatalf("OperatorCloseIssue() error = %v", err)
+	}
+	issue, err := c.OperatorReopenIssue(context.Background(), "i1", core.OperatorReopenIssueRequest{
+		ExpectedVersion: 2, Actor: "operator", Reason: "needs follow-up",
+	})
+	if err != nil {
+		t.Fatalf("OperatorReopenIssue() error = %v", err)
+	}
+	if issue.Status != "open" || requests != 2 {
+		t.Fatalf("unexpected operator results: issue=%+v requests=%d", issue, requests)
 	}
 }
 

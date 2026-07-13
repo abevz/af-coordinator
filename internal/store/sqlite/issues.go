@@ -584,8 +584,17 @@ func UpdateIssue(ctx context.Context, db *sql.DB, issueID string, req core.Updat
 			"issue is leased and lease_token does not match")
 	}
 
-	// Validate status transition if updating status.
+	// Generic update is for metadata and non-terminal routing only. Closing and
+	// reopening have dedicated authorization and audit paths.
 	if req.Status != "" && req.Status != issue.Status {
+		if isTerminalStatus(req.Status) {
+			return core.Issue{}, core.NewAPIError(core.ErrValidationFailed,
+				"terminal status changes require issue close or issue operator-close")
+		}
+		if isTerminalStatus(issue.Status) {
+			return core.Issue{}, core.NewAPIError(core.ErrValidationFailed,
+				"terminal issues require issue operator-reopen")
+		}
 		if err := core.ValidateStatusTransition(issue.Status, req.Status); err != nil {
 			return core.Issue{}, err
 		}
@@ -665,6 +674,10 @@ func UpdateIssue(ctx context.Context, db *sql.DB, issueID string, req core.Updat
 	// Append event.
 	changed := buildChangedFields(req)
 	eventPayload := map[string]interface{}{"changed": changed}
+	if req.Status != "" && req.Status != issue.Status {
+		eventPayload["from_status"] = issue.Status
+		eventPayload["to_status"] = req.Status
+	}
 	payloadBytes, _ := json.Marshal(eventPayload)
 	_, err = tx.ExecContext(ctx,
 		`INSERT INTO events (id, issue_id, actor, event_type, payload_json, created_at)
@@ -717,75 +730,70 @@ func buildChangedFields(req core.UpdateIssueRequest) []string {
 	return changed
 }
 
-// CloseIssue closes an issue by setting its status to 'done' or 'cancelled'.
+// CloseIssue closes a non-terminal issue through the agent path. The caller
+// must prove it still owns an active lease for the exact issue version.
 func CloseIssue(ctx context.Context, db *sql.DB, issueID string, req core.CloseIssueRequest) (core.CloseIssueResult, error) {
-	issue, lease, err := GetIssue(ctx, db, issueID)
-	if err != nil {
+	if err := validateResolution(req.Resolution); err != nil {
 		return core.CloseIssueResult{}, err
 	}
 
-	// Version check.
-	if req.ExpectedVersion != issue.Version {
-		return core.CloseIssueResult{}, core.NewAPIError(core.ErrConflict,
-			fmt.Sprintf("expected version %d, current version is %d", req.ExpectedVersion, issue.Version))
-	}
-
-	// Lease check.
-	if lease != nil && lease.LeaseToken != req.LeaseToken {
-		return core.CloseIssueResult{}, core.NewAPIError(core.ErrLeaseExpired,
-			"issue is leased and lease_token does not match")
-	}
-
-	// Resolution validation.
-	if req.Resolution != "done" && req.Resolution != "cancelled" {
-		return core.CloseIssueResult{}, core.NewAPIError(core.ErrValidationFailed,
-			"resolution must be 'done' or 'cancelled'")
-	}
-
 	now := time.Now().UTC().Format(time.RFC3339)
-
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return core.CloseIssueResult{}, fmt.Errorf("begin tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	_, err = tx.ExecContext(ctx,
-		`UPDATE issues SET status = ?, closed_at = ?, version = version + 1, updated_at = ? WHERE id = ?`,
-		req.Resolution, now, now, issueID,
-	)
+	issue, err := getIssueForTerminalTransition(ctx, tx, issueID, req.ExpectedVersion)
 	if err != nil {
-		return core.CloseIssueResult{}, fmt.Errorf("update issue: %w", err)
+		return core.CloseIssueResult{}, err
+	}
+	if isTerminalStatus(issue.Status) {
+		return core.CloseIssueResult{}, core.NewAPIError(core.ErrValidationFailed,
+			"issue is already terminal")
+	}
+	if err := validateTerminalTransition(issue.Status, req.Resolution); err != nil {
+		return core.CloseIssueResult{}, err
 	}
 
-	// Remove any active lease on this issue.
-	_, _ = tx.ExecContext(ctx, `DELETE FROM leases WHERE issue_id = ?`, issueID)
+	var leaseToken string
+	err = tx.QueryRowContext(ctx,
+		`SELECT lease_token FROM leases WHERE issue_id = ? AND expires_at > ?`,
+		issueID, now,
+	).Scan(&leaseToken)
+	if err == sql.ErrNoRows {
+		return core.CloseIssueResult{}, core.NewAPIError(core.ErrLeaseExpired,
+			"an active lease is required to close an issue")
+	}
+	if err != nil {
+		return core.CloseIssueResult{}, fmt.Errorf("select lease: %w", err)
+	}
+	if leaseToken != req.LeaseToken {
+		return core.CloseIssueResult{}, core.NewAPIError(core.ErrLeaseExpired,
+			"lease_token does not match the active lease")
+	}
 
-	// If a note is provided, append it first (note-then-close).
+	result, err := updateTerminalIssue(ctx, tx, issue, req.Resolution, now)
+	if err != nil {
+		return core.CloseIssueResult{}, err
+	}
+	result.Branch = req.Branch
+	result.PRURL = req.PRURL
+	result.CommitSHA = req.CommitSHA
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM leases WHERE issue_id = ? AND lease_token = ?`, issueID, req.LeaseToken); err != nil {
+		return core.CloseIssueResult{}, fmt.Errorf("delete lease: %w", err)
+	}
+
+	// A close note is appended before its closing event so the audit stream has
+	// a deterministic note-then-close order.
 	if req.Note != "" {
-		noteID := uuid.New().String()
-		_, err = tx.ExecContext(ctx,
-			`INSERT INTO notes (id, issue_id, author, body, created_at) VALUES (?, ?, ?, ?, ?)`,
-			noteID, issueID, req.Actor, req.Note, now,
-		)
-		if err != nil {
-			return core.CloseIssueResult{}, fmt.Errorf("insert note: %w", err)
-		}
-
-		_, err = tx.ExecContext(ctx,
-			`INSERT INTO events (id, issue_id, actor, event_type, payload_json, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
-			uuid.New().String(), issueID, req.Actor, "note_added", `{}`, now,
-		)
-		if err != nil {
-			return core.CloseIssueResult{}, fmt.Errorf("insert note event: %w", err)
+		if err := insertCloseNote(ctx, tx, issueID, req.Actor, req.Note, now); err != nil {
+			return core.CloseIssueResult{}, err
 		}
 	}
 
-	// Append close event.
-	payload := map[string]any{
-		"changed":    []string{"status", "closed_at"},
-		"resolution": req.Resolution,
-	}
+	payload := terminalEventPayload(issue.Status, req.Resolution, issue.ExternalKey)
 	if req.Branch != "" {
 		payload["branch"] = req.Branch
 	}
@@ -795,35 +803,231 @@ func CloseIssue(ctx context.Context, db *sql.DB, issueID string, req core.CloseI
 	if req.CommitSHA != "" {
 		payload["commit_sha"] = req.CommitSHA
 	}
-	if issue.ExternalKey != "" {
-		payload["external_key"] = issue.ExternalKey
-	}
-	payloadBytes, err := json.Marshal(payload)
-	if err != nil {
-		return core.CloseIssueResult{}, fmt.Errorf("marshal close payload: %w", err)
-	}
-	_, err = tx.ExecContext(ctx,
-		`INSERT INTO events (id, issue_id, actor, event_type, payload_json, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?)`,
-		uuid.New().String(), issueID, req.Actor, "issue_closed", string(payloadBytes), now,
-	)
-	if err != nil {
-		return core.CloseIssueResult{}, fmt.Errorf("insert event: %w", err)
-	}
-
-	if err := tx.Commit(); err != nil {
+	if err := insertEvent(ctx, tx, issueID, req.Actor, "issue_closed", payload, now); err != nil {
 		return core.CloseIssueResult{}, err
 	}
 
+	if err := tx.Commit(); err != nil {
+		return core.CloseIssueResult{}, fmt.Errorf("commit tx: %w", err)
+	}
+	return result, nil
+}
+
+// OperatorCloseIssue closes unclaimable or administratively managed work on a
+// distinct, tokenless local-operator path. It is deliberately separate from
+// CloseIssue so it cannot be mistaken for agent lease authorization.
+func OperatorCloseIssue(ctx context.Context, db *sql.DB, issueID string, req core.OperatorCloseIssueRequest) (core.CloseIssueResult, error) {
+	if err := validateOperatorRequest(req.ExpectedVersion, req.Actor, req.Reason); err != nil {
+		return core.CloseIssueResult{}, err
+	}
+	if err := validateResolution(req.Resolution); err != nil {
+		return core.CloseIssueResult{}, err
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return core.CloseIssueResult{}, fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	issue, err := getIssueForTerminalTransition(ctx, tx, issueID, req.ExpectedVersion)
+	if err != nil {
+		return core.CloseIssueResult{}, err
+	}
+	if isTerminalStatus(issue.Status) {
+		return core.CloseIssueResult{}, core.NewAPIError(core.ErrValidationFailed,
+			"issue is already terminal")
+	}
+	if err := validateTerminalTransition(issue.Status, req.Resolution); err != nil {
+		return core.CloseIssueResult{}, err
+	}
+
+	result, err := updateTerminalIssue(ctx, tx, issue, req.Resolution, now)
+	if err != nil {
+		return core.CloseIssueResult{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM leases WHERE issue_id = ?`, issueID); err != nil {
+		return core.CloseIssueResult{}, fmt.Errorf("delete leases: %w", err)
+	}
+
+	payload := terminalEventPayload(issue.Status, req.Resolution, issue.ExternalKey)
+	payload["reason"] = req.Reason
+	if err := insertEvent(ctx, tx, issueID, req.Actor, "issue_operator_closed", payload, now); err != nil {
+		return core.CloseIssueResult{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return core.CloseIssueResult{}, fmt.Errorf("commit tx: %w", err)
+	}
+	return result, nil
+}
+
+// OperatorReopenIssue reopens done or cancelled work on the explicit local
+// operator path. Generic metadata updates may not reopen terminal issues.
+func OperatorReopenIssue(ctx context.Context, db *sql.DB, issueID string, req core.OperatorReopenIssueRequest) (core.Issue, error) {
+	if err := validateOperatorRequest(req.ExpectedVersion, req.Actor, req.Reason); err != nil {
+		return core.Issue{}, err
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return core.Issue{}, fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	issue, err := getIssueForTerminalTransition(ctx, tx, issueID, req.ExpectedVersion)
+	if err != nil {
+		return core.Issue{}, err
+	}
+	if !isTerminalStatus(issue.Status) {
+		return core.Issue{}, core.NewAPIError(core.ErrValidationFailed,
+			"only terminal issues can be reopened")
+	}
+
+	result, err := tx.ExecContext(ctx,
+		`UPDATE issues
+		 SET status = 'open', closed_at = NULL, claimed_at = NULL, version = version + 1, updated_at = ?
+		 WHERE id = ? AND version = ?`,
+		now, issueID, req.ExpectedVersion,
+	)
+	if err != nil {
+		return core.Issue{}, fmt.Errorf("reopen issue: %w", err)
+	}
+	if rows, err := result.RowsAffected(); err != nil {
+		return core.Issue{}, fmt.Errorf("reopen rows affected: %w", err)
+	} else if rows != 1 {
+		return core.Issue{}, core.NewAPIError(core.ErrConflict, "issue changed while reopening")
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM leases WHERE issue_id = ?`, issueID); err != nil {
+		return core.Issue{}, fmt.Errorf("delete leases: %w", err)
+	}
+	if err := insertEvent(ctx, tx, issueID, req.Actor, "issue_reopened", map[string]any{
+		"from_status": issue.Status,
+		"to_status":   "open",
+		"reason":      req.Reason,
+	}, now); err != nil {
+		return core.Issue{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return core.Issue{}, fmt.Errorf("commit tx: %w", err)
+	}
+
+	updated, _, err := GetIssue(ctx, db, issueID)
+	if err != nil {
+		return core.Issue{}, fmt.Errorf("re-read reopened issue: %w", err)
+	}
+	return updated, nil
+}
+
+func isTerminalStatus(status string) bool {
+	return status == "done" || status == "cancelled"
+}
+
+func validateResolution(resolution string) error {
+	if resolution != "done" && resolution != "cancelled" {
+		return core.NewAPIError(core.ErrValidationFailed, "resolution must be 'done' or 'cancelled'")
+	}
+	return nil
+}
+
+func validateTerminalTransition(from, to string) error {
+	if err := core.ValidateStatusTransition(from, to); err != nil {
+		return core.NewAPIError(core.ErrValidationFailed, err.Error())
+	}
+	return nil
+}
+
+func validateOperatorRequest(expectedVersion int, actor, reason string) error {
+	if expectedVersion <= 0 {
+		return core.NewAPIError(core.ErrValidationFailed, "expected_version is required")
+	}
+	if strings.TrimSpace(actor) == "" {
+		return core.NewAPIError(core.ErrValidationFailed, "actor is required")
+	}
+	if strings.TrimSpace(reason) == "" {
+		return core.NewAPIError(core.ErrValidationFailed, "reason is required")
+	}
+	return nil
+}
+
+func getIssueForTerminalTransition(ctx context.Context, tx *sql.Tx, issueID string, expectedVersion int) (core.Issue, error) {
+	var issue core.Issue
+	err := tx.QueryRowContext(ctx,
+		`SELECT id, status, external_key, version FROM issues WHERE id = ?`, issueID,
+	).Scan(&issue.ID, &issue.Status, &issue.ExternalKey, &issue.Version)
+	if err == sql.ErrNoRows {
+		return core.Issue{}, core.NewAPIError(core.ErrNotFound, "issue not found: "+issueID)
+	}
+	if err != nil {
+		return core.Issue{}, fmt.Errorf("select issue: %w", err)
+	}
+	if expectedVersion != issue.Version {
+		return core.Issue{}, core.NewAPIError(core.ErrConflict,
+			fmt.Sprintf("expected version %d, current version is %d", expectedVersion, issue.Version))
+	}
+	return issue, nil
+}
+
+func updateTerminalIssue(ctx context.Context, tx *sql.Tx, issue core.Issue, resolution, now string) (core.CloseIssueResult, error) {
+	result, err := tx.ExecContext(ctx,
+		`UPDATE issues
+		 SET status = ?, closed_at = ?, version = version + 1, updated_at = ?
+		 WHERE id = ? AND version = ?`,
+		resolution, now, now, issue.ID, issue.Version,
+	)
+	if err != nil {
+		return core.CloseIssueResult{}, fmt.Errorf("update issue: %w", err)
+	}
+	if rows, err := result.RowsAffected(); err != nil {
+		return core.CloseIssueResult{}, fmt.Errorf("close rows affected: %w", err)
+	} else if rows != 1 {
+		return core.CloseIssueResult{}, core.NewAPIError(core.ErrConflict, "issue changed while closing")
+	}
 	return core.CloseIssueResult{
 		Status:      "closed",
-		Resolution:  req.Resolution,
-		Branch:      req.Branch,
-		PRURL:       req.PRURL,
-		CommitSHA:   req.CommitSHA,
+		Resolution:  resolution,
 		ExternalKey: issue.ExternalKey,
 		ClosedAt:    now,
 	}, nil
+}
+
+func insertCloseNote(ctx context.Context, tx *sql.Tx, issueID, actor, note, now string) error {
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO notes (id, issue_id, author, body, created_at) VALUES (?, ?, ?, ?, ?)`,
+		uuid.New().String(), issueID, actor, note, now,
+	); err != nil {
+		return fmt.Errorf("insert note: %w", err)
+	}
+	return insertEvent(ctx, tx, issueID, actor, "note_added", map[string]any{}, now)
+}
+
+func terminalEventPayload(fromStatus, resolution, externalKey string) map[string]any {
+	payload := map[string]any{
+		"changed":     []string{"status", "closed_at"},
+		"from_status": fromStatus,
+		"to_status":   resolution,
+		"resolution":  resolution,
+	}
+	if externalKey != "" {
+		payload["external_key"] = externalKey
+	}
+	return payload
+}
+
+func insertEvent(ctx context.Context, tx *sql.Tx, issueID, actor, eventType string, payload map[string]any, now string) error {
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("marshal %s payload: %w", eventType, err)
+	}
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO events (id, issue_id, actor, event_type, payload_json, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
+		uuid.New().String(), issueID, actor, eventType, string(payloadBytes), now,
+	); err != nil {
+		return fmt.Errorf("insert %s event: %w", eventType, err)
+	}
+	return nil
 }
 
 // AddDependency adds a dependency between two issues. For 'blocks' kind, it performs cycle detection.

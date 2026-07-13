@@ -168,6 +168,23 @@ type CloseIssueRequest struct {
 	Note            string `json:"note,omitempty"`
 }
 
+// OperatorCloseIssueRequest closes an issue through the explicit local
+// operator path. It never accepts a lease token.
+type OperatorCloseIssueRequest struct {
+	Resolution      string `json:"resolution"`
+	ExpectedVersion int    `json:"expected_version"`
+	Actor           string `json:"actor"`
+	Reason          string `json:"reason"`
+}
+
+// OperatorReopenIssueRequest reopens terminal work through the explicit local
+// operator path. It never accepts a lease token.
+type OperatorReopenIssueRequest struct {
+	ExpectedVersion int    `json:"expected_version"`
+	Actor           string `json:"actor"`
+	Reason          string `json:"reason"`
+}
+
 // CloseIssueResult is returned after a successful close.
 type CloseIssueResult struct {
 	Status      string `json:"status"`

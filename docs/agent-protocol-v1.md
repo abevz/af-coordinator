@@ -46,6 +46,17 @@ Every agent session follows this cycle:
    afctl issue release <short_id> --lease-token <token>
    ```
 
+   Ordinary close always requires the active matching lease token. For an
+   unclaimable epic or deliberate administrative resolution, use the explicit
+   local operator path instead; it requires a reason and never accepts a
+   dummy token:
+   ```
+   afctl issue operator-close <short_id> --resolution done --expected-version N \
+     --reason "all child work is complete"
+   afctl issue operator-reopen <short_id> --expected-version N \
+     --reason "new evidence requires follow-up"
+   ```
+
 ## Event ordering
 
 Issue timelines, the global event feed, and JSONL export are ordered by the

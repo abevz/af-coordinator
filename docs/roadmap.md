@@ -11,9 +11,10 @@ from the first ten days of live multi-project use. It first makes causal event
 order and close authorization trustworthy, then adds lease-attempt outcomes,
 atomic HANDOFF, and a local project statistics report.
 
-Implementation issues `afc-49` through `afc-53` are deliberately deferred
-while the operator compares this track with Aion Forge Harness v2 Phase 4.
-The packet is prepared backlog, not an implicit implementation decision.
+`afc-49` delivered causal event order and `afc-50` delivered close/reopen
+authorization. The later implementation issues (`afc-51` through `afc-53`)
+remain deliberately deferred while the operator compares this track with Aion
+Forge Harness v2 Phase 4.
 
 Delivery order is:
 
@@ -74,12 +75,9 @@ Packet `docs/specs/005-aion-forge-integration-readiness/` is complete. The
 coordinator has no active roadmap target until the next direction is written
 as a new SDD packet and corresponding `afc` issues.
 
-Known follow-up before the next large track:
-
-- `epic` issues are intentionally not claimable, but `afctl issue close`
-  still requires a `--lease-token`. Add a supported CLI/API flow for closing
-  unclaimed epics instead of relying on direct daemon calls. This is now scoped
-  under `afc-50` in packet 008 together with ordinary-close authorization.
+The unclaimable-epic closure gap is resolved by explicit local operator
+close/reopen commands with a reason and audit event; ordinary agent close
+continues to require its active lease token.
 
 ## Issue classification (done)
 

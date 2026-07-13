@@ -348,15 +348,20 @@ This should be implemented in SQL inside the daemon, not in clients.
 
 Operations require different levels of proof, not one blanket rule:
 
-| Operation                                   | Requires                          |
-|---------------------------------------------|-----------------------------------|
-| status transition, close, work-in-progress edits | valid `lease_token` + `expected_version` |
+| Operation | Requires |
+|---|---|
+| agent close and edits under an active claim | valid `lease_token` + `expected_version` |
+| operator close or reopen | `actor`, `expected_version`, non-empty `reason`; never a lease token |
 | metadata edit of an unclaimed issue (title, priority, description, acceptance_criteria) | `expected_version` only |
-| append note, link artifact                   | neither (append-only)             |
+| append note, link artifact | neither (append-only) |
 
 Common rules:
 
-- if an issue has an unexpired lease, only its holder may mutate the issue
+- if an issue has an unexpired lease, only its holder may use ordinary mutation
+  paths; explicit local operator close/reopen remains a deliberate audited
+  override
+- generic update cannot close or reopen terminal work; use the explicit close
+  or operator-reopen path instead
 - every successful mutation increments `version` and appends an event row
   in the same transaction
 - on version mismatch the daemon returns a conflict and the client rereads

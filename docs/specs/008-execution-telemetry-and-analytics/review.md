@@ -1,6 +1,6 @@
 # Review
 
-Status: in progress; `afc-49` completed.
+Status: in progress; `afc-49` and `afc-50` completed.
 
 ## Planning Review
 
@@ -53,6 +53,36 @@ the operator chooses this track.
 - Store, API, and export regressions for same-second order, pagination without
   duplicates, v1 cursor compatibility, rejected unknown v2 cursors, and JSONL
   sequence order.
+
+## `afc-50` — Enforce Close And Terminal Transitions
+
+### What shipped
+
+- Ordinary `issue close` now verifies the expected version, requires an active
+  matching lease token in the same transaction, and rejects missing, expired,
+  stale, and terminal closes.
+- Generic issue update cannot move work into a terminal state or reopen it;
+  status-changing audit events record `from_status` and `to_status`.
+- Explicit local operator close/reopen API, client, CLI, and MCP paths require
+  actor, expected version, and a non-empty reason. They are tokenless by
+  contract, emit `issue_operator_closed` or `issue_reopened`, and support
+  closing unclaimable epics.
+- API, schema, architecture, workflow, curl examples, and the byte-identical
+  agent-protocol copies describe the split between agent and operator paths.
+
+### What was verified
+
+- Store regressions for missing/expired/wrong leases, already-terminal close,
+  blocked generic terminal transitions, operator epic close, and explicit
+  reopen.
+- API, client, MCP, and CLI regressions verify explicit operator paths and
+  reject fake lease-token fields or flags.
+- `go test ./...`, `go build -buildvcs=false ./...`, and `make test` (race).
+- Scratch daemon end-to-end flow: lease-bound close, duplicate rejection,
+  operator epic close/reopen, and tokenless operator CLI rejection.
+- Installed through `make restart-service`; health returned `ok`, and a
+  non-mutating installed-binary operator-route probe returned typed
+  `not_found` as expected.
 
 ## Implementation Review Checklist
 

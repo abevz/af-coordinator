@@ -150,7 +150,8 @@ curl -s -X POST --unix-socket $AFC_SOCK \
 ```
 
 ### Close an issue
-Resolves the issue (e.g., `done`, `cancelled`). Requires a final note.
+Resolves agent-owned work (e.g., `done`, `cancelled`). Requires an active
+matching lease and a final note.
 ```bash
 curl -s -X POST --unix-socket $AFC_SOCK \
   -H "Content-Type: application/json" \
@@ -165,6 +166,33 @@ curl -s -X POST --unix-socket $AFC_SOCK \
     "note": "Fixed the locking issue by adjusting WAL parameters."
   }' \
   http://localhost/v1/issues/afc-15/close | jq
+```
+
+### Operator-close an unclaimable epic
+This explicit local-operator path requires a reason and version, and has no
+lease-token field.
+```bash
+curl -s -X POST --unix-socket $AFC_SOCK \
+  -H "Content-Type: application/json" \
+  -d '{
+    "resolution": "done",
+    "expected_version": 3,
+    "actor": "'"$AFC_ACTOR"'",
+    "reason": "all child issues are complete"
+  }' \
+  http://localhost/v1/issues/afc-10/operator-close | jq
+```
+
+### Operator-reopen terminal work
+```bash
+curl -s -X POST --unix-socket $AFC_SOCK \
+  -H "Content-Type: application/json" \
+  -d '{
+    "expected_version": 4,
+    "actor": "'"$AFC_ACTOR"'",
+    "reason": "new evidence requires follow-up"
+  }' \
+  http://localhost/v1/issues/afc-10/operator-reopen | jq
 ```
 
 ---
