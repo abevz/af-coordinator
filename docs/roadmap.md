@@ -4,6 +4,29 @@ Direction for af-coordinator beyond v1. The operational source of truth for
 this work is the coordinator itself (project `afc`); this document records
 the intent and the reasoning so the issues stay short.
 
+## Planned target: execution telemetry and analytics hardening (`afc-47`)
+
+Packet `docs/specs/008-execution-telemetry-and-analytics/` captures gaps found
+from the first ten days of live multi-project use. It first makes causal event
+order and close authorization trustworthy, then adds lease-attempt outcomes,
+atomic HANDOFF, and a local project statistics report.
+
+Implementation issues `afc-49` through `afc-53` are deliberately deferred
+while the operator compares this track with Aion Forge Harness v2 Phase 4.
+The packet is prepared backlog, not an implicit implementation decision.
+
+Delivery order is:
+
+```text
+event sequence + close authorization
+    -> lease attempts + atomic HANDOFF
+    -> project statistics
+```
+
+The coordinator remains the issue/lease/audit control plane. It does not absorb
+Temporal or Aion Forge workflow execution state, and the first report does not
+add Prometheus, remote analytics, or a mutable rollup database.
+
 ## Completed target: public readiness (`afc-39`-`afc-44`)
 
 Packet `docs/specs/006-public-readiness/` completed the public README refresh,
@@ -55,7 +78,8 @@ Known follow-up before the next large track:
 
 - `epic` issues are intentionally not claimable, but `afctl issue close`
   still requires a `--lease-token`. Add a supported CLI/API flow for closing
-  unclaimed epics instead of relying on direct daemon calls.
+  unclaimed epics instead of relying on direct daemon calls. This is now scoped
+  under `afc-50` in packet 008 together with ordinary-close authorization.
 
 ## Issue classification (done)
 
