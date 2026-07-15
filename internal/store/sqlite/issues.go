@@ -382,18 +382,50 @@ func ClaimIssueWithSession(ctx context.Context, db *sql.DB, issueID, holder stri
 	now := time.Now().UTC()
 	nowStr := now.Format(time.RFC3339)
 
-	// Check no unexpired lease exists.
-	var leaseCount int
+	// Check whether an unexpired lease exists and, if so, whether the
+	// requesting holder already owns it (same-holder reattach).
+	var existingHolder, existingToken, existingAttemptID string
 	err = tx.QueryRowContext(ctx,
-		`SELECT count(*) FROM leases WHERE issue_id = ? AND expires_at > ?`,
+		`SELECT holder, lease_token, attempt_id FROM leases WHERE issue_id = ? AND expires_at > ?`,
 		issueID, nowStr,
-	).Scan(&leaseCount)
-	if err != nil {
+	).Scan(&existingHolder, &existingToken, &existingAttemptID)
+	if err != nil && err != sql.ErrNoRows {
 		return core.ClaimResponse{}, fmt.Errorf("check lease: %w", err)
 	}
-	if leaseCount > 0 {
-		return core.ClaimResponse{}, core.NewAPIError(core.ErrLeaseHeld,
-			"issue is already claimed: "+issueID)
+	if err == nil {
+		// An active lease exists.
+		if existingHolder != holder {
+			// Different holder — reject as before.
+			return core.ClaimResponse{}, core.NewAPIError(core.ErrLeaseHeld,
+				"issue is already claimed: "+issueID)
+		}
+		// Same holder — reattach: renew the expiry in-place.
+		newExpiry := now.Add(time.Duration(ttlSeconds) * time.Second).Format(time.RFC3339)
+		_, err = tx.ExecContext(ctx,
+			`UPDATE leases SET expires_at = ?, updated_at = ? WHERE issue_id = ?`,
+			newExpiry, nowStr, issueID,
+		)
+		if err != nil {
+			return core.ClaimResponse{}, fmt.Errorf("renew lease: %w", err)
+		}
+		reattachPayload := map[string]any{
+			"attempt_id":  existingAttemptID,
+			"ttl_seconds": ttlSeconds,
+			"expires_at":  newExpiry,
+			"session_id":  sessionID,
+		}
+		if err := insertEvent(ctx, tx, issueID, holder, "lease_reattached", reattachPayload, nowStr); err != nil {
+			return core.ClaimResponse{}, err
+		}
+		if err := tx.Commit(); err != nil {
+			return core.ClaimResponse{}, fmt.Errorf("commit tx: %w", err)
+		}
+		return core.ClaimResponse{
+			LeaseToken: existingToken,
+			ExpiresAt:  newExpiry,
+			AttemptID:  existingAttemptID,
+			Reattached: true,
+		}, nil
 	}
 
 	// A row that did not pass the active-lease query is an expired attempt.
