@@ -161,6 +161,10 @@ type ClaimResponse struct {
 	LeaseToken string `json:"lease_token"`
 	ExpiresAt  string `json:"expires_at"`
 	AttemptID  string `json:"attempt_id"`
+	// Reattached is true when the same holder reattached to an existing active
+	// lease rather than opening a fresh claim. The LeaseToken and AttemptID
+	// are those of the original claim.
+	Reattached bool `json:"reattached,omitempty"`
 }
 
 // HeartbeatRequest is the JSON body for POST /v1/issues/{issue_id}/heartbeat.
