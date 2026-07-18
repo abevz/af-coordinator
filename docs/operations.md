@@ -205,6 +205,9 @@ afctl issue create --project test --scope-kind project --title "My issue"
 afctl ls --project afc --type epic,chore --status open,in_progress
 afctl ls --project afc,aion --type epic,chore --status open,in_progress
 
+# Dependency-aware table columns
+afctl ls --project aion --status open
+
 # Show the complete filter contract without contacting the daemon
 afctl ls --help
 
@@ -220,6 +223,25 @@ afctl issue ready --project test
 afctl issue note add <issue-id> --author me --body "Working on this"
 afctl issue note list <issue-id>
 ```
+
+The human-readable issue list keeps task context together and puts dependency
+state at the end of each row:
+
+```text
+ID SHORT STATUS TYPE TITLE ASSIGNEE CLAIMED BLOCKED BY DEPS
+```
+
+- `STATUS` includes `[B]` when an unfinished `blocks` dependency makes the
+  issue non-ready.
+- `BLOCKED BY` lists active blocker short IDs. A `done` or `cancelled`
+  dependency is not shown as an active blocker.
+- `DEPS` lists non-blocking relationships such as `parent:`, `related:`, and
+  `discovered-from:`. Blocking relationships are shown in `BLOCKED BY` to
+  avoid duplicating the same information.
+
+With `--json`, the issue object exposes the same derived state as optional
+`blocked` and `blocked_by` fields, while `dependencies` retains the complete
+relationship list.
 
 ## Agent guidance sync
 
