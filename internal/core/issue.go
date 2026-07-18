@@ -74,6 +74,8 @@ type Issue struct {
 	CreatedAt          string       `json:"created_at"`
 	UpdatedAt          string       `json:"updated_at"`
 	Dependencies       []Dependency `json:"dependencies,omitempty"`
+	Blocked            bool         `json:"blocked,omitempty"`
+	BlockedBy          []string     `json:"blocked_by,omitempty"`
 }
 
 // Dependency represents a relationship to another issue.

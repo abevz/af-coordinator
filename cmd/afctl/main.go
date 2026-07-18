@@ -465,6 +465,12 @@ func printIssueFull(i core.Issue, l *core.IssueLease, events []core.Event, notes
 			fmt.Printf("  - %s %s [%s]\n", dep.Kind, label, dep.DependsOnID)
 		}
 	}
+	if i.Blocked || len(i.BlockedBy) > 0 {
+		fmt.Printf("Blocked:       yes\n")
+		if len(i.BlockedBy) > 0 {
+			fmt.Printf("Blocked By:    %s\n", strings.Join(i.BlockedBy, ", "))
+		}
+	}
 
 	if len(links) > 0 {
 		fmt.Printf("\nLinks:\n")
@@ -500,17 +506,54 @@ func printIssueFull(i core.Issue, l *core.IssueLease, events []core.Event, notes
 
 // printIssuesTable displays a list of issues in a fixed-width table format.
 func printIssuesTable(issues []core.Issue) {
-	fmt.Printf("%-10s %-12s %-12s %-8s %-50s %-12s %-12s\n", "ID", "SHORT", "STATUS", "TYPE", "TITLE", "ASSIGNEE", "CLAIMED")
-	fmt.Printf("%-10s %-12s %-12s %-8s %-50s %-12s %-12s\n", "---", "-----", "------", "----", "-----", "-------", "-------")
+	const (
+		idWidth        = 10
+		shortWidth     = 10
+		statusWidth    = 13
+		typeWidth      = 8
+		titleWidth     = 42
+		assigneeWidth  = 10
+		claimedWidth   = 10
+		blockedByWidth = 18
+		depsWidth      = 34
+	)
+	format := "%-*s %-*s %-*s %-*s %-*s %-*s %-*s %-*s %-*s\n"
+	fmt.Printf(format, idWidth, "ID", shortWidth, "SHORT", statusWidth, "STATUS", typeWidth, "TYPE", titleWidth, "TITLE", assigneeWidth, "ASSIGNEE", claimedWidth, "CLAIMED", blockedByWidth, "BLOCKED BY", depsWidth, "DEPS")
+	fmt.Printf(format, idWidth, "---", shortWidth, "-----", statusWidth, "------", typeWidth, "----", titleWidth, "-----", assigneeWidth, "-------", claimedWidth, "-------", blockedByWidth, "----------", depsWidth, "----")
 	for _, i := range issues {
-		id := truncate(i.ID, 11) // 8 chars + "..."
-		title := truncate(i.Title, 50)
+		id := truncate(i.ID, idWidth)
+		title := truncate(i.Title, titleWidth)
 		status := statusSymbol(i.Status) + " " + i.Status
-		issueType := truncate(i.IssueType, 8)
-		assignee := truncate(i.Assignee, 12)
-		claimed := truncate(i.Holder, 12)
-		fmt.Printf("%-10s %-12s %-12s %-8s %-50s %-12s %-12s\n", id, i.ShortID, status, issueType, title, assignee, claimed)
+		if i.Blocked && i.Status != "blocked" {
+			status += " [B]"
+		}
+		shortID := truncate(i.ShortID, shortWidth)
+		status = truncate(status, statusWidth)
+		issueType := truncate(i.IssueType, typeWidth)
+		assignee := truncate(i.Assignee, assigneeWidth)
+		claimed := truncate(i.Holder, claimedWidth)
+		blockedBy := truncate(strings.Join(i.BlockedBy, ","), blockedByWidth)
+		dependencies := truncate(formatIssueDependencies(i.Dependencies), depsWidth)
+		fmt.Printf(format, idWidth, id, shortWidth, shortID, statusWidth, status, typeWidth, issueType, titleWidth, title, assigneeWidth, assignee, claimedWidth, claimed, blockedByWidth, blockedBy, depsWidth, dependencies)
 	}
+}
+
+func formatIssueDependencies(dependencies []core.Dependency) string {
+	labels := make([]string, 0, len(dependencies))
+	for _, dep := range dependencies {
+		if dep.Kind == "blocks" {
+			continue
+		}
+		label := dep.DependsOnShortID
+		if label == "" {
+			label = dep.DependsOnID
+		}
+		if dep.Kind != "" {
+			label = dep.Kind + ":" + label
+		}
+		labels = append(labels, label)
+	}
+	return strings.Join(labels, ",")
 }
 
 func printWorktree(wt core.Worktree) {

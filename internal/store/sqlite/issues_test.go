@@ -257,6 +257,23 @@ func TestGetIssueIncludesExplicitDependencyIdentifiers(t *testing.T) {
 	if dep.DependsOnShortID != target.ShortID {
 		t.Fatalf("depends_on_short_id = %q, want %q", dep.DependsOnShortID, target.ShortID)
 	}
+	if !got.Blocked {
+		t.Fatal("expected open blocks dependency to mark issue blocked")
+	}
+	if len(got.BlockedBy) != 1 || got.BlockedBy[0] != target.ShortID {
+		t.Fatalf("blocked_by = %#v, want [%q]", got.BlockedBy, target.ShortID)
+	}
+
+	if _, err := db.Exec("UPDATE issues SET status = 'done' WHERE id = ?", target.ID); err != nil {
+		t.Fatal(err)
+	}
+	got, _, err = GetIssue(context.Background(), db, source.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Blocked || len(got.BlockedBy) != 0 {
+		t.Fatalf("terminal dependency still blocks issue: blocked=%t blocked_by=%#v", got.Blocked, got.BlockedBy)
+	}
 }
 
 func TestGetIssueByShortID(t *testing.T) {
