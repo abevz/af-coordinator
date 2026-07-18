@@ -935,59 +935,25 @@ func runIssueDependency(ctx context.Context, c *client.Client, args []string) er
 	}
 }
 
-func runIssueDependencyAdd(ctx context.Context, c *client.Client, args []string) error {
-	if len(args) < 1 {
-		return fmt.Errorf("%s", "Usage: afctl issue dependency add <issue-id> --depends-on <other-issue> [--kind blocks|parent|related|discovered-from]")
-	}
+const dependencyAddUsage = "Usage: afctl issue dependency add <issue-id> (--blocked-by <id> | --blocks <id> | --depends-on <id> [--kind blocks|parent|related|discovered-from])"
 
-	issueID := args[0]
-	var req core.AddDependencyRequest
-
-	for i := 1; i < len(args); i++ {
-		switch args[i] {
-		case "--depends-on":
-			if i+1 < len(args) {
-				req.DependsOn = args[i+1]
-				i++
-			}
-		case "--kind":
-			if i+1 < len(args) {
-				req.Kind = args[i+1]
-				i++
-			}
-		}
-	}
-
-	if req.DependsOn == "" {
-		return fmt.Errorf("%s", "error: --depends-on is required")
-	}
-	act, err := resolveActor("")
-	if err != nil {
-		return err
-	}
-	req.Actor = act
-
-	if err := c.AddDependency(ctx, issueID, req); err != nil {
-		fail(err)
-	}
-	if jsonOutput {
-		fmt.Println(`{"status":"ok"}`)
-		return nil
-	}
-	fmt.Println("Dependency added.")
-	return nil
+// dependencyEdge is the resolved, direction-unambiguous form of a dependency
+// command: the issue that owns the stored edge, the issue it depends on, the
+// kind, and a human-readable confirmation.
+type dependencyEdge struct {
+	target    string
+	dependsOn string
+	kind      string
+	message   string
 }
 
-func runIssueDependencyRemove(ctx context.Context, c *client.Client, args []string) error {
-	if len(args) < 1 {
-		return fmt.Errorf("%s", "Usage: afctl issue dependency remove <issue-id> --depends-on <other-issue> [--kind blocks]")
-	}
-
-	issueID := args[0]
-	dependsOn := ""
-	kind := "blocks"
-
-	for i := 1; i < len(args); i++ {
+// resolveDependencyEdge maps the directional flags of `dependency add` onto the
+// single stored edge shape (owner depends_on target, kind). Exactly one of
+// --blocked-by, --blocks, or --depends-on must be given, so an author never has
+// to reason about which side the word "blocks" refers to.
+func resolveDependencyEdge(issueID string, args []string) (dependencyEdge, error) {
+	var dependsOn, kind, blockedBy, blocks string
+	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--depends-on":
 			if i+1 < len(args) {
@@ -999,11 +965,145 @@ func runIssueDependencyRemove(ctx context.Context, c *client.Client, args []stri
 				kind = args[i+1]
 				i++
 			}
+		case "--blocked-by":
+			if i+1 < len(args) {
+				blockedBy = args[i+1]
+				i++
+			}
+		case "--blocks":
+			if i+1 < len(args) {
+				blocks = args[i+1]
+				i++
+			}
 		}
 	}
 
-	if dependsOn == "" {
-		return fmt.Errorf("%s", "error: --depends-on is required")
+	forms := 0
+	for _, v := range []string{dependsOn, blockedBy, blocks} {
+		if v != "" {
+			forms++
+		}
+	}
+	if forms == 0 {
+		return dependencyEdge{}, fmt.Errorf("%s", "error: one of --blocked-by, --blocks, or --depends-on is required")
+	}
+	if forms > 1 {
+		return dependencyEdge{}, fmt.Errorf("%s", "error: --blocked-by, --blocks, and --depends-on are mutually exclusive")
+	}
+	if (blockedBy != "" || blocks != "") && kind != "" {
+		return dependencyEdge{}, fmt.Errorf("%s", "error: --kind cannot be combined with --blocked-by or --blocks (both mean kind=blocks)")
+	}
+
+	edge := dependencyEdge{target: issueID}
+	switch {
+	case blockedBy != "":
+		edge.dependsOn, edge.kind = blockedBy, "blocks"
+		edge.message = fmt.Sprintf("%s is now blocked by %s", issueID, blockedBy)
+	case blocks != "":
+		edge.target, edge.dependsOn, edge.kind = blocks, issueID, "blocks"
+		edge.message = fmt.Sprintf("%s is now blocked by %s", blocks, issueID)
+	default: // --depends-on
+		edge.dependsOn, edge.kind = dependsOn, kind
+		switch kind {
+		case "blocks":
+			edge.message = fmt.Sprintf("%s is now blocked by %s", issueID, dependsOn)
+		case "":
+			edge.message = fmt.Sprintf("%s now depends on %s", issueID, dependsOn)
+		default:
+			edge.message = fmt.Sprintf("%s now has a %s dependency on %s", issueID, kind, dependsOn)
+		}
+	}
+	return edge, nil
+}
+
+func runIssueDependencyAdd(ctx context.Context, c *client.Client, args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("%s", dependencyAddUsage)
+	}
+
+	edge, err := resolveDependencyEdge(args[0], args[1:])
+	if err != nil {
+		return err
+	}
+	act, err := resolveActor("")
+	if err != nil {
+		return err
+	}
+	if err := c.AddDependency(ctx, edge.target, core.AddDependencyRequest{
+		DependsOn: edge.dependsOn,
+		Kind:      edge.kind,
+		Actor:     act,
+	}); err != nil {
+		fail(err)
+	}
+	if jsonOutput {
+		fmt.Println(`{"status":"ok"}`)
+		return nil
+	}
+	fmt.Println("Dependency added.")
+	fmt.Println(edge.message)
+	return nil
+}
+
+func runIssueDependencyRemove(ctx context.Context, c *client.Client, args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("%s", "Usage: afctl issue dependency remove <issue-id> (--blocked-by <id> | --blocks <id> | --depends-on <id> [--kind blocks])")
+	}
+
+	issueID := args[0]
+	var dependsOn, blockedBy, blocks string
+	kind := "blocks"
+	kindSet := false
+
+	for i := 1; i < len(args); i++ {
+		switch args[i] {
+		case "--depends-on":
+			if i+1 < len(args) {
+				dependsOn = args[i+1]
+				i++
+			}
+		case "--kind":
+			if i+1 < len(args) {
+				kind = args[i+1]
+				kindSet = true
+				i++
+			}
+		case "--blocked-by":
+			if i+1 < len(args) {
+				blockedBy = args[i+1]
+				i++
+			}
+		case "--blocks":
+			if i+1 < len(args) {
+				blocks = args[i+1]
+				i++
+			}
+		}
+	}
+
+	forms := 0
+	for _, v := range []string{dependsOn, blockedBy, blocks} {
+		if v != "" {
+			forms++
+		}
+	}
+	if forms == 0 {
+		return fmt.Errorf("%s", "error: one of --blocked-by, --blocks, or --depends-on is required")
+	}
+	if forms > 1 {
+		return fmt.Errorf("%s", "error: --blocked-by, --blocks, and --depends-on are mutually exclusive")
+	}
+	if (blockedBy != "" || blocks != "") && kindSet {
+		return fmt.Errorf("%s", "error: --kind cannot be combined with --blocked-by or --blocks (both mean kind=blocks)")
+	}
+
+	// Mirror the add direction so removal targets the same stored edge.
+	target := issueID
+	switch {
+	case blockedBy != "":
+		dependsOn, kind = blockedBy, "blocks"
+	case blocks != "":
+		target, dependsOn, kind = blocks, issueID, "blocks"
 	}
 
 	act, err := resolveActor("")
@@ -1011,7 +1111,7 @@ func runIssueDependencyRemove(ctx context.Context, c *client.Client, args []stri
 		return err
 	}
 
-	if err := c.RemoveDependency(ctx, issueID, core.RemoveDependencyRequest{
+	if err := c.RemoveDependency(ctx, target, core.RemoveDependencyRequest{
 		DependsOn: dependsOn,
 		Kind:      kind,
 		Actor:     act,

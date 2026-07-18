@@ -455,9 +455,20 @@ func printIssueFull(i core.Issue, l *core.IssueLease, events []core.Event, notes
 	fmt.Printf("Created:       %s\n", i.CreatedAt)
 	fmt.Printf("Updated:       %s\n", i.UpdatedAt)
 
-	if len(i.Dependencies) > 0 {
+	// A "blocks" edge is rendered from the blocked side as "Blocked By" and from
+	// the blocking side as "Blocks"; it is intentionally omitted from this raw
+	// list so the direction is never shown ambiguously (e.g. "blocks aion-190"
+	// for an edge that actually means "blocked by aion-190").
+	nonBlockDeps := make([]core.Dependency, 0, len(i.Dependencies))
+	for _, dep := range i.Dependencies {
+		if dep.Kind == "blocks" {
+			continue
+		}
+		nonBlockDeps = append(nonBlockDeps, dep)
+	}
+	if len(nonBlockDeps) > 0 {
 		fmt.Printf("\nDependencies:\n")
-		for _, dep := range i.Dependencies {
+		for _, dep := range nonBlockDeps {
 			label := dep.DependsOnShortID
 			if label == "" {
 				label = dep.DependsOnID
@@ -466,10 +477,16 @@ func printIssueFull(i core.Issue, l *core.IssueLease, events []core.Event, notes
 		}
 	}
 	if i.Blocked || len(i.BlockedBy) > 0 {
-		fmt.Printf("Blocked:       yes\n")
 		if len(i.BlockedBy) > 0 {
+			fmt.Printf("Blocked:       yes\n")
 			fmt.Printf("Blocked By:    %s\n", strings.Join(i.BlockedBy, ", "))
+		} else {
+			// Blocked with no dependency edge: the issue's own status is "blocked".
+			fmt.Printf("Blocked:       yes (status)\n")
 		}
+	}
+	if len(i.Blocks) > 0 {
+		fmt.Printf("Blocks:        %s\n", strings.Join(i.Blocks, ", "))
 	}
 
 	if len(links) > 0 {

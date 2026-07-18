@@ -276,6 +276,59 @@ func TestGetIssueIncludesExplicitDependencyIdentifiers(t *testing.T) {
 	}
 }
 
+func TestGetIssuePopulatesReverseBlocks(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	if _, err := CreateProject(context.Background(), db, "test", "Test", ""); err != nil {
+		t.Fatal(err)
+	}
+	source, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Source"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Target"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// source depends on target with kind blocks: target blocks source.
+	if err := AddDependency(context.Background(), db, source.ID, core.AddDependencyRequest{
+		DependsOn: target.ID,
+		Kind:      "blocks",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// The blocker sees the reverse relationship: Blocks contains the dependent.
+	blocker, _, err := GetIssue(context.Background(), db, target.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(blocker.Blocks) != 1 || blocker.Blocks[0] != source.ShortID {
+		t.Fatalf("blocks = %#v, want [%q]", blocker.Blocks, source.ShortID)
+	}
+	// Symmetry: the dependent's BlockedBy names the blocker.
+	dependent, _, err := GetIssue(context.Background(), db, source.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(dependent.BlockedBy) != 1 || dependent.BlockedBy[0] != target.ShortID {
+		t.Fatalf("blocked_by = %#v, want [%q]", dependent.BlockedBy, target.ShortID)
+	}
+
+	// A terminal blocker no longer blocks anyone, mirroring the forward rule.
+	if _, err := db.Exec("UPDATE issues SET status = 'done' WHERE id = ?", target.ID); err != nil {
+		t.Fatal(err)
+	}
+	blocker, _, err = GetIssue(context.Background(), db, target.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(blocker.Blocks) != 0 {
+		t.Fatalf("terminal blocker still lists blocks: %#v", blocker.Blocks)
+	}
+}
+
 func TestGetIssueByShortID(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)

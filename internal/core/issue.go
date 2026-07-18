@@ -76,6 +76,10 @@ type Issue struct {
 	Dependencies       []Dependency `json:"dependencies,omitempty"`
 	Blocked            bool         `json:"blocked,omitempty"`
 	BlockedBy          []string     `json:"blocked_by,omitempty"`
+	// Blocks lists the short IDs of non-terminal issues that this issue blocks
+	// (the reverse of BlockedBy). It makes a blocking relationship visible from
+	// both sides: A.BlockedBy contains B iff B.Blocks contains A.
+	Blocks []string `json:"blocks,omitempty"`
 }
 
 // Dependency represents a relationship to another issue.
