@@ -4,6 +4,84 @@ Direction for af-coordinator beyond v1. The operational source of truth for
 this work is the coordinator itself (project `afc`); this document records
 the intent and the reasoning so the issues stay short.
 
+## Current direction: harden the trust boundary, then prove the workflow
+
+The project is already useful as a local execution ledger. The next work should
+make that claim safer and easier to evaluate before adding a network transport
+or tracker synchronization.
+
+Delivery order:
+
+```text
+close packet 010 documentation
+    -> privileged operator boundary
+    -> public release baseline + reproducible demo
+    -> optional LAN worker access (decision gate)
+    -> optional external tracker adapters (later gate)
+```
+
+### Live backlog assessment (2026-07-22)
+
+Live status, claims, and closure remain in project `afc`. This table records the
+product decision behind the current open issues; it does not replace their live
+state.
+
+| Issue | Decision | Reason |
+|---|---|---|
+| `afc-61` | **Do next** | Operator close/reopen bypass normal lease ownership. The privilege boundary must be explicit before autonomous runners or any TCP listener are trusted. |
+| `afc-58` | **Keep, after `afc-61`** | A one-step cancel is useful operator ergonomics, but it must use the same authenticated/audited operator path rather than introduce a second override model. |
+| `afc-60` | **Keep as a warning** | Duplicate work is a core coordination failure. Identical titles are only a heuristic, so the default should warn and `--allow-duplicate` should remain available. |
+| `afc-57` | **Defer** | `edit` as an alias for `update` is discoverability polish, not a correctness or adoption blocker. Prefer improving help and examples first. |
+| `afc-59` | **Do not schedule in its current form** | Metadata editing and lease lifecycle are separate actions. `release` and atomic `handoff` are clearer than hiding release inside `issue update`. |
+
+There are no deferred `afc` issues in the live queue at this snapshot; the two
+defer/do-not-schedule decisions above are roadmap recommendations until their
+live issue statuses are changed deliberately.
+
+### Public release baseline
+
+The public-preview repository still needs a small, evidence-oriented baseline:
+
+- a normal pull-request CI workflow, not only tag-driven release automation;
+- an explicit open-source license;
+- `SECURITY.md` and contributor guidance;
+- `.gitignore` coverage for SQLite runtime files, local secrets, coverage, and
+  scratch exports;
+- one reproducible concurrent-claim demo and honest release notes.
+
+These are launch prerequisites, not product features. They should be specified
+as the next SDD packet after packet 010 is formally closed.
+
+### Decision gate: secure LAN worker access
+
+The concrete future scenario is a coordinator and SQLite database on the
+operator laptop, with workers running either locally or on Proxmox VMs/LXCs in
+the same home network. This does **not** require distributed storage.
+
+Do not start this track until the operator boundary and public baseline above
+are complete. If selected, specify an optional TCP transport over the same API
+handlers with:
+
+- the Unix socket retained as the default local transport;
+- bind-to-specific-interface configuration, disabled by default;
+- TLS or a documented private-network security envelope;
+- per-worker credentials and server-derived identity;
+- worker/operator authorization and lease ownership checks;
+- request limits, timeouts, audit events, rotation, and idempotency semantics.
+
+### Later gate: external tracker adapters
+
+GitHub Issues must not become mandatory because many coordinated projects do
+not live on GitHub. The durable boundary is:
+
+> `af-coordinator` owns execution state. External trackers are optional
+> planning and reporting surfaces.
+
+If real demand appears, start with a provider-neutral external-reference model
+and one narrow GitHub adapter. Avoid full bidirectional field synchronization;
+import explicitly selected work and publish terminal evidence such as PR and
+commit links.
+
 ## Completed target: execution telemetry and analytics hardening (`afc-47`)
 
 Packet `docs/specs/008-execution-telemetry-and-analytics/` captures gaps found
