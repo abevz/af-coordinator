@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"os"
@@ -49,10 +50,9 @@ func TestVersionSkew(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
+	for i, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			sockPath := filepath.Join(tmpDir, "test"+tt.name+".sock")
-			sockPath = strings.ReplaceAll(sockPath, " ", "_")
+			sockPath := filepath.Join(tmpDir, fmt.Sprintf("s%d.sock", i))
 			os.Remove(sockPath)
 
 			l, err := net.Listen("unix", sockPath)
