@@ -7,6 +7,7 @@ const (
 	ErrValidationFailed = "validation_failed"
 	ErrNotFound         = "not_found"
 	ErrConflict         = "version_conflict"
+	ErrForbidden        = "forbidden"
 	ErrLeaseHeld        = "lease_held"
 	ErrLeaseExpired     = "lease_expired"
 	ErrDependencyCycle  = "dependency_cycle"

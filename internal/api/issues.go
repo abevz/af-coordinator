@@ -2,8 +2,10 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 
@@ -467,6 +469,10 @@ func handleCloseIssue(st store.CoordinatorStore, logger *slog.Logger) http.Handl
 
 func handleOperatorCloseIssue(st store.CoordinatorStore, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if !checkOperatorToken(w, r) {
+			return
+		}
+
 		issueID, ok := resolveIssueID(st, w, r)
 		if !ok {
 			return
@@ -496,6 +502,10 @@ func handleOperatorCloseIssue(st store.CoordinatorStore, logger *slog.Logger) ht
 
 func handleOperatorReopenIssue(st store.CoordinatorStore, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if !checkOperatorToken(w, r) {
+			return
+		}
+
 		issueID, ok := resolveIssueID(st, w, r)
 		if !ok {
 			return
@@ -521,6 +531,21 @@ func handleOperatorReopenIssue(st store.CoordinatorStore, logger *slog.Logger) h
 		}
 		writeJSON(w, http.StatusOK, map[string]core.Issue{"issue": issue})
 	}
+}
+
+// checkOperatorToken validates the AF_OPERATOR_TOKEN against the
+// Authorization header. Returns false and writes a 403 response on failure.
+func checkOperatorToken(w http.ResponseWriter, r *http.Request) bool {
+	token := os.Getenv("AF_OPERATOR_TOKEN")
+	if token == "" {
+		writeError(w, http.StatusForbidden, core.ErrForbidden, "AF_OPERATOR_TOKEN not configured on server")
+		return false
+	}
+	if got := r.Header.Get("Authorization"); got != fmt.Sprintf("Bearer %s", token) {
+		writeError(w, http.StatusForbidden, core.ErrForbidden, "invalid or missing operator token")
+		return false
+	}
+	return true
 }
 
 func writeIssueMutationError(w http.ResponseWriter, logger *slog.Logger, operation, issueID string, err error) {

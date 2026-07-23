@@ -1698,6 +1698,7 @@ func TestCloseIssue(t *testing.T) {
 func TestOperatorCloseAndReopenIssue(t *testing.T) {
 	server, db := newTestServer(t)
 	now := time.Now().UTC().Format(time.RFC3339)
+	t.Setenv("AF_OPERATOR_TOKEN", "test-token")
 	if _, err := db.Exec(
 		`INSERT INTO projects (id, key, name, description, next_issue_seq, created_at, updated_at)
 		 VALUES ('proj-1', 'test', 'Test', '', 1, ?, ?)`, now, now,
@@ -1718,6 +1719,7 @@ func TestOperatorCloseAndReopenIssue(t *testing.T) {
 		t.Fatal(err)
 	}
 	rejectedReq.Header.Set("Content-Type", "application/json")
+	rejectedReq.Header.Set("Authorization", "Bearer test-token")
 	rejectedResp, err := http.DefaultClient.Do(rejectedReq)
 	if err != nil {
 		t.Fatal(err)
@@ -1733,6 +1735,7 @@ func TestOperatorCloseAndReopenIssue(t *testing.T) {
 		t.Fatal(err)
 	}
 	closeReq.Header.Set("Content-Type", "application/json")
+	closeReq.Header.Set("Authorization", "Bearer test-token")
 	closeResp, err := http.DefaultClient.Do(closeReq)
 	if err != nil {
 		t.Fatal(err)
@@ -1748,6 +1751,7 @@ func TestOperatorCloseAndReopenIssue(t *testing.T) {
 		t.Fatal(err)
 	}
 	reopenReq.Header.Set("Content-Type", "application/json")
+	reopenReq.Header.Set("Authorization", "Bearer test-token")
 	reopenResp, err := http.DefaultClient.Do(reopenReq)
 	if err != nil {
 		t.Fatal(err)
