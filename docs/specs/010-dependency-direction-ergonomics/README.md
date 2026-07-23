@@ -1,5 +1,7 @@
 # 010 Dependency Direction Ergonomics
 
+Status: complete. Shipped in PR #15; see `review.md`.
+
 Make `blocks` dependencies unambiguous to author and to read.
 
 - Directional CLI flags `--blocked-by` / `--blocks` with plain-language

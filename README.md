@@ -1,8 +1,11 @@
 # af-coordinator
 
-`af-coordinator` is a local-first coordination daemon for AI agents and
-automation scripts that work across many projects, repositories, and git
-worktrees.
+**A local execution ledger for AI agents working across repositories and git
+worktrees.**
+
+`af-coordinator` is a local-first daemon that gives agents one place to decide
+what is ready, claim it atomically, renew ownership, hand work off, and leave an
+auditable result.
 
 It gives agents a shared execution ledger: what work is ready, who claimed it,
 what is blocked, what changed, and how a task was closed. Specs and source code
@@ -10,6 +13,23 @@ stay in git; runtime coordination state stays in the local daemon.
 
 Use it when local AI agents need to cooperate safely without all of them
 writing directly to a database, editing the same checkout, or duplicating work.
+
+> **Project status: public preview.** The core local workflow is in daily use,
+> but the CLI and HTTP API may still change before v1.0. Network clients and
+> multi-machine synchronization are not supported yet.
+
+`af-coordinator` is not an agent runtime or a replacement for specs. It is the
+execution control plane between planning and execution:
+
+```text
+specs / operator intent
+          |
+          v
+af-coordinator: ready -> claim -> heartbeat -> handoff / close
+          |
+          v
+agents / runners -> worktree -> branch / PR / result
+```
 
 ## What it does
 
@@ -20,6 +40,47 @@ writing directly to a database, editing the same checkout, or duplicating work.
 - computes a `ready` view from issue status, leases, and blockers
 - records an append-only audit trail for claims, notes, updates, and closes
 - keeps live runtime data out of git
+
+## The five-minute value
+
+Once a project and repository are registered, the operating loop is small:
+
+```bash
+# Human or agent creates work.
+afctl issue create --project demo --scope-kind project \
+  --title "Document the retry policy"
+
+# Workers ask for work that is open, unblocked, and not leased.
+afctl issue ready --project demo
+
+# Exactly one worker receives the lease.
+afctl issue claim demo-1 --ttl 900
+
+# While working, it renews the lease and records material context.
+afctl issue heartbeat demo-1 --lease-token "$LEASE_TOKEN" --ttl 900
+afctl issue note add demo-1 --body "Verified the failure path" --actor worker-1
+
+# It closes with evidence, or hands off and releases atomically.
+afctl issue close demo-1 --resolution done --expected-version 2 \
+  --lease-token "$LEASE_TOKEN" --note "Documented and verified"
+```
+
+If two workers try to claim the same issue, one wins and the other receives a
+stable `lease_held` error. If a worker disappears, its lease expires and the
+work can become ready again.
+
+## Where it fits
+
+| Concern | Source of truth |
+|---|---|
+| Requirements, design, acceptance criteria | SDD files or another planning system |
+| Ready/blocked state, leases, attempts, handoffs | `af-coordinator` |
+| Code and review | Git worktrees, branches, commits, and pull requests |
+| External visibility | Optional tracker integrations; not implemented yet |
+
+This boundary is deliberate. GitHub Issues, GitLab Issues, Markdown specs, or
+native coordinator issues can all describe work; the coordinator owns only the
+live execution state used by agents.
 
 ## Why this exists
 
@@ -276,7 +337,7 @@ Key semantics:
 - only `blocks` dependencies affect readiness, and the daemon rejects
   dependency cycles
 
-In practice, this means the product should eventually expose:
+In practice, the product exposes:
 
 - a `ready` view
 - dependency-aware task state
@@ -335,6 +396,10 @@ migrations/            schema migrations
 - The coordinator assumes a single active daemon per machine.
 - There is currently no web UI or built-in visualization.
 - The project is designed for local-first operations and does not natively synchronize state across multiple machines.
+- Privileged operator actions are local-trust operations today; hardening that
+  boundary is the next security priority.
+- External tracker integrations are planned as optional adapters, not as a new
+  source of truth.
 
 ## How to release
 
