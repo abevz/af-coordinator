@@ -215,6 +215,7 @@ type UpdateIssueRequest struct {
 	Status             string `json:"status,omitempty"`
 	ExpectedVersion    int    `json:"expected_version"`
 	LeaseToken         string `json:"lease_token,omitempty"`
+	ReleaseLease       bool   `json:"release_lease,omitempty"`
 	Actor              string `json:"actor,omitempty"`
 }
 

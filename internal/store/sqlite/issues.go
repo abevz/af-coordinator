@@ -844,8 +844,11 @@ func UpdateIssue(ctx context.Context, db *sql.DB, issueID string, req core.Updat
 		return core.Issue{}, core.NewAPIError(core.ErrNotFound, "issue not found: "+issueID)
 	}
 
-	// Append event.
+	// Append event. Include "release" in the changed field list when applicable.
 	changed := buildChangedFields(req)
+	if req.ReleaseLease {
+		changed = append(changed, "release")
+	}
 	eventPayload := map[string]interface{}{"changed": changed}
 	if req.Status != "" && req.Status != issue.Status {
 		eventPayload["from_status"] = issue.Status
@@ -859,6 +862,44 @@ func UpdateIssue(ctx context.Context, db *sql.DB, issueID string, req core.Updat
 	)
 	if err != nil {
 		return core.Issue{}, fmt.Errorf("insert event: %w", err)
+	}
+
+	// If --release was requested, atomically release the lease within the same transaction.
+	if req.ReleaseLease {
+		if lease == nil {
+			return core.Issue{}, core.NewAPIError(core.ErrValidationFailed,
+				"no active lease to release")
+		}
+
+		// Delete the lease row.
+		_, err = tx.ExecContext(ctx,
+			`DELETE FROM leases WHERE issue_id = ? AND lease_token = ?`,
+			issueID, req.LeaseToken,
+		)
+		if err != nil {
+			return core.Issue{}, fmt.Errorf("delete lease: %w", err)
+		}
+
+		// Update status to open (unless blocked) and clear claimed_at.
+		// Version is already bumped by the metadata update above, so do not bump again.
+		_, err = tx.ExecContext(ctx,
+			`UPDATE issues SET
+			     status = CASE WHEN status = 'blocked' THEN 'blocked' ELSE 'open' END,
+			     claimed_at = NULL,
+			     updated_at = ?
+			 WHERE id = ?`,
+			now, issueID,
+		)
+		if err != nil {
+			return core.Issue{}, fmt.Errorf("update issue status for release: %w", err)
+		}
+
+		if err := insertEvent(ctx, tx, issueID, lease.Holder, "issue_released", map[string]any{
+			"attempt_id": lease.AttemptID,
+			"end_reason": "released",
+		}, now); err != nil {
+			return core.Issue{}, err
+		}
 	}
 
 	if err := tx.Commit(); err != nil {
