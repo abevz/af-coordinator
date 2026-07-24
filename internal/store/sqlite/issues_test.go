@@ -1863,6 +1863,115 @@ func TestOperatorCloseIssueClosesUnclaimableEpicWithoutLeaseToken(t *testing.T) 
 	}
 }
 
+func TestOperatorCloseIssueWithMetadata(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+	if _, err := CreateProject(context.Background(), db, "test", "Test", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{
+		ScopeKind: "project",
+		Title:     "Close with metadata",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := OperatorCloseIssue(context.Background(), db, issue.ID, core.OperatorCloseIssueRequest{
+		Resolution:      "done",
+		ExpectedVersion: issue.Version,
+		Actor:           "operator",
+		Reason:          "merged via PR",
+		Branch:          "feat/metadata",
+		PRURL:           "https://github.com/example/repo/pull/42",
+		CommitSHA:       "abc123def456",
+		Note:            "Closed via operator after PR merge",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Branch != "feat/metadata" {
+		t.Fatalf("result.Branch = %q, want %q", result.Branch, "feat/metadata")
+	}
+	if result.PRURL != "https://github.com/example/repo/pull/42" {
+		t.Fatalf("result.PRURL = %q, want %q", result.PRURL, "https://github.com/example/repo/pull/42")
+	}
+	if result.CommitSHA != "abc123def456" {
+		t.Fatalf("result.CommitSHA = %q, want %q", result.CommitSHA, "abc123def456")
+	}
+
+	// Verify note was inserted.
+	notes, err := ListNotes(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(notes) != 1 {
+		t.Fatalf("expected 1 note, got %d", len(notes))
+	}
+	if notes[0].Body != "Closed via operator after PR merge" {
+		t.Fatalf("note body = %q, want %q", notes[0].Body, "Closed via operator after PR merge")
+	}
+
+	// Verify event payload includes metadata.
+	events, err := ListEvents(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	last := events[len(events)-1]
+	if last.EventType != "issue_operator_closed" {
+		t.Fatalf("event_type = %q, want issue_operator_closed", last.EventType)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(last.PayloadJSON), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload["branch"] != "feat/metadata" {
+		t.Fatalf("payload[\"branch\"] = %v, want feat/metadata", payload["branch"])
+	}
+	if payload["pr_url"] != "https://github.com/example/repo/pull/42" {
+		t.Fatalf("payload[\"pr_url\"] = %v, want https://github.com/example/repo/pull/42", payload["pr_url"])
+	}
+	if payload["commit_sha"] != "abc123def456" {
+		t.Fatalf("payload[\"commit_sha\"] = %v, want abc123def456", payload["commit_sha"])
+	}
+}
+
+func TestOperatorCloseIssueVersionConflict(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+	if _, err := CreateProject(context.Background(), db, "test", "Test", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{
+		ScopeKind: "project",
+		Title:     "Version conflict on operator close",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Use a wrong version to trigger conflict.
+	wrongVersion := issue.Version + 99
+	_, err = OperatorCloseIssue(context.Background(), db, issue.ID, core.OperatorCloseIssueRequest{
+		Resolution:      "cancelled",
+		ExpectedVersion: wrongVersion,
+		Actor:           "operator",
+		Reason:          "testing version conflict",
+	})
+	if err == nil {
+		t.Fatal("expected version conflict error, got nil")
+	}
+	var apiErr core.APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("expected APIError, got %T: %v", err, err)
+	}
+	if apiErr.Code != core.ErrConflict {
+		t.Fatalf("error code = %q, want %q", apiErr.Code, core.ErrConflict)
+	}
+}
+
 func TestOperatorReopenIssueRequiresExplicitReasonAndEmitsEvent(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)

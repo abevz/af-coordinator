@@ -1022,12 +1022,33 @@ func OperatorCloseIssue(ctx context.Context, db *sql.DB, issueID string, req cor
 	if err != nil {
 		return core.CloseIssueResult{}, err
 	}
+	result.Branch = req.Branch
+	result.PRURL = req.PRURL
+	result.CommitSHA = req.CommitSHA
+
 	if _, err := tx.ExecContext(ctx, `DELETE FROM leases WHERE issue_id = ?`, issueID); err != nil {
 		return core.CloseIssueResult{}, fmt.Errorf("delete leases: %w", err)
 	}
 
+	// A close note is appended before its closing event so the audit stream has
+	// a deterministic note-then-close order.
+	if req.Note != "" {
+		if err := insertCloseNote(ctx, tx, issueID, req.Actor, req.Note, now); err != nil {
+			return core.CloseIssueResult{}, err
+		}
+	}
+
 	payload := terminalEventPayload(issue.Status, req.Resolution, issue.ExternalKey)
 	payload["reason"] = req.Reason
+	if req.Branch != "" {
+		payload["branch"] = req.Branch
+	}
+	if req.PRURL != "" {
+		payload["pr_url"] = req.PRURL
+	}
+	if req.CommitSHA != "" {
+		payload["commit_sha"] = req.CommitSHA
+	}
 	if err := insertEvent(ctx, tx, issueID, req.Actor, "issue_operator_closed", payload, now); err != nil {
 		return core.CloseIssueResult{}, err
 	}

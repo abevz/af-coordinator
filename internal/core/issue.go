@@ -234,9 +234,13 @@ type CloseIssueRequest struct {
 // operator path. It never accepts a lease token.
 type OperatorCloseIssueRequest struct {
 	Resolution      string `json:"resolution"`
+	Branch          string `json:"branch,omitempty"`
+	PRURL           string `json:"pr_url,omitempty"`
+	CommitSHA       string `json:"commit_sha,omitempty"`
 	ExpectedVersion int    `json:"expected_version"`
 	Actor           string `json:"actor"`
 	Reason          string `json:"reason"`
+	Note            string `json:"note,omitempty"`
 }
 
 // OperatorReopenIssueRequest reopens terminal work through the explicit local
