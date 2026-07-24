@@ -1927,6 +1927,99 @@ func TestOperatorReopenIssueRequiresExplicitReasonAndEmitsEvent(t *testing.T) {
 	}
 }
 
+func TestOperatorReleaseIssueClearsStuckLeaseWithoutClosing(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+	if _, err := CreateProject(context.Background(), db, "test", "Test", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{
+		ScopeKind: "project",
+		Title:     "Abandoned claim",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Simulate a script that claimed the issue and then crashed before ever
+	// persisting the lease token: the claim response is discarded here.
+	claim, err := ClaimIssue(context.Background(), db, issue.ID, "flaky-script", 3600)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Cannot release without --reason.
+	if _, err := OperatorReleaseIssue(context.Background(), db, issue.ID, core.OperatorReleaseIssueRequest{
+		ExpectedVersion: claim.Version,
+		Actor:           "operator",
+	}); err == nil {
+		t.Fatal("OperatorReleaseIssue() succeeded without a reason")
+	}
+
+	// Cannot release an issue that isn't actually in_progress.
+	otherIssue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{
+		ScopeKind: "project",
+		Title:     "Never claimed",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := OperatorReleaseIssue(context.Background(), db, otherIssue.ID, core.OperatorReleaseIssueRequest{
+		ExpectedVersion: otherIssue.Version,
+		Actor:           "operator",
+		Reason:          "should be rejected",
+	}); err == nil {
+		t.Fatal("OperatorReleaseIssue() succeeded on a non-in_progress issue")
+	}
+
+	released, err := OperatorReleaseIssue(context.Background(), db, issue.ID, core.OperatorReleaseIssueRequest{
+		ExpectedVersion: claim.Version,
+		Actor:           "operator",
+		Reason:          "flaky-script crashed before persisting the lease token",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if released.Status != "open" {
+		t.Fatalf("expected status 'open' after release, got %q", released.Status)
+	}
+
+	// The lease must actually be gone, so a fresh claim succeeds immediately
+	// instead of waiting out the original TTL.
+	_, lease, err := GetIssue(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lease != nil {
+		t.Fatalf("expected no active lease after release, got %+v", lease)
+	}
+	if _, err := ClaimIssue(context.Background(), db, issue.ID, "another-agent", 3600); err != nil {
+		t.Fatalf("re-claim after release: %v", err)
+	}
+
+	events, err := ListEvents(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sawReleased bool
+	for _, e := range events {
+		if e.EventType == "issue_operator_released" {
+			sawReleased = true
+			var payload map[string]string
+			if err := json.Unmarshal([]byte(e.PayloadJSON), &payload); err != nil {
+				t.Fatal(err)
+			}
+			if payload["reason"] != "flaky-script crashed before persisting the lease token" {
+				t.Fatalf("unexpected release payload: %v", payload)
+			}
+		}
+	}
+	if !sawReleased {
+		t.Fatal("expected an issue_operator_released event")
+	}
+}
+
 func TestCloseIssueIncludesIssueExternalKeyInPayloadAndResult(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)

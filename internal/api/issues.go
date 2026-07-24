@@ -533,6 +533,39 @@ func handleOperatorReopenIssue(st store.CoordinatorStore, logger *slog.Logger) h
 	}
 }
 
+func handleOperatorReleaseIssue(st store.CoordinatorStore, logger *slog.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !checkOperatorToken(w, r) {
+			return
+		}
+
+		issueID, ok := resolveIssueID(st, w, r)
+		if !ok {
+			return
+		}
+
+		var req core.OperatorReleaseIssueRequest
+		decoder := json.NewDecoder(r.Body)
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, core.ErrValidationFailed, "invalid JSON body")
+			return
+		}
+		if req.Actor == "" || req.Reason == "" || req.ExpectedVersion <= 0 {
+			writeError(w, http.StatusBadRequest, core.ErrValidationFailed,
+				"actor, reason, and expected_version are required")
+			return
+		}
+
+		issue, err := st.OperatorReleaseIssue(r.Context(), issueID, req)
+		if err != nil {
+			writeIssueMutationError(w, logger, "operator release issue", issueID, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]core.Issue{"issue": issue})
+	}
+}
+
 // checkOperatorToken validates the AF_OPERATOR_TOKEN against the
 // Authorization header. Returns false and writes a 403 response on failure.
 func checkOperatorToken(w http.ResponseWriter, r *http.Request) bool {

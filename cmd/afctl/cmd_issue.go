@@ -14,7 +14,7 @@ import (
 
 // ─── Issue ───────────────────────────────────────────────────────────────────
 
-const issueUsage = "Usage: afctl issue <create|get|list|ready|claim|heartbeat|release|handoff|update|close|operator-close|operator-reopen>"
+const issueUsage = "Usage: afctl issue <create|get|list|ready|claim|heartbeat|release|handoff|update|close|operator-close|operator-reopen|operator-release>"
 
 // hasHelpFlag reports whether args requests help via --help or -h, checked
 // before any positional argument is consumed so `<cmd> -h` never gets
@@ -82,6 +82,8 @@ func runIssue(ctx context.Context, c *client.Client, args []string) error {
 		return runIssueOperatorClose(ctx, c, args[1:])
 	case "operator-reopen":
 		return runIssueOperatorReopen(ctx, c, args[1:])
+	case "operator-release":
+		return runIssueOperatorRelease(ctx, c, args[1:])
 	case "link":
 		return runIssueLink(ctx, c, args[1:])
 	case "unlink":
@@ -876,6 +878,66 @@ func runIssueOperatorReopen(ctx context.Context, c *client.Client, args []string
 		return nil
 	}
 	fmt.Println("Issue reopened by operator.")
+	return nil
+}
+
+const issueOperatorReleaseUsage = "Usage: afctl issue operator-release <issue-id> --expected-version N --reason \"why the lease is being force-cleared\"\n" +
+	"Recovers a stuck in_progress claim whose lease token was lost before its TTL expired: clears the lease and returns the issue to open, without closing it.\n" + lifecycleHint
+
+func runIssueOperatorRelease(ctx context.Context, c *client.Client, args []string) error {
+	if hasHelpFlag(args) {
+		fmt.Println(issueOperatorReleaseUsage)
+		return nil
+	}
+	if len(args) < 1 {
+		return usageErr(issueOperatorReleaseUsage, "")
+	}
+
+	issueID := args[0]
+	req := core.OperatorReleaseIssueRequest{ExpectedVersion: -1}
+	for i := 1; i < len(args); i++ {
+		switch args[i] {
+		case "--expected-version":
+			if i+1 < len(args) {
+				fmt.Sscanf(args[i+1], "%d", &req.ExpectedVersion)
+				i++
+			}
+		case "--reason":
+			if i+1 < len(args) {
+				req.Reason = args[i+1]
+				i++
+			}
+		default:
+			return usageErr(issueOperatorReleaseUsage, fmt.Sprintf("unknown flag: %s", args[i]))
+		}
+	}
+	if req.ExpectedVersion <= 0 {
+		return usageErr(issueOperatorReleaseUsage, "--expected-version is required")
+	}
+	if strings.TrimSpace(req.Reason) == "" {
+		return usageErr(issueOperatorReleaseUsage, "--reason is required")
+	}
+	actor, err := resolveActor("")
+	if err != nil {
+		return usageErr(issueOperatorReleaseUsage, err.Error())
+	}
+	req.Actor = actor
+
+	token := os.Getenv("AF_OPERATOR_TOKEN")
+	if token == "" {
+		return usageErr(issueOperatorReleaseUsage, "AF_OPERATOR_TOKEN environment variable is required")
+	}
+	c.SetOperatorToken(token)
+
+	issue, err := c.OperatorReleaseIssue(ctx, issueID, req)
+	if err != nil {
+		fail(err)
+	}
+	if jsonOutput {
+		json.NewEncoder(os.Stdout).Encode(issue)
+		return nil
+	}
+	fmt.Println("Issue lease force-released by operator; issue is open again.")
 	return nil
 }
 

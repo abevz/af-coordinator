@@ -160,6 +160,9 @@ Commands:
     handoff             Add a required HANDOFF note and release atomically
     update              Update issue fields (title, description, priority, assignee, status)
     close               Close an issue (resolution: done or cancelled) [--branch name] [--pr-url URL] [--commit-sha SHA] [--note "text"]
+    operator-close      Force-close an issue without a lease token (AF_OPERATOR_TOKEN + --reason)
+    operator-reopen     Reopen a terminal issue without a lease token (AF_OPERATOR_TOKEN + --reason)
+    operator-release    Force-clear a stuck in_progress lease and reopen without closing (AF_OPERATOR_TOKEN + --reason)
     link                Link an artifact to an issue
     note                Manage notes on an issue
       add              Add a note to an issue

@@ -1095,6 +1095,67 @@ func OperatorReopenIssue(ctx context.Context, db *sql.DB, issueID string, req co
 	return updated, nil
 }
 
+// OperatorReleaseIssue force-clears an issue's lease without a lease token
+// and returns it to open, on the explicit local operator path. It is the
+// recovery path for a claim whose lease token was lost before its TTL
+// naturally expired it: without this, the only way to unstick the issue
+// before expiry was operator-close followed by operator-reopen. Unlike
+// operator-close, it never touches resolution — the work is not considered
+// done, just unstuck for someone (possibly the same agent) to reclaim.
+func OperatorReleaseIssue(ctx context.Context, db *sql.DB, issueID string, req core.OperatorReleaseIssueRequest) (core.Issue, error) {
+	if err := validateOperatorRequest(req.ExpectedVersion, req.Actor, req.Reason); err != nil {
+		return core.Issue{}, err
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return core.Issue{}, fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	issue, err := getIssueForTerminalTransition(ctx, tx, issueID, req.ExpectedVersion)
+	if err != nil {
+		return core.Issue{}, err
+	}
+	if issue.Status != "in_progress" {
+		return core.Issue{}, core.NewAPIError(core.ErrValidationFailed,
+			"only in_progress issues can be force-released; use operator-close for terminal resolution or operator-reopen for terminal issues")
+	}
+
+	result, err := tx.ExecContext(ctx,
+		`UPDATE issues
+		 SET status = 'open', claimed_at = NULL, version = version + 1, updated_at = ?
+		 WHERE id = ? AND version = ?`,
+		now, issueID, req.ExpectedVersion,
+	)
+	if err != nil {
+		return core.Issue{}, fmt.Errorf("release issue: %w", err)
+	}
+	if rows, err := result.RowsAffected(); err != nil {
+		return core.Issue{}, fmt.Errorf("release rows affected: %w", err)
+	} else if rows != 1 {
+		return core.Issue{}, core.NewAPIError(core.ErrConflict, "issue changed while releasing")
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM leases WHERE issue_id = ?`, issueID); err != nil {
+		return core.Issue{}, fmt.Errorf("delete leases: %w", err)
+	}
+	if err := insertEvent(ctx, tx, issueID, req.Actor, "issue_operator_released", map[string]any{
+		"reason": req.Reason,
+	}, now); err != nil {
+		return core.Issue{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return core.Issue{}, fmt.Errorf("commit tx: %w", err)
+	}
+
+	updated, _, err := GetIssue(ctx, db, issueID)
+	if err != nil {
+		return core.Issue{}, fmt.Errorf("re-read released issue: %w", err)
+	}
+	return updated, nil
+}
+
 func isTerminalStatus(status string) bool {
 	return status == "done" || status == "cancelled"
 }

@@ -143,6 +143,10 @@ func (s *Store) OperatorReopenIssue(ctx context.Context, issueID string, req cor
 	return OperatorReopenIssue(ctx, s.db, issueID, req)
 }
 
+func (s *Store) OperatorReleaseIssue(ctx context.Context, issueID string, req core.OperatorReleaseIssueRequest) (core.Issue, error) {
+	return OperatorReleaseIssue(ctx, s.db, issueID, req)
+}
+
 func (s *Store) AddDependency(ctx context.Context, issueID string, req core.AddDependencyRequest) error {
 	return AddDependency(ctx, s.db, issueID, req)
 }

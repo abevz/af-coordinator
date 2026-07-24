@@ -247,6 +247,17 @@ type OperatorReopenIssueRequest struct {
 	Reason          string `json:"reason"`
 }
 
+// OperatorReleaseIssueRequest force-clears a stuck in_progress lease through
+// the explicit local operator path, returning the issue to open without
+// closing it. It never accepts a lease token — that is the point: it is the
+// recovery path for a claim whose lease token was lost (crashed script,
+// never persisted) before its TTL naturally expired it.
+type OperatorReleaseIssueRequest struct {
+	ExpectedVersion int    `json:"expected_version"`
+	Actor           string `json:"actor"`
+	Reason          string `json:"reason"`
+}
+
 // CloseIssueResult is returned after a successful close.
 type CloseIssueResult struct {
 	Status      string `json:"status"`
