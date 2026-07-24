@@ -192,6 +192,7 @@ The daemon reads these environment variables:
 | `AF_COORDINATOR_SOCKET` | `~/.local/state/af-coordinator/af-coordinator.sock` | Unix socket path |
 | `AF_COORDINATOR_DB` | `~/.local/share/af-coordinator/af-coordinator.db` | SQLite database path |
 | `AF_COORDINATOR_LOG_LEVEL` | `info` | Log level: `debug`, `info`, `warn`, `error` |
+| `AF_OPERATOR_TOKEN` | (unset) | Required by the daemon for `afctl issue operator-close/operator-reopen/operator-release`. Unset means those commands fail with `forbidden: AF_OPERATOR_TOKEN not configured on server`. The client (`afctl`) reads the same variable from its own environment, so the value must match on both sides. Under `systemd --user`, wire it in via an `EnvironmentFile=` drop-in pointing at a `600`-permission file outside the unit — see `contrib/systemd/af-coordinatord.service`. |
 
 Common worktree maintenance commands:
 

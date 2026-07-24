@@ -11,6 +11,21 @@ RestartSec=5
 StandardOutput=journal
 StandardError=journal
 
+# To enable `afctl issue operator-close/operator-reopen/operator-release`,
+# the daemon needs AF_OPERATOR_TOKEN in its own environment (matching the
+# value afctl reads client-side). Do not add it here directly — put it in a
+# 600-permission file and reference it via a drop-in instead:
+#
+#   printf 'AF_OPERATOR_TOKEN=<token>\n' > ~/.config/af-coordinator/operator.env
+#   chmod 600 ~/.config/af-coordinator/operator.env
+#   mkdir -p ~/.config/systemd/user/af-coordinatord.service.d
+#   cat > ~/.config/systemd/user/af-coordinatord.service.d/operator-token.conf <<'EOF'
+#   [Service]
+#   EnvironmentFile=%h/.config/af-coordinator/operator.env
+#   EOF
+#   systemctl --user daemon-reload
+#   systemctl --user restart af-coordinatord
+
 # Hardening
 NoNewPrivileges=true
 PrivateTmp=true
