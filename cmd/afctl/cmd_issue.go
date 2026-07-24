@@ -14,7 +14,7 @@ import (
 
 // ─── Issue ───────────────────────────────────────────────────────────────────
 
-const issueUsage = "Usage: afctl issue <create|get|list|ready|claim|heartbeat|release|handoff|run|update|close|operator-close|operator-reopen|operator-release>"
+const issueUsage = "Usage: afctl issue <create|get|list|ready|claim|heartbeat|release|handoff|run|edit|update|close|operator-close|operator-reopen|operator-release>"
 
 // hasHelpFlag reports whether args requests help via --help or -h, checked
 // before any positional argument is consumed so `<cmd> -h` never gets
@@ -76,6 +76,8 @@ func runIssue(ctx context.Context, c *client.Client, args []string) error {
 		return runIssueHandoff(ctx, c, args[1:])
 	case "run":
 		return runIssueRun(ctx, c, args[1:])
+	case "edit":
+		return runIssueUpdate(ctx, c, args[1:])
 	case "update":
 		return runIssueUpdate(ctx, c, args[1:])
 	case "close":
