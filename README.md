@@ -115,6 +115,13 @@ make preflight
 The preflight checks required build tools, the Go version, the install
 directory, and the current OS/service-manager situation.
 
+Then install the git hooks once, so the daemon auto-redeploys after every
+merge into `main` instead of silently going stale:
+
+```bash
+make install-hooks
+```
+
 ### Build and install
 
 ```bash
@@ -175,7 +182,8 @@ afctl doctor
 `afctl doctor` is a post-install/runtime diagnostic. It checks daemon
 reachability, client/daemon version skew, whether the daemon binary matches
 the local git HEAD (run it from inside this checkout to catch a merge that
-was never followed by `make restart-service`), backup setup, duplicate
+was never followed by `make restart-service` — automatic if you've run
+`make install-hooks`, a safety net if you haven't), backup setup, duplicate
 binaries, and client/daemon config mismatch.
 
 ### Platform support
