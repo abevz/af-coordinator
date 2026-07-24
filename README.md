@@ -38,6 +38,8 @@ agents / runners -> worktree -> branch / PR / result
 - exposes a small HTTP+JSON API over a Unix socket
 - ships `afctl`, a CLI for agents and humans
 - computes a `ready` view from issue status, leases, and blockers
+- classifies and routes issues with namespaced tags (`namespace/value`),
+  filterable on the `ready`/`list` views — without a separate project
 - records an append-only audit trail for claims, notes, updates, and closes
 - keeps live runtime data out of git
 

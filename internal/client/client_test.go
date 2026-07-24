@@ -270,6 +270,53 @@ func TestListIssuesWithFiltersEncodesRepeatedQuery(t *testing.T) {
 	}
 }
 
+func TestListIssuesWithFiltersEncodesTagQuery(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/issues" {
+			t.Fatalf("path = %q, want /v1/issues", r.URL.Path)
+		}
+		query := r.URL.Query()
+		if got, want := query["tag"], []string{"area/frontend", "theme/dark"}; !reflect.DeepEqual(got, want) {
+			t.Fatalf("tag = %q, want %q", got, want)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"issues":[]}`))
+	}))
+	defer server.Close()
+
+	c := testClient(t, server)
+	if _, err := c.ListIssuesWithFilters(context.Background(), core.IssueListParams{
+		Tags: []string{"area/frontend", "theme/dark"},
+	}); err != nil {
+		t.Fatalf("ListIssuesWithFilters() error = %v", err)
+	}
+}
+
+func TestListReadyIssuesEncodesTagQuery(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/issues/ready" {
+			t.Fatalf("path = %q, want /v1/issues/ready", r.URL.Path)
+		}
+		query := r.URL.Query()
+		if got, want := query["tag"], []string{"exec/auto", "area/frontend"}; !reflect.DeepEqual(got, want) {
+			t.Fatalf("tag = %q, want %q", got, want)
+		}
+		if got := query.Get("project"); got != "afc" {
+			t.Fatalf("project = %q, want afc", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"issues":[]}`))
+	}))
+	defer server.Close()
+
+	c := testClient(t, server)
+	if _, err := c.ListReadyIssues(context.Background(), "afc", "", []string{"exec/auto", "area/frontend"}); err != nil {
+		t.Fatalf("ListReadyIssues() error = %v", err)
+	}
+}
+
 func TestGetStatsEncodesFilters(t *testing.T) {
 	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

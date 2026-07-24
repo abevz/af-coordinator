@@ -150,7 +150,7 @@ func (f fixtureSource) ListRepos(context.Context, string) ([]core.Repository, er
 func (f fixtureSource) ListIssues(context.Context, core.IssueListParams) ([]core.Issue, error) {
 	return f.issues, nil
 }
-func (f fixtureSource) ListReadyIssues(context.Context, string, string) ([]core.Issue, error) {
+func (f fixtureSource) ListReadyIssues(context.Context, string, string, []string) ([]core.Issue, error) {
 	return f.ready, nil
 }
 func (f fixtureSource) ListReferences(context.Context) ([]coordinatorexport.Reference, error) {

@@ -201,6 +201,24 @@ create table issue_artifacts (
 );
 ```
 
+### issue_tags
+
+Namespaced tags (`namespace/value`) that classify/route an issue without
+carrying state — status, lease, and version stay first-class columns on
+`issues`. Validated on write (closed charset, length bound, reserved
+namespaces rejected); a tag is a plain `(issue_id, tag)` fact with no other
+payload. `list`/`ready` filtering ANDs multiple tags via one `EXISTS`
+subquery per tag rather than a join, so no row multiplication occurs.
+
+```sql
+create table issue_tags (
+  issue_id   text not null references issues(id) on delete cascade,
+  tag        text not null,
+  created_at text not null,
+  primary key (issue_id, tag)
+);
+```
+
 ### dependencies
 
 Kinds:
@@ -328,6 +346,9 @@ create index idx_issue_artifacts_issue
 
 create index idx_issue_artifacts_artifact
   on issue_artifacts(artifact_id, relation);
+
+create index idx_issue_tags_tag
+  on issue_tags(tag);
 
 create index idx_dependencies_issue
   on dependencies(issue_id);

@@ -138,7 +138,7 @@ func TestClientCoverage(t *testing.T) {
 	_, _ = c.CreateIssue(ctx, core.CreateIssueRequest{})
 	_, _ = c.ListIssues(ctx, "project", "test", "worktree", "open", "assignee", "bug", "gh://repo/42")
 	_, _, _ = c.GetIssue(ctx, "i1")
-	_, _ = c.ListReadyIssues(ctx, "test", "")
+	_, _ = c.ListReadyIssues(ctx, "test", "", nil)
 
 	_, _ = c.ClaimIssue(ctx, "i1", "actor", 10)
 	_, _ = c.ClaimIssueWithSession(ctx, "i1", "actor", 10, "session-1")

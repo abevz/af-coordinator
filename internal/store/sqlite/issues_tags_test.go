@@ -230,7 +230,7 @@ func TestListIssuesAndListReadyIssuesPopulateTags(t *testing.T) {
 		t.Errorf("expected ListIssues to populate tags, got %+v", listed)
 	}
 
-	ready, err := ListReadyIssues(context.Background(), db, proj.ID, "")
+	ready, err := ListReadyIssues(context.Background(), db, proj.ID, "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -245,5 +245,120 @@ func TestListIssuesAndListReadyIssuesPopulateTags(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("expected created issue to appear in ready list")
+	}
+}
+
+func TestListIssuesTagFilterANDSemantics(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	both, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{
+		ScopeKind: "project", Title: "Both tags", Tags: []string{"area/frontend", "theme/dark"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{
+		ScopeKind: "project", Title: "One tag", Tags: []string{"area/frontend"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{
+		ScopeKind: "project", Title: "Untagged",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Single tag matches both tagged issues.
+	single, err := ListIssues(context.Background(), db, core.IssueListParams{
+		Project: "test", Tags: []string{"area/frontend"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(single) != 2 {
+		t.Fatalf("expected 2 issues for single-tag filter, got %d", len(single))
+	}
+
+	// Two tags: AND semantics, only the issue with both matches.
+	multi, err := ListIssues(context.Background(), db, core.IssueListParams{
+		Project: "test", Tags: []string{"area/frontend", "theme/dark"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(multi) != 1 || multi[0].ID != both.ID {
+		t.Fatalf("expected only %q to match both tags, got %+v", both.ShortID, multi)
+	}
+
+	// Tag with no matches.
+	none, err := ListIssues(context.Background(), db, core.IssueListParams{
+		Project: "test", Tags: []string{"area/backend"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(none) != 0 {
+		t.Fatalf("expected no matches for unused tag, got %+v", none)
+	}
+}
+
+func TestListReadyIssuesTagFilterANDSemantics(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	proj, err := CreateProject(context.Background(), db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	both, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{
+		ScopeKind: "project", Title: "Both tags", Tags: []string{"exec/auto", "area/frontend"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{
+		ScopeKind: "project", Title: "One tag", Tags: []string{"exec/auto"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{
+		ScopeKind: "project", Title: "Untagged",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	single, err := ListReadyIssues(context.Background(), db, proj.ID, "", []string{"exec/auto"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(single) != 2 {
+		t.Fatalf("expected 2 ready issues for single-tag filter, got %d", len(single))
+	}
+
+	multi, err := ListReadyIssues(context.Background(), db, proj.ID, "", []string{"exec/auto", "area/frontend"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(multi) != 1 || multi[0].ID != both.ID {
+		t.Fatalf("expected only %q to match both tags, got %+v", both.ShortID, multi)
+	}
+
+	none, err := ListReadyIssues(context.Background(), db, proj.ID, "", []string{"exec/manual"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(none) != 0 {
+		t.Fatalf("expected no ready matches for unused tag, got %+v", none)
 	}
 }
