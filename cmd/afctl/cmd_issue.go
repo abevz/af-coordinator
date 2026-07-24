@@ -14,7 +14,7 @@ import (
 
 // ─── Issue ───────────────────────────────────────────────────────────────────
 
-const issueUsage = "Usage: afctl issue <create|get|list|ready|claim|heartbeat|release|handoff|run|edit|update|close|operator-close|operator-reopen|operator-release>"
+const issueUsage = "Usage: afctl issue <create|get|list|ready|claim|heartbeat|release|handoff|run|edit|update|close|operator-close|operator-reopen|operator-release|cancel>"
 
 // hasHelpFlag reports whether args requests help via --help or -h, checked
 // before any positional argument is consumed so `<cmd> -h` never gets
@@ -88,6 +88,8 @@ func runIssue(ctx context.Context, c *client.Client, args []string) error {
 		return runIssueOperatorReopen(ctx, c, args[1:])
 	case "operator-release":
 		return runIssueOperatorRelease(ctx, c, args[1:])
+	case "cancel":
+		return runIssueCancel(ctx, c, args[1:])
 	case "link":
 		return runIssueLink(ctx, c, args[1:])
 	case "unlink":
@@ -1000,6 +1002,72 @@ func runIssueOperatorRelease(ctx context.Context, c *client.Client, args []strin
 		return nil
 	}
 	fmt.Println("Issue lease force-released by operator; issue is open again.")
+	return nil
+}
+
+const issueCancelUsage = "Usage: afctl issue cancel <issue-id> [--note \"why cancelled\"]\n" + lifecycleHint
+
+func runIssueCancel(ctx context.Context, c *client.Client, args []string) error {
+	if hasHelpFlag(args) {
+		fmt.Println(issueCancelUsage)
+		return nil
+	}
+	if len(args) < 1 {
+		return usageErr(issueCancelUsage, "")
+	}
+
+	issueID := args[0]
+	req := core.OperatorCloseIssueRequest{
+		Resolution:      "cancelled",
+		ExpectedVersion: -1,
+		Reason:          "operator cancellation",
+	}
+	for i := 1; i < len(args); i++ {
+		switch args[i] {
+		case "--note":
+			if i+1 < len(args) {
+				req.Note = args[i+1]
+				i++
+			}
+		default:
+			return usageErr(issueCancelUsage, fmt.Sprintf("unknown flag: %s", args[i]))
+		}
+	}
+
+	// Auto-resolve version (always; cancel has no --expected-version flag).
+	issue, _, err := c.GetIssue(ctx, issueID)
+	if err != nil {
+		return usageErr(issueCancelUsage, fmt.Sprintf("failed to fetch current issue version: %v", err))
+	}
+	req.ExpectedVersion = issue.Version
+	if req.ExpectedVersion <= 0 {
+		return usageErr(issueCancelUsage, "failed to resolve issue version")
+	}
+
+	act, err := resolveActor("")
+	if err != nil {
+		return usageErr(issueCancelUsage, err.Error())
+	}
+	req.Actor = act
+
+	token := os.Getenv("AF_OPERATOR_TOKEN")
+	if token == "" {
+		return usageErr(issueCancelUsage, "AF_OPERATOR_TOKEN environment variable is required")
+	}
+	c.SetOperatorToken(token)
+
+	result, err := c.OperatorCloseIssue(ctx, issueID, req)
+	if err != nil {
+		fail(err)
+	}
+	if jsonOutput {
+		json.NewEncoder(os.Stdout).Encode(result)
+		return nil
+	}
+	fmt.Println("Issue cancelled by operator.")
+	if result.ExternalKey != "" {
+		fmt.Printf("External:    %s\n", result.ExternalKey)
+	}
 	return nil
 }
 
