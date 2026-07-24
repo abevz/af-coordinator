@@ -346,6 +346,10 @@ func TestNonLifecycleIssueCommandsShowFullUsageOnError(t *testing.T) {
 		{name: "note list missing id", args: []string{"note", "list"}, wantUsage: "Usage: afctl issue note list"},
 		{name: "events missing subcommand", args: []string{"events"}, wantUsage: "Usage: afctl issue events"},
 		{name: "events list missing id", args: []string{"events", "list"}, wantUsage: "Usage: afctl issue events list"},
+		{name: "tag missing subcommand", args: []string{"tag"}, wantUsage: "Usage: afctl issue tag "},
+		{name: "tag add missing tag flag", args: []string{"tag", "add", "afc-1"}, wantUsage: "Usage: afctl issue tag add"},
+		{name: "tag remove missing tag flag", args: []string{"tag", "remove", "afc-1"}, wantUsage: "Usage: afctl issue tag remove"},
+		{name: "tag list missing id", args: []string{"tag", "list"}, wantUsage: "Usage: afctl issue tag list"},
 	}
 
 	for _, tt := range tests {
@@ -379,6 +383,10 @@ func TestNonLifecycleIssueCommandsHelpFlagShortCircuits(t *testing.T) {
 		{name: "note list", args: []string{"note", "list", "-h"}},
 		{name: "events", args: []string{"events", "-h"}},
 		{name: "events list", args: []string{"events", "list", "-h"}},
+		{name: "tag", args: []string{"tag", "-h"}},
+		{name: "tag add", args: []string{"tag", "add", "-h"}},
+		{name: "tag remove", args: []string{"tag", "remove", "-h"}},
+		{name: "tag list", args: []string{"tag", "list", "-h"}},
 		{name: "create-form", args: []string{"create-form", "-h"}},
 		{name: "create with allow-duplicate", args: []string{"create", "-h", "--allow-duplicate"}},
 		{name: "create-form with allow-duplicate", args: []string{"create-form", "-h", "--allow-duplicate"}},

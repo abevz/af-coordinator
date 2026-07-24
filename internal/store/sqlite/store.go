@@ -155,6 +155,14 @@ func (s *Store) RemoveDependency(ctx context.Context, issueID, dependsOn, kind, 
 	return RemoveDependency(ctx, s.db, issueID, dependsOn, kind, actor)
 }
 
+func (s *Store) AddTag(ctx context.Context, issueID string, req core.AddTagRequest) error {
+	return AddTag(ctx, s.db, issueID, req)
+}
+
+func (s *Store) RemoveTag(ctx context.Context, issueID, tag, actor string) error {
+	return RemoveTag(ctx, s.db, issueID, tag, actor)
+}
+
 func (s *Store) LinkArtifact(ctx context.Context, issueID string, req core.LinkArtifactRequest) (string, error) {
 	return LinkArtifact(ctx, s.db, issueID, req)
 }

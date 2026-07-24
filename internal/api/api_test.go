@@ -74,6 +74,8 @@ func registerRoutes(mux *http.ServeMux, db *sql.DB, logger *slog.Logger) {
 	mux.HandleFunc("POST /v1/issues/{issue_id}/dependencies", handleAddDependency(st, logger))
 	mux.HandleFunc("DELETE /v1/issues/{issue_id}/dependencies/{depends_on}", handleRemoveDependency(st, logger))
 	mux.HandleFunc("POST /v1/issues/{issue_id}/links", handleLinkArtifact(st, logger))
+	mux.HandleFunc("POST /v1/issues/{issue_id}/tags", handleAddTag(st, logger))
+	mux.HandleFunc("DELETE /v1/issues/{issue_id}/tags", handleRemoveTag(st, logger))
 	mux.HandleFunc("POST /v1/issues/{issue_id}/notes", handleCreateNote(st, logger))
 	mux.HandleFunc("GET /v1/issues/{issue_id}/notes", handleListNotes(st, logger))
 	mux.HandleFunc("GET /v1/issues/{issue_id}/events", handleListEvents(st, logger))

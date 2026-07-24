@@ -109,6 +109,8 @@ func RunDaemon(ctx context.Context, logger *slog.Logger, cfg config.Config, st s
 	mux.HandleFunc("POST /v1/issues/{issue_id}/links", handleLinkArtifact(st, logger))
 	mux.HandleFunc("DELETE /v1/issues/{issue_id}/links", handleUnlinkArtifact(st, logger))
 	mux.HandleFunc("GET /v1/issues/{issue_id}/links", handleListIssueLinks(st, logger))
+	mux.HandleFunc("POST /v1/issues/{issue_id}/tags", handleAddTag(st, logger))
+	mux.HandleFunc("DELETE /v1/issues/{issue_id}/tags", handleRemoveTag(st, logger))
 	mux.HandleFunc("POST /v1/issues/{issue_id}/notes", handleCreateNote(st, logger))
 	mux.HandleFunc("GET /v1/issues/{issue_id}/notes", handleListNotes(st, logger))
 	mux.HandleFunc("GET /v1/issues/{issue_id}/events", handleListEvents(st, logger))

@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -84,13 +85,25 @@ func CreateIssue(ctx context.Context, db *sql.DB, projectKey string, req core.Cr
 		return core.Issue{}, fmt.Errorf("update next_issue_seq: %w", err)
 	}
 
+	for _, tag := range req.Tags {
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO issue_tags (issue_id, tag, created_at) VALUES (?, ?, ?)`,
+			id, tag, now,
+		); err != nil {
+			return core.Issue{}, fmt.Errorf("insert tag: %w", err)
+		}
+	}
+
 	// Append event.
-	eventPayload := map[string]string{
+	eventPayload := map[string]any{
 		"title":      req.Title,
 		"scope_kind": req.ScopeKind,
 	}
 	if req.ExternalKey != "" {
 		eventPayload["external_key"] = req.ExternalKey
+	}
+	if len(req.Tags) > 0 {
+		eventPayload["tags"] = req.Tags
 	}
 	payloadBytes, err := json.Marshal(eventPayload)
 	if err != nil {
@@ -109,8 +122,13 @@ func CreateIssue(ctx context.Context, db *sql.DB, projectKey string, req core.Cr
 		return core.Issue{}, fmt.Errorf("commit tx: %w", err)
 	}
 
-	return scanIssueRow(id, shortID, proj.ID, repoID, worktreeID, req.ScopeKind,
-		issueType, req.Title, req.ExternalKey, req.Description, req.AcceptanceCriteria, status, priority, "", 1, "", "", "", "", now, now), nil
+	created := scanIssueRow(id, shortID, proj.ID, repoID, worktreeID, req.ScopeKind,
+		issueType, req.Title, req.ExternalKey, req.Description, req.AcceptanceCriteria, status, priority, "", 1, "", "", "", "", now, now)
+	if len(req.Tags) > 0 {
+		created.Tags = append([]string(nil), req.Tags...)
+		sort.Strings(created.Tags)
+	}
+	return created, nil
 }
 
 // ResolveIssueID resolves an issue by either its UUID id or short_id, returning the UUID id.
@@ -162,6 +180,12 @@ func GetIssue(ctx context.Context, db *sql.DB, id string) (core.Issue, *core.Iss
 	}
 
 	populated, err := populateDependencies(ctx, db, []core.Issue{issue})
+	if err != nil {
+		return core.Issue{}, nil, err
+	}
+	issue = populated[0]
+
+	populated, err = populateTags(ctx, db, []core.Issue{issue})
 	if err != nil {
 		return core.Issue{}, nil, err
 	}
@@ -261,6 +285,10 @@ func ListIssues(ctx context.Context, db *sql.DB, params core.IssueListParams) ([
 		if err != nil {
 			return nil, err
 		}
+		issues, err = populateTags(ctx, db, issues)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return issues, nil
 }
@@ -339,6 +367,10 @@ func ListReadyIssues(ctx context.Context, db *sql.DB, projectID, repoID string) 
 		issues = []core.Issue{}
 	} else {
 		issues, err = populateDependencies(ctx, db, issues)
+		if err != nil {
+			return nil, err
+		}
+		issues, err = populateTags(ctx, db, issues)
 		if err != nil {
 			return nil, err
 		}

@@ -98,6 +98,8 @@ func runIssue(ctx context.Context, c *client.Client, args []string) error {
 		return runIssueDependency(ctx, c, args[1:])
 	case "note":
 		return runIssueNote(ctx, c, args[1:])
+	case "tag":
+		return runIssueTag(ctx, c, args[1:])
 	case "events":
 		return runIssueEvents(ctx, c, args[1:])
 	default:
@@ -105,7 +107,7 @@ func runIssue(ctx context.Context, c *client.Client, args []string) error {
 	}
 }
 
-const issueCreateUsage = "Usage: afctl issue create --project <key> --scope-kind <project|repository|worktree> --title <title> [--type <task|bug|feature|epic|chore>] [--repo <repo>] [--worktree <worktree>] [--external-key <key>] [--description <desc>] [--acceptance <criteria>] [--priority <n>] [--allow-duplicate]"
+const issueCreateUsage = "Usage: afctl issue create --project <key> --scope-kind <project|repository|worktree> --title <title> [--type <task|bug|feature|epic|chore>] [--repo <repo>] [--worktree <worktree>] [--external-key <key>] [--description <desc>] [--acceptance <criteria>] [--priority <n>] [--tag <namespace/value>]... [--allow-duplicate]"
 
 func runIssueCreate(ctx context.Context, c *client.Client, args []string) error {
 	if hasHelpFlag(args) {
@@ -170,6 +172,11 @@ func runIssueCreate(ctx context.Context, c *client.Client, args []string) error 
 		case "--priority":
 			if i+1 < len(args) {
 				fmt.Sscanf(args[i+1], "%d", &req.Priority)
+				i++
+			}
+		case "--tag":
+			if i+1 < len(args) {
+				req.Tags = append(req.Tags, args[i+1])
 				i++
 			}
 		}
@@ -1573,6 +1580,139 @@ func runIssueNoteList(ctx context.Context, c *client.Client, args []string) erro
 		fmt.Printf("Author:     %s\n", n.Author)
 		fmt.Printf("Body:       %s\n", n.Body)
 		fmt.Printf("Created At: %s\n\n", n.CreatedAt)
+	}
+	return nil
+}
+
+// ─── Issue Tags ────────────────────────────────────────────────────────────
+
+const issueTagUsage = "Usage: afctl issue tag <add|remove|list>"
+
+func runIssueTag(ctx context.Context, c *client.Client, args []string) error {
+	if len(args) < 1 {
+		return usageErr(issueTagUsage, "")
+	}
+	if args[0] == "--help" || args[0] == "-h" || args[0] == "help" {
+		fmt.Println(issueTagUsage)
+		return nil
+	}
+
+	switch args[0] {
+	case "add":
+		return runIssueTagAdd(ctx, c, args[1:])
+	case "remove":
+		return runIssueTagRemove(ctx, c, args[1:])
+	case "list":
+		return runIssueTagList(ctx, c, args[1:])
+	default:
+		return usageErr(issueTagUsage, fmt.Sprintf("unknown tag subcommand: %s", args[0]))
+	}
+}
+
+const issueTagAddUsage = "Usage: afctl issue tag add <issue-id> --tag <namespace/value>"
+
+func runIssueTagAdd(ctx context.Context, c *client.Client, args []string) error {
+	if hasHelpFlag(args) {
+		fmt.Println(issueTagAddUsage)
+		return nil
+	}
+	if len(args) < 1 {
+		return usageErr(issueTagAddUsage, "")
+	}
+
+	issueID := args[0]
+	tag := ""
+	for i := 1; i < len(args); i++ {
+		if args[i] == "--tag" && i+1 < len(args) {
+			tag = args[i+1]
+			i++
+		}
+	}
+	if tag == "" {
+		return usageErr(issueTagAddUsage, "--tag is required")
+	}
+
+	actor, err := resolveActor("")
+	if err != nil {
+		return usageErr(issueTagAddUsage, err.Error())
+	}
+
+	if err := c.AddTag(ctx, issueID, core.AddTagRequest{Tag: tag, Actor: actor}); err != nil {
+		fail(err)
+	}
+	if jsonOutput {
+		fmt.Println(`{"status":"ok"}`)
+		return nil
+	}
+	fmt.Printf("Tag added: %s\n", tag)
+	return nil
+}
+
+const issueTagRemoveUsage = "Usage: afctl issue tag remove <issue-id> --tag <namespace/value>"
+
+func runIssueTagRemove(ctx context.Context, c *client.Client, args []string) error {
+	if hasHelpFlag(args) {
+		fmt.Println(issueTagRemoveUsage)
+		return nil
+	}
+	if len(args) < 1 {
+		return usageErr(issueTagRemoveUsage, "")
+	}
+
+	issueID := args[0]
+	tag := ""
+	for i := 1; i < len(args); i++ {
+		if args[i] == "--tag" && i+1 < len(args) {
+			tag = args[i+1]
+			i++
+		}
+	}
+	if tag == "" {
+		return usageErr(issueTagRemoveUsage, "--tag is required")
+	}
+
+	actor, err := resolveActor("")
+	if err != nil {
+		return usageErr(issueTagRemoveUsage, err.Error())
+	}
+
+	if err := c.RemoveTag(ctx, issueID, tag, actor); err != nil {
+		fail(err)
+	}
+	if jsonOutput {
+		fmt.Println(`{"status":"ok"}`)
+		return nil
+	}
+	fmt.Printf("Tag removed: %s\n", tag)
+	return nil
+}
+
+const issueTagListUsage = "Usage: afctl issue tag list <issue-id>"
+
+func runIssueTagList(ctx context.Context, c *client.Client, args []string) error {
+	if hasHelpFlag(args) {
+		fmt.Println(issueTagListUsage)
+		return nil
+	}
+	if len(args) < 1 {
+		return usageErr(issueTagListUsage, "")
+	}
+
+	issueID := args[0]
+	issue, _, err := c.GetIssue(ctx, issueID)
+	if err != nil {
+		fail(err)
+	}
+	if jsonOutput {
+		json.NewEncoder(os.Stdout).Encode(issue.Tags)
+		return nil
+	}
+	if len(issue.Tags) == 0 {
+		fmt.Println("No tags.")
+		return nil
+	}
+	for _, tag := range issue.Tags {
+		fmt.Println(tag)
 	}
 	return nil
 }

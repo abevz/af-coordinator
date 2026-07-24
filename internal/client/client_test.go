@@ -184,6 +184,57 @@ func TestListIssuesEncodesExternalKeyQuery(t *testing.T) {
 	}
 }
 
+func TestRemoveTagEncodesSlashInTagQuery(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/issues/i1/tags" {
+			t.Fatalf("path = %q, want /v1/issues/i1/tags", r.URL.Path)
+		}
+		if r.Method != http.MethodDelete {
+			t.Fatalf("method = %q, want DELETE", r.Method)
+		}
+		if got := r.URL.Query().Get("tag"); got != "area/frontend" {
+			t.Fatalf("tag query = %q, want area/frontend", got)
+		}
+		if got := r.URL.Query().Get("actor"); got != "tester" {
+			t.Fatalf("actor query = %q, want tester", got)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	c := testClient(t, server)
+	if err := c.RemoveTag(context.Background(), "i1", "area/frontend", "tester"); err != nil {
+		t.Fatalf("RemoveTag() error = %v", err)
+	}
+}
+
+func TestAddTagPostsBody(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/issues/i1/tags" {
+			t.Fatalf("path = %q, want /v1/issues/i1/tags", r.URL.Path)
+		}
+		if r.Method != http.MethodPost {
+			t.Fatalf("method = %q, want POST", r.Method)
+		}
+		var req core.AddTagRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatal(err)
+		}
+		if req.Tag != "area/frontend" || req.Actor != "tester" {
+			t.Fatalf("unexpected body: %+v", req)
+		}
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer server.Close()
+
+	c := testClient(t, server)
+	if err := c.AddTag(context.Background(), "i1", core.AddTagRequest{Tag: "area/frontend", Actor: "tester"}); err != nil {
+		t.Fatalf("AddTag() error = %v", err)
+	}
+}
+
 func TestListIssuesWithFiltersEncodesRepeatedQuery(t *testing.T) {
 	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

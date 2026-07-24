@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -80,6 +81,10 @@ type Issue struct {
 	// (the reverse of BlockedBy). It makes a blocking relationship visible from
 	// both sides: A.BlockedBy contains B iff B.Blocks contains A.
 	Blocks []string `json:"blocks,omitempty"`
+	// Tags are namespaced 'namespace/value' strings that classify/route the
+	// issue. They never carry state: status, lease, and version stay
+	// first-class fields above (see ValidateTag / ADR-029).
+	Tags []string `json:"tags,omitempty"`
 }
 
 // Dependency represents a relationship to another issue.
@@ -102,17 +107,18 @@ type IssueLease struct {
 
 // CreateIssueRequest is the JSON body for POST /v1/issues.
 type CreateIssueRequest struct {
-	Project            string `json:"project"`
-	ScopeKind          string `json:"scope_kind"`
-	IssueType          string `json:"issue_type,omitempty"`
-	Repo               string `json:"repo,omitempty"`
-	Worktree           string `json:"worktree,omitempty"`
-	Title              string `json:"title"`
-	ExternalKey        string `json:"external_key,omitempty"`
-	Description        string `json:"description,omitempty"`
-	AcceptanceCriteria string `json:"acceptance_criteria,omitempty"`
-	Priority           int    `json:"priority,omitempty"`
-	Actor              string `json:"actor,omitempty"`
+	Project            string   `json:"project"`
+	ScopeKind          string   `json:"scope_kind"`
+	IssueType          string   `json:"issue_type,omitempty"`
+	Repo               string   `json:"repo,omitempty"`
+	Worktree           string   `json:"worktree,omitempty"`
+	Title              string   `json:"title"`
+	ExternalKey        string   `json:"external_key,omitempty"`
+	Description        string   `json:"description,omitempty"`
+	AcceptanceCriteria string   `json:"acceptance_criteria,omitempty"`
+	Priority           int      `json:"priority,omitempty"`
+	Actor              string   `json:"actor,omitempty"`
+	Tags               []string `json:"tags,omitempty"`
 }
 
 // IssueListParams represents query params for GET /v1/issues.
@@ -288,6 +294,12 @@ type RemoveDependencyRequest struct {
 	Actor     string
 }
 
+// AddTagRequest is the JSON body for POST /v1/issues/{issue_id}/tags.
+type AddTagRequest struct {
+	Tag   string `json:"tag"`
+	Actor string `json:"actor,omitempty"`
+}
+
 // LinkArtifactRequest is the JSON body for POST /v1/issues/{issue_id}/links.
 type LinkArtifactRequest struct {
 	Artifact string `json:"artifact"`           // artifact ID or relative path
@@ -330,8 +342,58 @@ func ValidateCreateIssue(req CreateIssueRequest) error {
 	if req.ScopeKind != "project" && req.Repo == "" {
 		errs = append(errs, "repo is required when scope_kind is not 'project'")
 	}
+	for _, tag := range req.Tags {
+		if err := ValidateTag(tag); err != nil {
+			errs = append(errs, err.Error())
+		}
+	}
 	if len(errs) > 0 {
 		return fmt.Errorf("validation_failed: %s", strings.Join(errs, "; "))
+	}
+	return nil
+}
+
+// validTag matches namespaced tags 'namespace/value' using a closed
+// charset: lowercase letters, digits, and '-' on each side of exactly one
+// '/'. The per-segment character classes already exclude '/', so a second
+// slash fails the match without a separate check.
+var validTag = regexp.MustCompile(`^[a-z0-9-]+/[a-z0-9-]+$`)
+
+// maxTagLength bounds a tag's total length (namespace/value combined).
+const maxTagLength = 64
+
+// reservedTagNamespaces are namespaces that would let a tag masquerade as
+// first-class issue state. Status, lease, and version stay first-class
+// columns on Issue; the coordinator ledger is the single source of state
+// (see docs/decisions/ADR-029-af-coordinator-as-control-plane.md).
+var reservedTagNamespaces = map[string]bool{
+	"open":        true,
+	"blocked":     true,
+	"done":        true,
+	"in_progress": true,
+	"status":      true,
+	"state":       true,
+}
+
+// ValidateTag checks a namespaced tag ('namespace/value') against the
+// closed charset, length bound, and the no-state-in-tags invariant.
+func ValidateTag(tag string) error {
+	var errs []string
+	switch {
+	case tag == "":
+		errs = append(errs, "tag is required")
+	case len(tag) > maxTagLength:
+		errs = append(errs, fmt.Sprintf("tag must be at most %d characters", maxTagLength))
+	case !validTag.MatchString(tag):
+		errs = append(errs, fmt.Sprintf("tag %q must be 'namespace/value' using lowercase letters, digits, and '-' only", tag))
+	default:
+		ns := tag[:strings.IndexByte(tag, '/')]
+		if reservedTagNamespaces[ns] {
+			errs = append(errs, fmt.Sprintf("tag namespace %q is reserved for issue state, not tags", ns))
+		}
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("%s", strings.Join(errs, "; "))
 	}
 	return nil
 }
