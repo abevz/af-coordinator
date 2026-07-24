@@ -132,10 +132,6 @@ func writeStats(w io.Writer, stats report.Report) {
 	}
 }
 
-func printPercentiles(label string, values report.Percentiles) {
-	writePercentiles(os.Stdout, label, values)
-}
-
 func writePercentiles(w io.Writer, label string, values report.Percentiles) {
 	if values.SampleSize == 0 {
 		fmt.Fprintf(w, "%s: no samples\n", label)
