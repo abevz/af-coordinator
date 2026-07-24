@@ -4,12 +4,7 @@ on:
   push:
     tags:
       - "v*"
-  workflow_dispatch:
-    inputs:
-      version:
-        description: "Version string for manual release dry-run builds"
-        required: false
-        default: "dev"
+  workflow_dispatch: {}
 
 permissions:
   contents: write
@@ -39,8 +34,6 @@ jobs:
             goarch: amd64
           - goos: darwin
             goarch: arm64
-    env:
-      VERSION: ${{ github.ref_type == 'tag' && github.ref_name || inputs.version }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -54,7 +47,8 @@ jobs:
           set -euo pipefail
           archive="af-coordinator_${GOOS}_${GOARCH}"
           mkdir -p "dist/${archive}"
-          ldflags="-X github.com/abevz/af-coordinator/internal/build.Version=${VERSION}"
+          revision="$(git rev-parse HEAD)"
+          ldflags="-X github.com/abevz/af-coordinator/internal/build.Revision=${revision}"
           go build -buildvcs=false -ldflags "${ldflags}" -o "dist/${archive}/afctl" ./cmd/afctl/
           go build -buildvcs=false -ldflags "${ldflags}" -o "dist/${archive}/af-coordinatord" ./cmd/af-coordinatord/
           go build -buildvcs=false -ldflags "${ldflags}" -o "dist/${archive}/afc-mcp" ./cmd/afc-mcp/

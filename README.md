@@ -426,7 +426,7 @@ migrations/            schema migrations
 2. Verify locally:
    ```bash
    go test ./...
-   VERSION=vX.Y.Z make build
+   make build
    ```
 3. Create and push a tag:
    ```bash

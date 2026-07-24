@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/abevz/af-coordinator/internal/build"
 	"github.com/abevz/af-coordinator/internal/config"
 	"github.com/abevz/af-coordinator/internal/core"
 )
@@ -29,44 +28,6 @@ func (m mockExec) Command(name string, arg ...string) ([]byte, error) {
 func (m mockExec) LookupEnv(key string) (string, bool) {
 	v, ok := m.env[key]
 	return v, ok
-}
-
-func TestEvaluateVersionSkew(t *testing.T) {
-	tests := []struct {
-		name     string
-		h        *core.Health
-		expected string
-	}{
-		{
-			name:     "nil health",
-			h:        nil,
-			expected: "WARN",
-		},
-		{
-			name:     "empty version",
-			h:        &core.Health{},
-			expected: "WARN",
-		},
-		{
-			name:     "mismatch",
-			h:        &core.Health{Version: "old-version"},
-			expected: "WARN",
-		},
-		{
-			name:     "match",
-			h:        &core.Health{Version: build.Version},
-			expected: "ok",
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			res := EvaluateVersionSkew(tc.h)
-			if res.Status != tc.expected {
-				t.Errorf("expected %s, got %s: %s", tc.expected, res.Status, res.Message)
-			}
-		})
-	}
 }
 
 func TestEvaluateBinaryRevision(t *testing.T) {
