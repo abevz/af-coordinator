@@ -73,6 +73,16 @@ work can become ready again — or, to recover it immediately instead of
 waiting out the TTL (e.g. a script crashed before it ever persisted its
 lease token), `afctl issue operator-release` clears the lease without one.
 
+For a script that's just "do one thing, then close," `afctl issue run`
+avoids the lost-token problem structurally instead of just recovering from
+it — it claims, execs the command with the lease exported as environment
+variables, heartbeats in the background, and closes or hands off
+automatically based on the exit code, all inside one process:
+
+```bash
+afctl issue run demo-1 --ttl 900 -- ./do-the-work.sh
+```
+
 ## Where it fits
 
 | Concern | Source of truth |
