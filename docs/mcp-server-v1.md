@@ -29,6 +29,8 @@ it as the default actor/holder/author when the request does not pass one.
 - `operator_close_issue`
 - `operator_reopen_issue`
 - `operator_release_issue`
+- `add_tag`
+- `remove_tag`
 
 `claim_issue` accepts optional non-secret `session_id` correlation metadata
 and returns the daemon-generated `attempt_id` and `version` with the secret
@@ -41,6 +43,10 @@ callers must use this returned `version` — not one read earlier via
 stuck `in_progress` because its lease token was lost before TTL expiry,
 clearing the lease and returning the issue directly to `open` without a
 terminal transition.
+`list_ready_issues` accepts an optional `tags` array; an issue must carry
+every listed tag to match (AND). `add_tag`/`remove_tag` apply or remove a
+namespaced tag (`namespace/value`); `get_issue` and `list_ready_issues`
+already surface an issue's `tags` field.
 
 ## Design constraints
 

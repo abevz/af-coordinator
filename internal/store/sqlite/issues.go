@@ -249,6 +249,10 @@ func ListIssues(ctx context.Context, db *sql.DB, params core.IssueListParams) ([
 		where = append(where, "i.external_key = ?")
 		args = append(args, params.ExternalKey)
 	}
+	for _, tag := range params.Tags {
+		where = append(where, `EXISTS (SELECT 1 FROM issue_tags t WHERE t.issue_id = i.id AND t.tag = ?)`)
+		args = append(args, tag)
+	}
 
 	query := `SELECT i.id, i.short_id, i.project_id, i.repository_id, i.worktree_id, i.scope_kind,
 	                 i.issue_type, i.title, i.external_key, i.description, i.acceptance_criteria, i.status, i.priority, i.assignee, i.version,
@@ -313,8 +317,9 @@ func appendIssueListInFilter(where *[]string, args *[]interface{}, column string
 }
 
 // ListReadyIssues returns issues that are actionable (not terminal), not currently leased,
-// and not blocked by an unfinished blocks dependency.
-func ListReadyIssues(ctx context.Context, db *sql.DB, projectID, repoID string) ([]core.Issue, error) {
+// and not blocked by an unfinished blocks dependency. tags filters to
+// issues carrying every listed tag (AND semantics).
+func ListReadyIssues(ctx context.Context, db *sql.DB, projectID, repoID string, tags []string) ([]core.Issue, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
 	args := []interface{}{now}
 	query := `SELECT i.id, i.short_id, i.project_id, i.repository_id, i.worktree_id, i.scope_kind,
@@ -343,6 +348,10 @@ func ListReadyIssues(ctx context.Context, db *sql.DB, projectID, repoID string) 
 	if repoID != "" {
 		query += " AND i.repository_id = ?"
 		args = append(args, repoID)
+	}
+	for _, tag := range tags {
+		query += ` AND EXISTS (SELECT 1 FROM issue_tags t WHERE t.issue_id = i.id AND t.tag = ?)`
+		args = append(args, tag)
 	}
 	query += " ORDER BY i.priority, i.updated_at DESC"
 

@@ -2,10 +2,15 @@ package main
 
 import (
 	"context"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/abevz/af-coordinator/internal/client"
 	"github.com/abevz/af-coordinator/internal/core"
 )
 
@@ -24,6 +29,13 @@ func TestParseIssueListArgs(t *testing.T) {
 				Projects:   []string{"afc", "aion"},
 				IssueTypes: []string{"epic", "chore"},
 				Statuses:   []string{"open", "in_progress"},
+			},
+		},
+		{
+			name: "repeated tag filter",
+			args: []string{"--tag", "area/frontend", "--tag", "theme/dark"},
+			want: core.IssueListParams{
+				Tags: []string{"area/frontend", "theme/dark"},
 			},
 		},
 		{name: "help", args: []string{"--help"}, wantHelp: true},
@@ -399,5 +411,37 @@ func TestNonLifecycleIssueCommandsHelpFlagShortCircuits(t *testing.T) {
 				t.Errorf("runIssue(%v) = %v, want nil", tt.args, err)
 			}
 		})
+	}
+}
+
+func TestRunIssueReadyEncodesRepeatedTagQuery(t *testing.T) {
+	socketPath := filepath.Join(t.TempDir(), "ready.sock")
+	listener, err := net.Listen("unix", socketPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+
+	var gotTags []string
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/issues/ready" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		gotTags = r.URL.Query()["tag"]
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"issues":[]}`))
+	}))
+	server.Listener.Close()
+	server.Listener = listener
+	server.Start()
+	defer server.Close()
+
+	if err := runIssueReady(context.Background(), client.New(socketPath), []string{
+		"--project", "afc", "--tag", "exec/auto", "--tag", "area/frontend",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"exec/auto", "area/frontend"}; !reflect.DeepEqual(gotTags, want) {
+		t.Fatalf("tag query = %q, want %q", gotTags, want)
 	}
 }

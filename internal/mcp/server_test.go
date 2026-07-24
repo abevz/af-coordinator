@@ -41,13 +41,15 @@ type fakeClient struct {
 	lastAddTagReq          core.AddTagRequest
 	lastRemoveTagTag       string
 	lastRemoveTagActor     string
+	lastReadyTags          []string
 }
 
 func (f *fakeClient) Health(context.Context) (core.Health, error) { return f.healthResp, nil }
 func (f *fakeClient) GetIssue(context.Context, string) (core.Issue, *core.IssueLease, error) {
 	return f.getIssueResp, f.getLeaseResp, nil
 }
-func (f *fakeClient) ListReadyIssues(context.Context, string, string) ([]core.Issue, error) {
+func (f *fakeClient) ListReadyIssues(_ context.Context, _, _ string, tags []string) ([]core.Issue, error) {
+	f.lastReadyTags = tags
 	return f.readyResp, nil
 }
 func (f *fakeClient) ClaimIssue(_ context.Context, issueID, holder string, ttlSeconds int) (core.ClaimResponse, error) {

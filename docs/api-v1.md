@@ -118,8 +118,11 @@ This is the compact route-to-implementation inventory for the current daemon.
 - `POST /v1/issues` -> `handleCreateIssue` -> `sqlite.CreateIssue`
 - `GET /v1/issues/{issue_id}` -> `handleGetIssue` -> `sqlite.GetIssue`
 - `GET /v1/issues?...` -> `handleListIssues` -> `sqlite.ListIssues`
-- `GET /v1/issues/ready?project=&repo=` -> `handleListReadyIssues` ->
+- `GET /v1/issues/ready?project=&repo=&tag=` -> `handleListReadyIssues` ->
   `sqlite.ListReadyIssues`
+- `POST /v1/issues/{issue_id}/tags` -> `handleAddTag` -> `sqlite.AddTag`
+- `DELETE /v1/issues/{issue_id}/tags?tag=&actor=` -> `handleRemoveTag` ->
+  `sqlite.RemoveTag`
 - `POST /v1/issues/{issue_id}/claim` -> `handleClaimIssue` ->
   `sqlite.ClaimIssue`
 - `POST /v1/issues/{issue_id}/heartbeat` -> `handleHeartbeatLease` ->
@@ -218,23 +221,25 @@ This is the compact route-to-implementation inventory for the current daemon.
 - `GET  /v1/issues/{issue_id}` — fetch one, including current lease if any
 - dependency payloads inside issue responses use explicit identity fields:
   `issue_id`, `issue_short_id`, `depends_on_id`, `depends_on_short_id`
-- `GET  /v1/issues?project=&repo=&worktree=&status=&assignee=&type=&external_key=` — query.
-  `project`, `status`, and `type` accept one value, comma-separated values,
+- `GET  /v1/issues?project=&repo=&worktree=&status=&assignee=&type=&external_key=&tag=` — query.
+  `project`, `status`, `type`, and `tag` accept one value, comma-separated values,
   or repeated keys (for example, `project=afc,aion` is equivalent to
-  `project=afc&project=aion`). Values within one of those filters are ORed;
-  supplied filters are ANDed. Surrounding whitespace is trimmed and empty CSV
-  elements return `validation_failed`; every `type` value must be a public
-  issue type.
+  `project=afc&project=aion`). Values within `project`, `status`, and `type`
+  are ORed; `tag` values are ANDed (an issue must carry every listed tag);
+  supplied filters are ANDed with each other. Surrounding whitespace is
+  trimmed and empty CSV elements return `validation_failed`; every `type`
+  value must be a public issue type.
 - `GET  /v1/events?since=&limit=&wait_ms=` — global cursor-paginated event
   stream ordered by `event.sequence`; `since` is an opaque `v2` cursor returned
   as `next_since`, `limit` defaults to 100 and is capped at 500, and `wait_ms`
   enables bounded long-poll up to 30000 ms. During the compatibility window,
   the daemon also resolves an existing `v1` `(created_at, id)` cursor to its
   migrated sequence; malformed or unknown cursors return `validation_failed`.
-- `GET  /v1/issues/ready?project=&repo=` — computed ready view; excludes
+- `GET  /v1/issues/ready?project=&repo=&tag=` — computed ready view; excludes
   epics (they are containers, not units of work). When `repo` is given
   alongside `project`, repository logical-name resolution is scoped to that
   project; without `project`, prefer repository UUIDs over ambiguous names.
+  `tag` is repeatable; multiple values are ANDed, same as `GET /v1/issues`.
 - `PATCH /v1/issues/{issue_id}` — edit metadata and non-terminal routing
   (`title`, `issue_type`, `external_key`, `description`,
   `acceptance_criteria`, `priority`, `assignee`, `status`); requires
@@ -262,6 +267,12 @@ This is the compact route-to-implementation inventory for the current daemon.
   non-empty `reason`; it never accepts a lease token, only accepts an
   `in_progress` issue, clears the lease, and returns the issue directly to
   `open` (no terminal transition) via `issue_operator_released`.
+- `POST /v1/issues/{issue_id}/tags` — apply a namespaced tag. Body: `tag`
+  (`namespace/value`, closed charset, reserved-namespace rejected),
+  `actor`. Emits `issue_tagged`; `409 already_tagged` on duplicate.
+- `DELETE /v1/issues/{issue_id}/tags?tag=&actor=` — remove a tag (query
+  params, not a path segment, since the tag value contains `/`). Emits
+  `issue_untagged`; `404 not_found` if the issue does not carry the tag.
 
 ## Leases
 

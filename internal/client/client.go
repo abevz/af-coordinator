@@ -303,6 +303,7 @@ func (c *Client) ListIssuesWithFilters(ctx context.Context, params core.IssueLis
 	appendParam("assignee", params.Assignee)
 	appendValues("type", params.IssueTypes, params.IssueType)
 	appendParam("external_key", params.ExternalKey)
+	appendValues("tag", params.Tags, "")
 	if len(query) > 0 {
 		path += "?" + query.Encode()
 	}
@@ -547,8 +548,9 @@ func (c *Client) ExportJSONL(ctx context.Context, w io.Writer) error {
 	return c.doStream(ctx, http.MethodGet, "/v1/export/jsonl", nil, w)
 }
 
-// ListReadyIssues sends a GET /v1/issues/ready request with optional project and repo filters.
-func (c *Client) ListReadyIssues(ctx context.Context, project, repo string) ([]core.Issue, error) {
+// ListReadyIssues sends a GET /v1/issues/ready request with optional
+// project, repo, and tag filters. Multiple tags are ANDed by the daemon.
+func (c *Client) ListReadyIssues(ctx context.Context, project, repo string, tags []string) ([]core.Issue, error) {
 	path := "/v1/issues/ready"
 	var params []string
 	if project != "" {
@@ -556,6 +558,9 @@ func (c *Client) ListReadyIssues(ctx context.Context, project, repo string) ([]c
 	}
 	if repo != "" {
 		params = append(params, "repo="+repo)
+	}
+	for _, tag := range tags {
+		params = append(params, "tag="+tag)
 	}
 	if len(params) > 0 {
 		path += "?" + strings.Join(params, "&")

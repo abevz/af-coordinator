@@ -24,7 +24,7 @@ const (
 type CoordinatorClient interface {
 	Health(ctx context.Context) (core.Health, error)
 	GetIssue(ctx context.Context, issueID string) (core.Issue, *core.IssueLease, error)
-	ListReadyIssues(ctx context.Context, project, repo string) ([]core.Issue, error)
+	ListReadyIssues(ctx context.Context, project, repo string, tags []string) ([]core.Issue, error)
 	ClaimIssue(ctx context.Context, issueID, holder string, ttlSeconds int) (core.ClaimResponse, error)
 	ClaimIssueWithSession(ctx context.Context, issueID, holder string, ttlSeconds int, sessionID string) (core.ClaimResponse, error)
 	HeartbeatLease(ctx context.Context, issueID, leaseToken string, ttlSeconds int) (string, error)
@@ -209,13 +209,14 @@ func (s *Server) callTool(ctx context.Context, params toolCallParams) (any, erro
 		return map[string]any{"issue": issue, "lease": lease}, nil
 	case "list_ready_issues":
 		var args struct {
-			Project string `json:"project"`
-			Repo    string `json:"repo"`
+			Project string   `json:"project"`
+			Repo    string   `json:"repo"`
+			Tags    []string `json:"tags"`
 		}
 		if err := unmarshalArgs(params.Arguments, &args); err != nil {
 			return nil, err
 		}
-		issues, err := s.client.ListReadyIssues(ctx, args.Project, args.Repo)
+		issues, err := s.client.ListReadyIssues(ctx, args.Project, args.Repo, args.Tags)
 		if err != nil {
 			return nil, err
 		}
@@ -471,9 +472,10 @@ func (s *Server) tools() []map[string]any {
 		toolDefinition("get_issue", "Fetch one issue plus its active lease, if any.", objectSchema([]schemaField{
 			{name: "issue_id", fieldType: "string", description: "Issue UUID or short id.", required: true},
 		})),
-		toolDefinition("list_ready_issues", "List ready issues filtered by optional project and repo.", objectSchema([]schemaField{
+		toolDefinition("list_ready_issues", "List ready issues filtered by optional project, repo, and tags.", objectSchema([]schemaField{
 			{name: "project", fieldType: "string", description: "Optional project key."},
 			{name: "repo", fieldType: "string", description: "Optional repository id or logical name."},
+			{name: "tags", fieldType: "array", itemType: "string", description: "Optional namespaced tags; an issue must carry every listed tag (AND)."},
 		})),
 		toolDefinition("claim_issue", "Claim an issue and acquire a lease token.", objectSchema([]schemaField{
 			{name: "issue_id", fieldType: "string", description: "Issue UUID or short id.", required: true},
@@ -626,6 +628,8 @@ type schemaField struct {
 	fieldType   string
 	description string
 	required    bool
+	// itemType is set for fieldType "array" to describe its element type.
+	itemType string
 }
 
 func toolDefinition(name, description string, inputSchema map[string]any) map[string]any {
@@ -640,10 +644,14 @@ func objectSchema(fields []schemaField) map[string]any {
 	props := map[string]any{}
 	required := make([]string, 0)
 	for _, field := range fields {
-		props[field.name] = map[string]any{
+		prop := map[string]any{
 			"type":        field.fieldType,
 			"description": field.description,
 		}
+		if field.fieldType == "array" && field.itemType != "" {
+			prop["items"] = map[string]any{"type": field.itemType}
+		}
+		props[field.name] = prop
 		if field.required {
 			required = append(required, field.name)
 		}

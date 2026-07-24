@@ -1083,7 +1083,7 @@ func TestListReadyIssues(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ready, err := ListReadyIssues(context.Background(), db, "", "")
+	ready, err := ListReadyIssues(context.Background(), db, "", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1116,7 +1116,7 @@ func TestListReadyIssuesExcludesLeased(t *testing.T) {
 	}
 
 	// ListReadyIssues should exclude leased issues.
-	ready, err := ListReadyIssues(context.Background(), db, "", "")
+	ready, err := ListReadyIssues(context.Background(), db, "", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1141,7 +1141,7 @@ func TestListReadyIssuesByProject(t *testing.T) {
 	CreateIssue(context.Background(), db, "p1", core.CreateIssueRequest{ScopeKind: "project", Title: "P1 issue"})
 	CreateIssue(context.Background(), db, "p2", core.CreateIssueRequest{ScopeKind: "project", Title: "P2 issue"})
 
-	ready, err := ListReadyIssues(context.Background(), db, p1.ID, "")
+	ready, err := ListReadyIssues(context.Background(), db, p1.ID, "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1198,7 +1198,7 @@ func TestListReadyIssuesByProjectAndScopedRepo(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ready, err := ListReadyIssues(context.Background(), db, p2.ID, repo2.ID)
+	ready, err := ListReadyIssues(context.Background(), db, p2.ID, repo2.ID, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1237,7 +1237,7 @@ func TestListReadyIssuesWithExpiredLease(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ready, err := ListReadyIssues(context.Background(), db, "", "")
+	ready, err := ListReadyIssues(context.Background(), db, "", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1354,7 +1354,7 @@ func TestListReadyIssuesWithLease(t *testing.T) {
 	}
 
 	// List ready issues: only i1 (unclaimed) should appear.
-	ready, err := ListReadyIssues(context.Background(), db, "", "")
+	ready, err := ListReadyIssues(context.Background(), db, "", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3824,7 +3824,7 @@ func TestReadyExcludesEpics(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	issues, err := ListReadyIssues(context.Background(), db, "", "")
+	issues, err := ListReadyIssues(context.Background(), db, "", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

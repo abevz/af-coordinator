@@ -22,6 +22,8 @@ Every agent session follows this cycle:
    The `acceptance_criteria` field, when present, lists the conditions the
    issue must meet before you close it — treat it as the definition of done
    and verify each item.
+   Add `--tag <namespace/value>` (repeatable) to scope the ready view to
+   issues carrying every listed tag — see **Tags** below.
    Pick one and note its `short_id` (e.g. `afc-42`).
 
 2. **Claim it**
@@ -180,6 +182,42 @@ Rules for readers (consumer contract):
   their own operator-controlled allowlists (for the aion-forge relay,
   the ADR-036 models catalog — an unlisted model falls back to the
   default route).
+
+## Tags
+
+An issue can carry namespaced tags (`namespace/value`, e.g. `area/frontend`,
+`exec/auto`) that classify or route it. Tags never carry state — status,
+lease, and version stay first-class issue fields; a tag is a fact about the
+issue, not a substitute for its lifecycle.
+
+Namespace convention:
+
+- `exec/*` is reserved for execution/routing directives — for example, an
+  operator-configured gate tag that scopes which issues an autonomous
+  factory picks up (`afctl issue ready --tag exec/auto`). Do not use
+  `exec/*` for human classification.
+- `area/*`, `theme/*`, and other non-reserved namespaces are free for
+  human classification (subsystem, theme, initiative, etc.).
+- A closed set of namespaces (`open`, `blocked`, `done`, `in_progress`,
+  `status`, `state`) is rejected outright by validation, since those would
+  let a tag masquerade as issue state.
+
+Mutating tags:
+
+```
+afctl issue tag add <short_id> --tag <namespace/value>
+afctl issue tag remove <short_id> --tag <namespace/value>
+afctl issue tag list <short_id>
+```
+
+Filtering by tag — `issue list` and `issue ready` both accept a repeatable
+`--tag` flag; multiple values are **ANDed** (an issue must carry every
+listed tag to match, not any):
+
+```
+afctl issue ready --tag exec/auto
+afctl issue list --tag area/frontend --tag theme/dark
+```
 
 ## Event ordering
 

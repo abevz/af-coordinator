@@ -103,8 +103,8 @@ func (s *Store) ListIssues(ctx context.Context, params core.IssueListParams) ([]
 	return ListIssues(ctx, s.db, params)
 }
 
-func (s *Store) ListReadyIssues(ctx context.Context, projectID, repoID string) ([]core.Issue, error) {
-	return ListReadyIssues(ctx, s.db, projectID, repoID)
+func (s *Store) ListReadyIssues(ctx context.Context, projectID, repoID string, tags []string) ([]core.Issue, error) {
+	return ListReadyIssues(ctx, s.db, projectID, repoID, tags)
 }
 
 func (s *Store) ClaimIssue(ctx context.Context, issueID, holder string, ttlSeconds int) (core.ClaimResponse, error) {

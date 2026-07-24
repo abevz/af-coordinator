@@ -33,7 +33,7 @@ type Source interface {
 	ListProjects(context.Context) ([]core.Project, error)
 	ListRepos(context.Context, string) ([]core.Repository, error)
 	ListIssues(context.Context, core.IssueListParams) ([]core.Issue, error)
-	ListReadyIssues(context.Context, string, string) ([]core.Issue, error)
+	ListReadyIssues(context.Context, string, string, []string) ([]core.Issue, error)
 	ListReferences(context.Context) ([]coordinatorexport.Reference, error)
 	ListAllNotes(context.Context) ([]core.Note, error)
 	ListAllEvents(context.Context) ([]core.Event, error)
@@ -185,7 +185,7 @@ func Build(ctx context.Context, source Source, query Query, now time.Time) (Repo
 	if filters.repo != nil {
 		readyRepoID = filters.repo.ID
 	}
-	readyIssues, err := source.ListReadyIssues(ctx, readyProjectID, readyRepoID)
+	readyIssues, err := source.ListReadyIssues(ctx, readyProjectID, readyRepoID, nil)
 	if err != nil {
 		return Report{}, fmt.Errorf("list ready issues: %w", err)
 	}

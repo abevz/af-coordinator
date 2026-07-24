@@ -133,6 +133,9 @@ type IssueListParams struct {
 	Projects    []string
 	Statuses    []string
 	IssueTypes  []string
+	// Tags filters to issues carrying every listed tag (AND semantics),
+	// via a per-tag EXISTS check against issue_tags.
+	Tags []string
 }
 
 // NormalizeIssueListValues splits comma-separated filter values, trims

@@ -114,6 +114,11 @@ func handleListIssues(st store.CoordinatorStore, logger *slog.Logger) http.Handl
 			writeError(w, http.StatusBadRequest, core.ErrValidationFailed, "type filter values must not contain empty elements")
 			return
 		}
+		tags, err := core.NormalizeIssueListValues(r.URL.Query()["tag"])
+		if err != nil {
+			writeError(w, http.StatusBadRequest, core.ErrValidationFailed, "tag filter values must not contain empty elements")
+			return
+		}
 
 		params := core.IssueListParams{
 			Repo:        r.URL.Query().Get("repo"),
@@ -123,6 +128,7 @@ func handleListIssues(st store.CoordinatorStore, logger *slog.Logger) http.Handl
 			Projects:    projects,
 			Statuses:    statuses,
 			IssueTypes:  issueTypes,
+			Tags:        tags,
 		}
 		for _, issueType := range params.IssueTypes {
 			if !core.ValidIssueType(issueType) {
@@ -366,7 +372,13 @@ func handleListReadyIssues(st store.CoordinatorStore, logger *slog.Logger) http.
 			repoID = rp.ID
 		}
 
-		issues, err := st.ListReadyIssues(r.Context(), projectID, repoID)
+		tags, err := core.NormalizeIssueListValues(r.URL.Query()["tag"])
+		if err != nil {
+			writeError(w, http.StatusBadRequest, core.ErrValidationFailed, "tag filter values must not contain empty elements")
+			return
+		}
+
+		issues, err := st.ListReadyIssues(r.Context(), projectID, repoID, tags)
 		if err != nil {
 			logger.Error("failed to list ready issues", "error", err)
 			writeError(w, http.StatusInternalServerError, "internal_error", "failed to list ready issues")

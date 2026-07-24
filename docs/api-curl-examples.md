@@ -39,12 +39,15 @@ history; report data never includes lease tokens or note bodies.
 ## 2. Reading Issues
 
 ### List all issues
-Supports query parameters: `?project=afc&status=open&type=bug`
+Supports query parameters: `?project=afc&status=open&type=bug&tag=area/frontend`
 ```bash
 curl -s --unix-socket $AFC_SOCK "http://localhost/v1/issues?project=afc&status=open" | jq
 
 # Only bugs:
 curl -s --unix-socket $AFC_SOCK "http://localhost/v1/issues?project=afc&type=bug" | jq
+
+# Only issues carrying both tags (repeated tag= is ANDed):
+curl -s --unix-socket $AFC_SOCK "http://localhost/v1/issues?tag=area/frontend&tag=theme/dark" | jq
 ```
 
 ### Get a single issue by Short ID
@@ -80,6 +83,9 @@ curl -s --unix-socket $AFC_SOCK "http://localhost/v1/issues/ready?project=afc" |
 
 # Scope repository lookup by project when logical names are reused across projects:
 curl -s --unix-socket $AFC_SOCK "http://localhost/v1/issues/ready?project=afc&repo=main" | jq
+
+# Gate the ready view to a factory-routing tag (repeated tag= is ANDed):
+curl -s --unix-socket $AFC_SOCK "http://localhost/v1/issues/ready?project=afc&tag=exec/auto" | jq
 ```
 
 If you do not provide `project`, use the repository UUID rather than an
@@ -306,6 +312,29 @@ Get the full chronological audit trail of an issue.
 ```bash
 curl -s --unix-socket $AFC_SOCK http://localhost/v1/issues/afc-15/events | jq
 ```
+
+### Add a tag
+Apply a namespaced tag (`namespace/value`, closed charset).
+```bash
+curl -s -X POST --unix-socket $AFC_SOCK \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tag": "area/frontend",
+    "actor": "'"$AFC_ACTOR"'"
+  }' \
+  http://localhost/v1/issues/afc-15/tags | jq
+```
+
+### Remove a tag
+`tag` is a query parameter, not a path segment, since the value contains `/`.
+```bash
+curl -s -X DELETE --unix-socket $AFC_SOCK \
+  "http://localhost/v1/issues/afc-15/tags?tag=area/frontend&actor=$AFC_ACTOR"
+```
+
+### List tags
+Tags are part of the issue payload — read them via `GET /v1/issues/{id}` (see
+section 2) or the CLI: `afctl issue tag list afc-15`.
 
 ---
 

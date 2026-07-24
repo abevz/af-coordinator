@@ -305,6 +305,8 @@ Filters:
   --worktree <worktree>          Worktree ID or path
   --assignee <actor>             Exact assignee
   --external-key <key>           Exact external key
+  --tag <namespace/value[,..]>   Tag(s); an issue must carry every listed
+                                  tag (AND), repeatable
   --limit <n> --offset <n>       Reserved pagination parameters
 `
 
@@ -342,7 +344,7 @@ func parseIssueListArgs(args []string) (core.IssueListParams, bool, error) {
 			return core.IssueListParams{}, true, nil
 		}
 		switch flag {
-		case "--project", "--status", "--type", "--repo", "--worktree", "--assignee", "--external-key", "--limit", "--offset":
+		case "--project", "--status", "--type", "--repo", "--worktree", "--assignee", "--external-key", "--tag", "--limit", "--offset":
 		default:
 			return core.IssueListParams{}, false, fmt.Errorf("unknown flag: %s", flag)
 		}
@@ -373,6 +375,10 @@ func parseIssueListArgs(args []string) (core.IssueListParams, bool, error) {
 			params.Assignee = value
 		case "--external-key":
 			params.ExternalKey = value
+		case "--tag":
+			var values []string
+			values, err = core.NormalizeIssueListValues([]string{value})
+			params.Tags = append(params.Tags, values...)
 		case "--limit", "--offset":
 			if _, parseErr := strconv.Atoi(value); parseErr != nil {
 				return core.IssueListParams{}, false, fmt.Errorf("%s requires an integer", flag)
@@ -393,7 +399,7 @@ func issueListFlagValue(args []string, index int, flag string) (string, error) {
 	return args[index+1], nil
 }
 
-const issueReadyUsage = "Usage: afctl issue ready [--project <key>] [--repo <repo>]"
+const issueReadyUsage = "Usage: afctl issue ready [--project <key>] [--repo <repo>] [--tag <namespace/value>]..."
 
 func runIssueReady(ctx context.Context, c *client.Client, args []string) error {
 	if hasHelpFlag(args) {
@@ -402,6 +408,7 @@ func runIssueReady(ctx context.Context, c *client.Client, args []string) error {
 	}
 	project := ""
 	repo := ""
+	var tags []string
 	for i := 0; i < len(args); i++ {
 		if args[i] == "--project" && i+1 < len(args) {
 			project = args[i+1]
@@ -409,10 +416,13 @@ func runIssueReady(ctx context.Context, c *client.Client, args []string) error {
 		} else if args[i] == "--repo" && i+1 < len(args) {
 			repo = args[i+1]
 			i++
+		} else if args[i] == "--tag" && i+1 < len(args) {
+			tags = append(tags, args[i+1])
+			i++
 		}
 	}
 
-	issues, err := c.ListReadyIssues(ctx, project, repo)
+	issues, err := c.ListReadyIssues(ctx, project, repo, tags)
 	if err != nil {
 		fail(err)
 	}
