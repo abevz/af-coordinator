@@ -38,6 +38,9 @@ type fakeClient struct {
 	lastOperatorCloseReq   core.OperatorCloseIssueRequest
 	lastOperatorReopenReq  core.OperatorReopenIssueRequest
 	lastOperatorReleaseReq core.OperatorReleaseIssueRequest
+	lastAddTagReq          core.AddTagRequest
+	lastRemoveTagTag       string
+	lastRemoveTagActor     string
 }
 
 func (f *fakeClient) Health(context.Context) (core.Health, error) { return f.healthResp, nil }
@@ -102,6 +105,19 @@ func (f *fakeClient) OperatorReleaseIssue(_ context.Context, issueID string, req
 	f.lastIssueID = issueID
 	f.lastOperatorReleaseReq = req
 	return f.operatorReleaseResp, nil
+}
+
+func (f *fakeClient) AddTag(_ context.Context, issueID string, req core.AddTagRequest) error {
+	f.lastIssueID = issueID
+	f.lastAddTagReq = req
+	return nil
+}
+
+func (f *fakeClient) RemoveTag(_ context.Context, issueID, tag, actor string) error {
+	f.lastIssueID = issueID
+	f.lastRemoveTagTag = tag
+	f.lastRemoveTagActor = actor
+	return nil
 }
 
 func TestHandleInitialize(t *testing.T) {
@@ -191,6 +207,61 @@ func TestToolCallHandoffIssueUsesAtomicClientPath(t *testing.T) {
 	result := invalid.Result.(map[string]any)
 	if result["isError"] != true {
 		t.Fatalf("malformed handoff unexpectedly succeeded: %+v", result)
+	}
+}
+
+func TestToolCallAddTagUsesDefaultActor(t *testing.T) {
+	fake := &fakeClient{}
+	s := NewServer(fake, "codex-actor", "0055")
+	resp := s.handleRequest(context.Background(), rpcRequest{
+		JSONRPC: "2.0",
+		ID:      json.RawMessage("6"),
+		Method:  "tools/call",
+		Params:  json.RawMessage(`{"name":"add_tag","arguments":{"issue_id":"afc-28","tag":"area/frontend"}}`),
+	})
+
+	if resp == nil || resp.Error != nil {
+		t.Fatalf("expected tool result, got %+v", resp)
+	}
+	if fake.lastIssueID != "afc-28" || fake.lastAddTagReq.Tag != "area/frontend" || fake.lastAddTagReq.Actor != "codex-actor" {
+		t.Fatalf("unexpected add_tag call: issue=%q req=%+v", fake.lastIssueID, fake.lastAddTagReq)
+	}
+	callResult := resp.Result.(map[string]any)
+	if callResult["isError"] != nil {
+		t.Fatalf("unexpected tool error result: %+v", callResult)
+	}
+
+	invalid := s.handleRequest(context.Background(), rpcRequest{
+		JSONRPC: "2.0",
+		ID:      json.RawMessage("7"),
+		Method:  "tools/call",
+		Params:  json.RawMessage(`{"name":"add_tag","arguments":{"issue_id":"afc-28"}}`),
+	})
+	result := invalid.Result.(map[string]any)
+	if result["isError"] != true {
+		t.Fatalf("add_tag without tag unexpectedly succeeded: %+v", result)
+	}
+}
+
+func TestToolCallRemoveTagUsesDefaultActor(t *testing.T) {
+	fake := &fakeClient{}
+	s := NewServer(fake, "codex-actor", "0055")
+	resp := s.handleRequest(context.Background(), rpcRequest{
+		JSONRPC: "2.0",
+		ID:      json.RawMessage("8"),
+		Method:  "tools/call",
+		Params:  json.RawMessage(`{"name":"remove_tag","arguments":{"issue_id":"afc-28","tag":"area/frontend"}}`),
+	})
+
+	if resp == nil || resp.Error != nil {
+		t.Fatalf("expected tool result, got %+v", resp)
+	}
+	if fake.lastIssueID != "afc-28" || fake.lastRemoveTagTag != "area/frontend" || fake.lastRemoveTagActor != "codex-actor" {
+		t.Fatalf("unexpected remove_tag call: issue=%q tag=%q actor=%q", fake.lastIssueID, fake.lastRemoveTagTag, fake.lastRemoveTagActor)
+	}
+	callResult := resp.Result.(map[string]any)
+	if callResult["isError"] != nil {
+		t.Fatalf("unexpected tool error result: %+v", callResult)
 	}
 }
 

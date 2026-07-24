@@ -87,6 +87,10 @@ func TestClientCoverage(t *testing.T) {
 			// no body
 		case r.URL.Path == "/v1/issues/i1/dependencies/i2" && r.Method == "DELETE":
 			// no body
+		case r.URL.Path == "/v1/issues/i1/tags" && r.Method == "POST":
+			// no body
+		case r.URL.Path == "/v1/issues/i1/tags" && r.Method == "DELETE":
+			// no body
 		case r.URL.Path == "/v1/issues/i1/artifacts" && r.Method == "POST":
 			// no body
 		case r.URL.Path == "/v1/bad-json" && r.Method == "GET":
@@ -154,6 +158,8 @@ func TestClientCoverage(t *testing.T) {
 	_ = c.AddDependency(ctx, "i1", core.AddDependencyRequest{})
 	_ = c.RemoveDependency(ctx, "i1", core.RemoveDependencyRequest{DependsOn: "i2", Kind: "kind"})
 	_ = c.LinkArtifact(ctx, "i1", core.LinkArtifactRequest{})
+	_ = c.AddTag(ctx, "i1", core.AddTagRequest{Tag: "area/frontend"})
+	_ = c.RemoveTag(ctx, "i1", "area/frontend", "actor")
 
 	_, _ = c.UpdateIssue(ctx, "i1", core.UpdateIssueRequest{})
 

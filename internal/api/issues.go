@@ -772,6 +772,81 @@ func handleListIssueLinks(st store.CoordinatorStore, logger *slog.Logger) http.H
 	}
 }
 
+func handleAddTag(st store.CoordinatorStore, logger *slog.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		issueID, ok := resolveIssueID(st, w, r)
+		if !ok {
+			return
+		}
+
+		var req core.AddTagRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, core.ErrValidationFailed, "invalid JSON body")
+			return
+		}
+
+		if req.Tag == "" {
+			writeError(w, http.StatusBadRequest, core.ErrValidationFailed, "tag is required")
+			return
+		}
+		if req.Actor == "" {
+			writeError(w, http.StatusBadRequest, core.ErrValidationFailed, "actor is required")
+			return
+		}
+
+		err := st.AddTag(r.Context(), issueID, req)
+		if err != nil {
+			if apiErr, ok := errAsAPIError(err); ok {
+				switch apiErr.Code {
+				case core.ErrValidationFailed:
+					writeError(w, http.StatusBadRequest, core.ErrValidationFailed, apiErr.Message)
+					return
+				case core.ErrNotFound:
+					writeError(w, http.StatusNotFound, core.ErrNotFound, apiErr.Message)
+					return
+				case core.ErrAlreadyTagged:
+					writeError(w, http.StatusConflict, core.ErrAlreadyTagged, apiErr.Message)
+					return
+				}
+			}
+			logger.Error("failed to add tag", "issue_id", issueID, "tag", req.Tag, "error", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "failed to add tag")
+			return
+		}
+
+		w.WriteHeader(http.StatusCreated)
+	}
+}
+
+func handleRemoveTag(st store.CoordinatorStore, logger *slog.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		issueID, ok := resolveIssueID(st, w, r)
+		if !ok {
+			return
+		}
+
+		tag := r.URL.Query().Get("tag")
+		if tag == "" {
+			writeError(w, http.StatusBadRequest, core.ErrValidationFailed, "tag is required")
+			return
+		}
+		actor := r.URL.Query().Get("actor")
+
+		err := st.RemoveTag(r.Context(), issueID, tag, actor)
+		if err != nil {
+			if apiErr, ok := errAsAPIError(err); ok && apiErr.Code == core.ErrNotFound {
+				writeError(w, http.StatusNotFound, core.ErrNotFound, apiErr.Message)
+				return
+			}
+			logger.Error("failed to remove tag", "issue_id", issueID, "tag", tag, "error", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "failed to remove tag")
+			return
+		}
+
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
 func handleCreateNote(st store.CoordinatorStore, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		issueID, ok := resolveIssueID(st, w, r)

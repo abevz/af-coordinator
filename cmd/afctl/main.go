@@ -408,6 +408,9 @@ func printIssueDetailed(i core.Issue, l *core.IssueLease) {
 		fmt.Printf("Assignee:   (unassigned)\n")
 	}
 	fmt.Printf("Scope:      %s\n", i.ScopeKind)
+	if len(i.Tags) > 0 {
+		fmt.Printf("Tags:       %s\n", strings.Join(i.Tags, ", "))
+	}
 	fmt.Printf("Version:    %d\n", i.Version)
 	if l != nil {
 		fmt.Printf("Claimed:    %s (expires %s)\n", l.Holder, l.ExpiresAt)
@@ -443,6 +446,9 @@ func printIssueFull(i core.Issue, l *core.IssueLease, events []core.Event, notes
 		fmt.Printf("Assignee:      %s\n", i.Assignee)
 	} else {
 		fmt.Printf("Assignee:      (unassigned)\n")
+	}
+	if len(i.Tags) > 0 {
+		fmt.Printf("Tags:          %s\n", strings.Join(i.Tags, ", "))
 	}
 	fmt.Printf("Project ID:    %s\n", i.ProjectID)
 	if i.RepositoryID != "" {

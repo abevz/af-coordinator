@@ -36,6 +36,8 @@ type CoordinatorClient interface {
 	OperatorCloseIssue(ctx context.Context, issueID string, req core.OperatorCloseIssueRequest) (core.CloseIssueResult, error)
 	OperatorReopenIssue(ctx context.Context, issueID string, req core.OperatorReopenIssueRequest) (core.Issue, error)
 	OperatorReleaseIssue(ctx context.Context, issueID string, req core.OperatorReleaseIssueRequest) (core.Issue, error)
+	AddTag(ctx context.Context, issueID string, req core.AddTagRequest) error
+	RemoveTag(ctx context.Context, issueID, tag, actor string) error
 }
 
 // Server is a tiny MCP stdio server that wraps the daemon API.
@@ -288,6 +290,46 @@ func (s *Server) callTool(ctx context.Context, params toolCallParams) (any, erro
 			return nil, err
 		}
 		return s.client.CreateNote(ctx, args.IssueID, author, args.Body)
+	case "add_tag":
+		var args struct {
+			IssueID string `json:"issue_id"`
+			Tag     string `json:"tag"`
+			Actor   string `json:"actor"`
+		}
+		if err := unmarshalArgs(params.Arguments, &args); err != nil {
+			return nil, err
+		}
+		if args.IssueID == "" || args.Tag == "" {
+			return nil, fmt.Errorf("issue_id and tag are required")
+		}
+		actor, err := s.resolveActor(args.Actor, "")
+		if err != nil {
+			return nil, err
+		}
+		if err := s.client.AddTag(ctx, args.IssueID, core.AddTagRequest{Tag: args.Tag, Actor: actor}); err != nil {
+			return nil, err
+		}
+		return map[string]any{"status": "ok"}, nil
+	case "remove_tag":
+		var args struct {
+			IssueID string `json:"issue_id"`
+			Tag     string `json:"tag"`
+			Actor   string `json:"actor"`
+		}
+		if err := unmarshalArgs(params.Arguments, &args); err != nil {
+			return nil, err
+		}
+		if args.IssueID == "" || args.Tag == "" {
+			return nil, fmt.Errorf("issue_id and tag are required")
+		}
+		actor, err := s.resolveActor(args.Actor, "")
+		if err != nil {
+			return nil, err
+		}
+		if err := s.client.RemoveTag(ctx, args.IssueID, args.Tag, actor); err != nil {
+			return nil, err
+		}
+		return map[string]any{"status": "ok"}, nil
 	case "list_notes":
 		var args struct {
 			IssueID string `json:"issue_id"`
@@ -455,6 +497,16 @@ func (s *Server) tools() []map[string]any {
 			{name: "body", fieldType: "string", description: "Note text.", required: true},
 			{name: "author", fieldType: "string", description: "Optional note author; falls back to actor or AF_COORDINATOR_ACTOR."},
 			{name: "actor", fieldType: "string", description: "Optional actor fallback when author is omitted."},
+		})),
+		toolDefinition("add_tag", "Apply a namespaced tag ('namespace/value') to an issue.", objectSchema([]schemaField{
+			{name: "issue_id", fieldType: "string", description: "Issue UUID or short id.", required: true},
+			{name: "tag", fieldType: "string", description: "Namespaced tag, e.g. 'area/frontend'.", required: true},
+			{name: "actor", fieldType: "string", description: "Optional actor; falls back to AF_COORDINATOR_ACTOR."},
+		})),
+		toolDefinition("remove_tag", "Remove a namespaced tag from an issue.", objectSchema([]schemaField{
+			{name: "issue_id", fieldType: "string", description: "Issue UUID or short id.", required: true},
+			{name: "tag", fieldType: "string", description: "Namespaced tag to remove.", required: true},
+			{name: "actor", fieldType: "string", description: "Optional actor; falls back to AF_COORDINATOR_ACTOR."},
 		})),
 		toolDefinition("list_notes", "List notes for an issue.", objectSchema([]schemaField{
 			{name: "issue_id", fieldType: "string", description: "Issue UUID or short id.", required: true},

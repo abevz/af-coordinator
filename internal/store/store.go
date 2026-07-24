@@ -54,6 +54,8 @@ type CoordinatorStore interface {
 	OperatorReleaseIssue(ctx context.Context, issueID string, req core.OperatorReleaseIssueRequest) (core.Issue, error)
 	AddDependency(ctx context.Context, issueID string, req core.AddDependencyRequest) error
 	RemoveDependency(ctx context.Context, issueID, dependsOn, kind, actor string) error
+	AddTag(ctx context.Context, issueID string, req core.AddTagRequest) error
+	RemoveTag(ctx context.Context, issueID, tag, actor string) error
 	LinkArtifact(ctx context.Context, issueID string, req core.LinkArtifactRequest) (string, error)
 	UnlinkArtifact(ctx context.Context, issueID, artifact, relation, actor string) error
 	ListIssueArtifacts(ctx context.Context, issueID string) ([]core.ArtifactRef, error)

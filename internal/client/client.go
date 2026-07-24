@@ -465,6 +465,22 @@ func (c *Client) RemoveDependency(ctx context.Context, issueID string, req core.
 	return c.doJSON(ctx, http.MethodDelete, path, nil, nil)
 }
 
+// AddTag sends a POST /v1/issues/{issueID}/tags request.
+func (c *Client) AddTag(ctx context.Context, issueID string, req core.AddTagRequest) error {
+	return c.doJSON(ctx, http.MethodPost, "/v1/issues/"+issueID+"/tags", req, nil)
+}
+
+// RemoveTag sends a DELETE /v1/issues/{issueID}/tags request with the tag
+// as a query parameter (the tag value contains '/', which is not a safe
+// single path segment across all HTTP tooling).
+func (c *Client) RemoveTag(ctx context.Context, issueID, tag, actor string) error {
+	query := url.Values{"tag": {tag}}
+	if actor != "" {
+		query.Set("actor", actor)
+	}
+	return c.doJSON(ctx, http.MethodDelete, "/v1/issues/"+issueID+"/tags?"+query.Encode(), nil, nil)
+}
+
 // CreateNote sends a POST /v1/issues/{issueID}/notes request.
 func (c *Client) CreateNote(ctx context.Context, issueID, author, body string) (core.Note, error) {
 	req := core.CreateNoteRequest{Author: author, Body: body}
