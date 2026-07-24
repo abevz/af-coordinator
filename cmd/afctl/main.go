@@ -165,6 +165,7 @@ Commands:
     heartbeat           Extend an existing lease
     release             Release a claimed lease
     handoff             Add a required HANDOFF note and release atomically
+    run                 Claim, exec a command with the lease, heartbeat, then close/handoff based on its exit code
     update              Update issue fields (title, description, priority, assignee, status)
     close               Close an issue (resolution: done or cancelled) [--branch name] [--pr-url URL] [--commit-sha SHA] [--note "text"]
     operator-close      Force-close an issue without a lease token (AF_OPERATOR_TOKEN + --reason)

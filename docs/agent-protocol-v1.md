@@ -90,11 +90,29 @@ Every agent session follows this cycle:
    it — unlike `operator-close` + `operator-reopen`, it never marks the
    work done or cancelled. It only accepts an `in_progress` issue.
 
-   To avoid needing this in the first place: persist `lease_token`
-   immediately after claim, before doing anything else; prefer a short
-   `--ttl` for scripted/unattended claims so a crash self-heals fast; and
-   install an `EXIT` trap that calls `issue release` so a crash after the
-   token is captured still frees the lease right away.
+   To avoid needing this in the first place, prefer `afctl issue run` for
+   any script that is just "do one thing, then close": it claims, execs
+   the given command with the lease exported as environment variables,
+   heartbeats in the background, and closes or hands off automatically
+   based on the command's exit code — the token never leaves that single
+   process, so there is no multi-step handoff where it can get lost.
+   ```
+   afctl issue run <short_id> --ttl 900 -- ./do-the-work.sh
+   ```
+   The child sees `AF_LEASE_TOKEN`, `AF_ATTEMPT_ID`, `AF_ISSUE_ID`, and
+   `AF_EXPECTED_VERSION` if it needs to make its own coordinator calls.
+   Exit `0` closes with `--close-resolution` (default `done`, forwarding
+   `--branch`/`--pr-url`/`--commit-sha`/`--note`); any other exit, or
+   Ctrl-C, hands the lease off with an auto-generated `HANDOFF:` note
+   instead of closing, and `issue run`'s own exit code mirrors the
+   command's.
+
+   For anything that doesn't fit a single subprocess, fall back to manual
+   `claim`/`heartbeat`/`close`: persist `lease_token` immediately after
+   claim, before doing anything else; prefer a short `--ttl` for
+   scripted/unattended claims so a crash self-heals fast; and install an
+   `EXIT` trap that calls `issue release` so a crash after the token is
+   captured still frees the lease right away.
 
 ## Structured note conventions
 
