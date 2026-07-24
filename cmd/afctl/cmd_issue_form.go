@@ -17,6 +17,15 @@ func runIssueCreateForm(ctx context.Context, c *client.Client, args []string) er
 		return nil
 	}
 
+	// --allow-duplicate may be passed before entering the interactive form.
+	allowDuplicate := false
+	for _, a := range args {
+		if a == "--allow-duplicate" {
+			allowDuplicate = true
+			break
+		}
+	}
+
 	actor, _ := resolveActor("")
 
 	projects, err := c.ListProjects(ctx)
@@ -176,6 +185,23 @@ func runIssueCreateForm(ctx context.Context, c *client.Client, args []string) er
 		AcceptanceCriteria: acceptance,
 		Priority:           priority,
 		Actor:              actor,
+	}
+
+	// Duplicate title warning: flag open/in_progress issues with the same title
+	// in the same project, unless --allow-duplicate is explicitly passed.
+	if !allowDuplicate && req.Project != "" && req.Title != "" {
+		existing, err := c.ListIssuesWithFilters(ctx, core.IssueListParams{
+			Projects: []string{req.Project},
+			Statuses: []string{"open", "in_progress"},
+		})
+		if err == nil {
+			for _, iss := range existing {
+				if iss.Title == req.Title {
+					fmt.Printf("Warning: an %s issue with the same title already exists: %s (%s)\n", iss.Status, iss.ShortID, iss.ID)
+					break
+				}
+			}
+		}
 	}
 
 	issue, err := c.CreateIssue(ctx, req)
