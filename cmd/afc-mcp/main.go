@@ -20,7 +20,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	server := mcp.NewServer(client.New(cfg.SocketPath), actor, build.Version)
+	server := mcp.NewServer(client.New(cfg.SocketPath), actor, build.Revision)
 	if err := server.Run(ctx, os.Stdin, os.Stdout); err != nil && err != context.Canceled {
 		fmt.Fprintf(os.Stderr, "afc-mcp: %v\n", err)
 		os.Exit(1)

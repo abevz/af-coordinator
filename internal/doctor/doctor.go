@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/abevz/af-coordinator/internal/build"
 	"github.com/abevz/af-coordinator/internal/client"
 	"github.com/abevz/af-coordinator/internal/config"
 	"github.com/abevz/af-coordinator/internal/core"
@@ -98,30 +97,6 @@ func EvaluateDaemon(ctx context.Context, c *client.Client) (Result, *core.Health
 		Status:  "ok",
 		Message: "Daemon is reachable and responding",
 	}, &h
-}
-
-func EvaluateVersionSkew(h *core.Health) Result {
-	if h == nil || h.Version == "" {
-		return Result{
-			Name:    "Version skew",
-			Status:  "WARN",
-			Message: "Daemon version is unknown",
-			Hint:    "Restart af-coordinatord",
-		}
-	}
-	if h.Version != build.Version {
-		return Result{
-			Name:    "Version skew",
-			Status:  "WARN",
-			Message: fmt.Sprintf("afctl version %s != daemon version %s", build.Version, h.Version),
-			Hint:    "Restart af-coordinatord: " + restartDaemonHint(),
-		}
-	}
-	return Result{
-		Name:    "Version skew",
-		Status:  "ok",
-		Message: "Client and daemon versions match",
-	}
 }
 
 // EvaluateBinaryRevision compares the daemon's build.Revision (the git SHA
@@ -450,7 +425,6 @@ func RunAll(ctx context.Context, c *client.Client, cfg config.Config) []Result {
 
 	resDaemon, h := EvaluateDaemon(ctx, c)
 	results = append(results, resDaemon)
-	results = append(results, EvaluateVersionSkew(h))
 
 	e := realExec{}
 	results = append(results, EvaluateBinaryRevision(h, e))

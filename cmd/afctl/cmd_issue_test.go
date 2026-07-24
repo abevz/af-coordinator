@@ -63,7 +63,7 @@ func TestIssueListHelpDoesNotRequireClient(t *testing.T) {
 	}
 }
 
-func TestShouldCheckDaemonVersion(t *testing.T) {
+func TestShouldCheckDaemonRevision(t *testing.T) {
 	tests := []struct {
 		args []string
 		want bool
@@ -75,8 +75,8 @@ func TestShouldCheckDaemonVersion(t *testing.T) {
 		{args: []string{"ls", "--project", "afc"}, want: true},
 	}
 	for _, tt := range tests {
-		if got := shouldCheckDaemonVersion(tt.args); got != tt.want {
-			t.Errorf("shouldCheckDaemonVersion(%q) = %v, want %v", tt.args, got, tt.want)
+		if got := shouldCheckDaemonRevision(tt.args); got != tt.want {
+			t.Errorf("shouldCheckDaemonRevision(%q) = %v, want %v", tt.args, got, tt.want)
 		}
 	}
 }

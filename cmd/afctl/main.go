@@ -58,10 +58,10 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	if shouldCheckDaemonVersion(filtered) {
+	if shouldCheckDaemonRevision(filtered) {
 		if h, err := c.Health(ctx); err == nil {
-			if h.Version != "" && h.Version != build.Version {
-				fmt.Fprintf(os.Stderr, "afctl %s != daemon %s; restart af-coordinatord\n", build.Version, h.Version)
+			if h.Revision != "" && h.Revision != "unknown" && build.Revision != "unknown" && h.Revision != build.Revision {
+				fmt.Fprintf(os.Stderr, "afctl revision %s != daemon revision %s; restart af-coordinatord\n", shortRev(build.Revision), shortRev(h.Revision))
 			}
 		}
 	}
@@ -105,7 +105,7 @@ func main() {
 	}
 }
 
-func shouldCheckDaemonVersion(args []string) bool {
+func shouldCheckDaemonRevision(args []string) bool {
 	if len(args) == 0 || args[0] == "init" || args[0] == "protocol" {
 		return false
 	}
@@ -115,6 +115,13 @@ func shouldCheckDaemonVersion(args []string) bool {
 		}
 	}
 	return true
+}
+
+func shortRev(rev string) string {
+	if len(rev) > 12 {
+		return rev[:12]
+	}
+	return rev
 }
 
 func printUsage() {
@@ -290,10 +297,7 @@ func runHealth(ctx context.Context, c *client.Client) error {
 	}
 	fmt.Printf("Name:       %s\n", health.Name)
 	fmt.Printf("Status:     %s\n", health.Status)
-	fmt.Printf("Version:    %s\n", health.Version)
-	if health.Revision != "" {
-		fmt.Printf("Revision:   %s\n", health.Revision)
-	}
+	fmt.Printf("Revision:   %s\n", health.Revision)
 	fmt.Printf("DBPath:     %s\n", health.DBPath)
 	fmt.Printf("SocketPath: %s\n", health.SocketPath)
 	fmt.Printf("Time:       %s\n", health.Time.UTC().Format(time.RFC3339))

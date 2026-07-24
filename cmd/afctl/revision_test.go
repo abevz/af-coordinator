@@ -11,42 +11,52 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/abevz/af-coordinator/internal/build"
 )
 
-func TestVersionSkew(t *testing.T) {
-	// Build afctl binary for testing
+func TestRevisionSkew(t *testing.T) {
+	// Build afctl with a known, fixed Revision so the test can control both
+	// sides of the comparison deterministically (a plain `go build` here
+	// would leave build.Revision at its "unknown" default, which the
+	// pre-command warning intentionally never flags).
 	tmpDir := t.TempDir()
 	binPath := filepath.Join(tmpDir, "afctl")
-	cmd := exec.Command("go", "build", "-buildvcs=false", "-o", binPath, ".")
+	const localRevision = "test-revision-abc"
+	cmd := exec.Command("go", "build", "-buildvcs=false",
+		"-ldflags", "-X github.com/abevz/af-coordinator/internal/build.Revision="+localRevision,
+		"-o", binPath, ".")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("failed to build afctl: %v\noutput: %s", err, out)
 	}
 
 	tests := []struct {
-		name          string
-		daemonVersion string
-		args          []string
-		wantStderr    bool
+		name           string
+		daemonRevision string
+		args           []string
+		wantStderr     bool
 	}{
 		{
-			name:          "mismatch prints warning",
-			daemonVersion: "old-version",
-			args:          []string{"ls"},
-			wantStderr:    true,
+			name:           "mismatch prints warning",
+			daemonRevision: "old-revision",
+			args:           []string{"ls"},
+			wantStderr:     true,
 		},
 		{
-			name:          "match is silent",
-			daemonVersion: build.Version,
-			args:          []string{"ls"},
-			wantStderr:    false,
+			name:           "match is silent",
+			daemonRevision: localRevision,
+			args:           []string{"ls"},
+			wantStderr:     false,
 		},
 		{
-			name:          "init ignores skew",
-			daemonVersion: "old-version",
-			args:          []string{"init"},
-			wantStderr:    false,
+			name:           "unknown daemon revision is silent",
+			daemonRevision: "unknown",
+			args:           []string{"ls"},
+			wantStderr:     false,
+		},
+		{
+			name:           "init ignores skew",
+			daemonRevision: "old-revision",
+			args:           []string{"init"},
+			wantStderr:     false,
 		},
 	}
 
@@ -63,7 +73,7 @@ func TestVersionSkew(t *testing.T) {
 
 			mux := http.NewServeMux()
 			mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-				json.NewEncoder(w).Encode(map[string]any{"status": "ok", "version": tt.daemonVersion})
+				json.NewEncoder(w).Encode(map[string]any{"status": "ok", "revision": tt.daemonRevision})
 			})
 			// Mock /v1/projects for ls
 			mux.HandleFunc("/v1/projects", func(w http.ResponseWriter, r *http.Request) {
