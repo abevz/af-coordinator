@@ -153,6 +153,13 @@ func TestOperatorCommandsRejectLeaseTokenFlag(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "unknown flag") {
 		t.Fatalf("operator-release error = %v, want unknown flag", err)
 	}
+
+	err = runIssue(context.Background(), nil, []string{
+		"cancel", "afc-50", "--lease-token", "fake",
+	})
+	if err == nil || !strings.Contains(err.Error(), "unknown flag") {
+		t.Fatalf("cancel error = %v, want unknown flag", err)
+	}
 }
 
 // TestOperatorCloseAutoResolvePath verifies that when --expected-version is
@@ -263,6 +270,7 @@ func TestIssueLifecycleCommandsShowFullUsageOnError(t *testing.T) {
 		{name: "operator-close missing everything", args: []string{"operator-close", "afc-1"}},
 		{name: "operator-reopen missing everything", args: []string{"operator-reopen", "afc-1"}},
 		{name: "operator-release missing everything", args: []string{"operator-release", "afc-1"}},
+		{name: "cancel missing id", args: []string{"cancel"}},
 	}
 
 	for _, tt := range tests {
@@ -282,7 +290,7 @@ func TestIssueLifecycleCommandsShowFullUsageOnError(t *testing.T) {
 }
 
 func TestIssueLifecycleCommandsHelpFlagShortCircuits(t *testing.T) {
-	subcommands := []string{"claim", "heartbeat", "release", "handoff", "close", "operator-close", "operator-reopen", "operator-release"}
+	subcommands := []string{"claim", "heartbeat", "release", "handoff", "close", "operator-close", "operator-reopen", "operator-release", "cancel"}
 	for _, sub := range subcommands {
 		t.Run(sub, func(t *testing.T) {
 			// A nil client would panic if the command tried to reach the
@@ -302,6 +310,24 @@ func TestIssueLifecycleCommandsHelpFlagShortCircuits(t *testing.T) {
 // commands) to the remaining issue subcommands. These don't carry
 // lifecycleHint -- it's specific to the claim/close lease lifecycle -- so
 // only the full Usage: line is asserted, not the protocol pointer.
+func TestIssueCancelAutoResolvePath(t *testing.T) {
+	t.Parallel()
+
+	// Cancel always auto-resolves (no --expected-version flag).
+	// With a nil client, the GetIssue call panics.
+	func() {
+		defer func() {
+			r := recover()
+			if r == nil {
+				t.Error("expected panic from auto-resolve GetIssue call with nil client")
+			}
+		}()
+		_ = runIssue(context.Background(), nil, []string{
+			"cancel", "afc-1", "--note", "no longer needed",
+		})
+	}()
+}
+
 func TestNonLifecycleIssueCommandsShowFullUsageOnError(t *testing.T) {
 	tests := []struct {
 		name      string
