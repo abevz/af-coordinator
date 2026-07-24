@@ -53,7 +53,9 @@ afctl issue create --project demo --scope-kind project \
 # Workers ask for work that is open, unblocked, and not leased.
 afctl issue ready --project demo
 
-# Exactly one worker receives the lease.
+# Exactly one worker receives the lease. Claiming increments the issue's
+# version as a side effect — use the Version this prints, not one read
+# earlier from `issue get`, as --expected-version below.
 afctl issue claim demo-1 --ttl 900
 
 # While working, it renews the lease and records material context.
@@ -67,7 +69,9 @@ afctl issue close demo-1 --resolution done --expected-version 2 \
 
 If two workers try to claim the same issue, one wins and the other receives a
 stable `lease_held` error. If a worker disappears, its lease expires and the
-work can become ready again.
+work can become ready again — or, to recover it immediately instead of
+waiting out the TTL (e.g. a script crashed before it ever persisted its
+lease token), `afctl issue operator-release` clears the lease without one.
 
 ## Where it fits
 
@@ -166,8 +170,10 @@ afctl doctor
 ```
 
 `afctl doctor` is a post-install/runtime diagnostic. It checks daemon
-reachability, client/daemon version skew, backup setup, duplicate binaries, and
-client/daemon config mismatch.
+reachability, client/daemon version skew, whether the daemon binary matches
+the local git HEAD (run it from inside this checkout to catch a merge that
+was never followed by `make restart-service`), backup setup, duplicate
+binaries, and client/daemon config mismatch.
 
 ### Platform support
 

@@ -55,6 +55,7 @@ func RunDaemon(ctx context.Context, logger *slog.Logger, cfg config.Config, st s
 			SocketPath: cfg.SocketPath,
 			Time:       time.Now().UTC(),
 			Version:    build.Version,
+			Revision:   build.Revision,
 		}
 
 		if err := st.Ping(r.Context()); err != nil {
