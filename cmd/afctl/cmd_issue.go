@@ -105,7 +105,7 @@ func runIssue(ctx context.Context, c *client.Client, args []string) error {
 	}
 }
 
-const issueCreateUsage = "Usage: afctl issue create --project <key> --scope-kind <project|repository|worktree> --title <title> [--type <task|bug|feature|epic|chore>] [--repo <repo>] [--worktree <worktree>] [--external-key <key>] [--description <desc>] [--acceptance <criteria>] [--priority <n>]"
+const issueCreateUsage = "Usage: afctl issue create --project <key> --scope-kind <project|repository|worktree> --title <title> [--type <task|bug|feature|epic|chore>] [--repo <repo>] [--worktree <worktree>] [--external-key <key>] [--description <desc>] [--acceptance <criteria>] [--priority <n>] [--allow-duplicate]"
 
 func runIssueCreate(ctx context.Context, c *client.Client, args []string) error {
 	if hasHelpFlag(args) {
@@ -117,8 +117,11 @@ func runIssueCreate(ctx context.Context, c *client.Client, args []string) error 
 	}
 
 	var req core.CreateIssueRequest
+	allowDuplicate := false
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
+		case "--allow-duplicate":
+			allowDuplicate = true
 		case "--project":
 			if i+1 < len(args) {
 				req.Project = args[i+1]
@@ -177,6 +180,23 @@ func runIssueCreate(ctx context.Context, c *client.Client, args []string) error 
 		return usageErr(issueCreateUsage, err.Error())
 	}
 	req.Actor = actor
+
+	// Duplicate title warning: flag open/in_progress issues with the same title
+	// in the same project, unless --allow-duplicate is explicitly passed.
+	if !allowDuplicate && req.Project != "" && req.Title != "" {
+		existing, err := c.ListIssuesWithFilters(ctx, core.IssueListParams{
+			Projects: []string{req.Project},
+			Statuses: []string{"open", "in_progress"},
+		})
+		if err == nil {
+			for _, iss := range existing {
+				if iss.Title == req.Title {
+					fmt.Fprintf(os.Stderr, "Warning: an %s issue with the same title already exists: %s (%s)\n", iss.Status, iss.ShortID, iss.ID)
+					break
+				}
+			}
+		}
+	}
 
 	issue, err := c.CreateIssue(ctx, req)
 	if err != nil {

@@ -380,6 +380,8 @@ func TestNonLifecycleIssueCommandsHelpFlagShortCircuits(t *testing.T) {
 		{name: "events", args: []string{"events", "-h"}},
 		{name: "events list", args: []string{"events", "list", "-h"}},
 		{name: "create-form", args: []string{"create-form", "-h"}},
+		{name: "create with allow-duplicate", args: []string{"create", "-h", "--allow-duplicate"}},
+		{name: "create-form with allow-duplicate", args: []string{"create-form", "-h", "--allow-duplicate"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
