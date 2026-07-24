@@ -51,6 +51,7 @@ type CoordinatorStore interface {
 	CloseIssue(ctx context.Context, issueID string, req core.CloseIssueRequest) (core.CloseIssueResult, error)
 	OperatorCloseIssue(ctx context.Context, issueID string, req core.OperatorCloseIssueRequest) (core.CloseIssueResult, error)
 	OperatorReopenIssue(ctx context.Context, issueID string, req core.OperatorReopenIssueRequest) (core.Issue, error)
+	OperatorReleaseIssue(ctx context.Context, issueID string, req core.OperatorReleaseIssueRequest) (core.Issue, error)
 	AddDependency(ctx context.Context, issueID string, req core.AddDependencyRequest) error
 	RemoveDependency(ctx context.Context, issueID, dependsOn, kind, actor string) error
 	LinkArtifact(ctx context.Context, issueID string, req core.LinkArtifactRequest) (string, error)

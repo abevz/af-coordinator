@@ -77,6 +77,25 @@ Every agent session follows this cycle:
      --reason "new evidence requires follow-up"
    ```
 
+   If a claim's lease token was lost before its TTL naturally expired it —
+   a script crashed right after claiming and never persisted the token, or
+   never got as far as a heartbeat — the issue sits stuck `in_progress` and
+   invisible to `issue ready` until expiry. Recover it immediately instead
+   of waiting out the TTL:
+   ```
+   afctl issue operator-release <short_id> --expected-version N \
+     --reason "flaky-script crashed before persisting the lease token"
+   ```
+   This clears the lease and returns the issue to `open` without closing
+   it — unlike `operator-close` + `operator-reopen`, it never marks the
+   work done or cancelled. It only accepts an `in_progress` issue.
+
+   To avoid needing this in the first place: persist `lease_token`
+   immediately after claim, before doing anything else; prefer a short
+   `--ttl` for scripted/unattended claims so a crash self-heals fast; and
+   install an `EXIT` trap that calls `issue release` so a crash after the
+   token is captured still frees the lease right away.
+
 ## Structured note conventions
 
 Two note formats carry machine-readable meaning. Everything else in a note

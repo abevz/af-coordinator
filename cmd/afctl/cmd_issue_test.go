@@ -145,6 +145,14 @@ func TestOperatorCommandsRejectLeaseTokenFlag(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "unknown flag") {
 		t.Fatalf("operator-reopen error = %v, want unknown flag", err)
 	}
+
+	err = runIssue(context.Background(), nil, []string{
+		"operator-release", "afc-50", "--expected-version", "3", "--reason", "lease token lost",
+		"--lease-token", "fake",
+	})
+	if err == nil || !strings.Contains(err.Error(), "unknown flag") {
+		t.Fatalf("operator-release error = %v, want unknown flag", err)
+	}
 }
 
 func TestIssueHandoffValidatesRequiredHandoffNote(t *testing.T) {
@@ -205,6 +213,7 @@ func TestIssueLifecycleCommandsShowFullUsageOnError(t *testing.T) {
 		{name: "close missing lease-token", args: []string{"close", "afc-1", "--resolution", "done", "--expected-version", "2"}},
 		{name: "operator-close missing everything", args: []string{"operator-close", "afc-1"}},
 		{name: "operator-reopen missing everything", args: []string{"operator-reopen", "afc-1"}},
+		{name: "operator-release missing everything", args: []string{"operator-release", "afc-1"}},
 	}
 
 	for _, tt := range tests {
@@ -224,7 +233,7 @@ func TestIssueLifecycleCommandsShowFullUsageOnError(t *testing.T) {
 }
 
 func TestIssueLifecycleCommandsHelpFlagShortCircuits(t *testing.T) {
-	subcommands := []string{"claim", "heartbeat", "release", "handoff", "close", "operator-close", "operator-reopen"}
+	subcommands := []string{"claim", "heartbeat", "release", "handoff", "close", "operator-close", "operator-reopen", "operator-release"}
 	for _, sub := range subcommands {
 		t.Run(sub, func(t *testing.T) {
 			// A nil client would panic if the command tried to reach the

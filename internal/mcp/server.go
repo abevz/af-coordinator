@@ -35,6 +35,7 @@ type CoordinatorClient interface {
 	CloseIssue(ctx context.Context, issueID string, req core.CloseIssueRequest) (core.CloseIssueResult, error)
 	OperatorCloseIssue(ctx context.Context, issueID string, req core.OperatorCloseIssueRequest) (core.CloseIssueResult, error)
 	OperatorReopenIssue(ctx context.Context, issueID string, req core.OperatorReopenIssueRequest) (core.Issue, error)
+	OperatorReleaseIssue(ctx context.Context, issueID string, req core.OperatorReleaseIssueRequest) (core.Issue, error)
 }
 
 // Server is a tiny MCP stdio server that wraps the daemon API.
@@ -395,6 +396,28 @@ func (s *Server) callTool(ctx context.Context, params toolCallParams) (any, erro
 			Actor:           actor,
 			Reason:          args.Reason,
 		})
+	case "operator_release_issue":
+		var args struct {
+			IssueID         string `json:"issue_id"`
+			ExpectedVersion int    `json:"expected_version"`
+			Reason          string `json:"reason"`
+			Actor           string `json:"actor"`
+		}
+		if err := unmarshalArgs(params.Arguments, &args); err != nil {
+			return nil, err
+		}
+		if args.IssueID == "" || args.ExpectedVersion <= 0 || strings.TrimSpace(args.Reason) == "" {
+			return nil, fmt.Errorf("issue_id, expected_version, and reason are required")
+		}
+		actor, err := s.resolveActor(args.Actor, "")
+		if err != nil {
+			return nil, err
+		}
+		return s.client.OperatorReleaseIssue(ctx, args.IssueID, core.OperatorReleaseIssueRequest{
+			ExpectedVersion: args.ExpectedVersion,
+			Actor:           actor,
+			Reason:          args.Reason,
+		})
 	default:
 		return nil, fmt.Errorf("unknown tool: %s", params.Name)
 	}
@@ -461,6 +484,12 @@ func (s *Server) tools() []map[string]any {
 			{name: "issue_id", fieldType: "string", description: "Issue UUID or short id.", required: true},
 			{name: "expected_version", fieldType: "integer", description: "Current issue version.", required: true},
 			{name: "reason", fieldType: "string", description: "Why the terminal work is reopening.", required: true},
+			{name: "actor", fieldType: "string", description: "Optional operator identity; falls back to AF_COORDINATOR_ACTOR."},
+		})),
+		toolDefinition("operator_release_issue", "Explicit local operator recovery for a stuck in_progress issue whose lease token was lost before its TTL expired; force-clears the lease and returns the issue to open without closing it. Never accepts a lease token.", objectSchema([]schemaField{
+			{name: "issue_id", fieldType: "string", description: "Issue UUID or short id.", required: true},
+			{name: "expected_version", fieldType: "integer", description: "Current issue version.", required: true},
+			{name: "reason", fieldType: "string", description: "Why the lease is being force-cleared.", required: true},
 			{name: "actor", fieldType: "string", description: "Optional operator identity; falls back to AF_COORDINATOR_ACTOR."},
 		})),
 	}

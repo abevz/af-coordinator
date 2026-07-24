@@ -401,6 +401,20 @@ func (c *Client) OperatorReopenIssue(ctx context.Context, issueID string, req co
 	return result.Issue, nil
 }
 
+// OperatorReleaseIssue sends a POST /v1/issues/{issueID}/operator-release
+// request. This local operator path is explicit and intentionally has no
+// lease token; it recovers a claim whose lease token was lost before its
+// TTL naturally expired it, without waiting for expiry.
+func (c *Client) OperatorReleaseIssue(ctx context.Context, issueID string, req core.OperatorReleaseIssueRequest) (core.Issue, error) {
+	var result struct {
+		Issue core.Issue `json:"issue"`
+	}
+	if err := c.doJSON(ctx, http.MethodPost, "/v1/issues/"+issueID+"/operator-release", req, &result); err != nil {
+		return core.Issue{}, err
+	}
+	return result.Issue, nil
+}
+
 // LinkArtifact sends a POST /v1/issues/{issueID}/links request.
 func (c *Client) LinkArtifact(ctx context.Context, issueID string, req core.LinkArtifactRequest) error {
 	return c.doJSON(ctx, http.MethodPost, "/v1/issues/"+issueID+"/links", req, nil)

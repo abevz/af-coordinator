@@ -12,30 +12,32 @@ import (
 )
 
 type fakeClient struct {
-	healthResp            core.Health
-	getIssueResp          core.Issue
-	getLeaseResp          *core.IssueLease
-	readyResp             []core.Issue
-	claimResp             core.ClaimResponse
-	heartbeatResp         string
-	handoffResp           core.HandoffResponse
-	noteResp              core.Note
-	notesResp             []core.Note
-	eventsResp            []core.Event
-	closeResp             core.CloseIssueResult
-	operatorCloseResp     core.CloseIssueResult
-	operatorReopenResp    core.Issue
-	lastIssueID           string
-	lastHolder            string
-	lastTTL               int
-	lastSessionID         string
-	lastLeaseToken        string
-	lastHandoffNote       string
-	lastNoteAuthor        string
-	lastNoteBody          string
-	lastCloseReq          core.CloseIssueRequest
-	lastOperatorCloseReq  core.OperatorCloseIssueRequest
-	lastOperatorReopenReq core.OperatorReopenIssueRequest
+	healthResp             core.Health
+	getIssueResp           core.Issue
+	getLeaseResp           *core.IssueLease
+	readyResp              []core.Issue
+	claimResp              core.ClaimResponse
+	heartbeatResp          string
+	handoffResp            core.HandoffResponse
+	noteResp               core.Note
+	notesResp              []core.Note
+	eventsResp             []core.Event
+	closeResp              core.CloseIssueResult
+	operatorCloseResp      core.CloseIssueResult
+	operatorReopenResp     core.Issue
+	operatorReleaseResp    core.Issue
+	lastIssueID            string
+	lastHolder             string
+	lastTTL                int
+	lastSessionID          string
+	lastLeaseToken         string
+	lastHandoffNote        string
+	lastNoteAuthor         string
+	lastNoteBody           string
+	lastCloseReq           core.CloseIssueRequest
+	lastOperatorCloseReq   core.OperatorCloseIssueRequest
+	lastOperatorReopenReq  core.OperatorReopenIssueRequest
+	lastOperatorReleaseReq core.OperatorReleaseIssueRequest
 }
 
 func (f *fakeClient) Health(context.Context) (core.Health, error) { return f.healthResp, nil }
@@ -94,6 +96,12 @@ func (f *fakeClient) OperatorReopenIssue(_ context.Context, issueID string, req 
 	f.lastIssueID = issueID
 	f.lastOperatorReopenReq = req
 	return f.operatorReopenResp, nil
+}
+
+func (f *fakeClient) OperatorReleaseIssue(_ context.Context, issueID string, req core.OperatorReleaseIssueRequest) (core.Issue, error) {
+	f.lastIssueID = issueID
+	f.lastOperatorReleaseReq = req
+	return f.operatorReleaseResp, nil
 }
 
 func TestHandleInitialize(t *testing.T) {
@@ -217,8 +225,9 @@ func TestToolCallCloseIssuePassesStructuredMetadata(t *testing.T) {
 
 func TestOperatorToolsUseExplicitTokenlessRequests(t *testing.T) {
 	fake := &fakeClient{
-		operatorCloseResp:  core.CloseIssueResult{Status: "closed", Resolution: "done"},
-		operatorReopenResp: core.Issue{Status: "open"},
+		operatorCloseResp:   core.CloseIssueResult{Status: "closed", Resolution: "done"},
+		operatorReopenResp:  core.Issue{Status: "open"},
+		operatorReleaseResp: core.Issue{Status: "open"},
 	}
 	s := NewServer(fake, "operator", "0055")
 
@@ -233,6 +242,10 @@ func TestOperatorToolsUseExplicitTokenlessRequests(t *testing.T) {
 		{
 			name: "operator reopen",
 			args: `{"name":"operator_reopen_issue","arguments":{"issue_id":"afc-50","expected_version":2,"reason":"needs follow-up"}}`,
+		},
+		{
+			name: "operator release",
+			args: `{"name":"operator_release_issue","arguments":{"issue_id":"afc-50","expected_version":3,"reason":"agent crashed, lease token lost"}}`,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -249,6 +262,9 @@ func TestOperatorToolsUseExplicitTokenlessRequests(t *testing.T) {
 	}
 	if fake.lastOperatorReopenReq.Reason != "needs follow-up" || fake.lastOperatorReopenReq.Actor != "operator" {
 		t.Fatalf("unexpected operator reopen request: %+v", fake.lastOperatorReopenReq)
+	}
+	if fake.lastOperatorReleaseReq.Reason != "agent crashed, lease token lost" || fake.lastOperatorReleaseReq.Actor != "operator" {
+		t.Fatalf("unexpected operator release request: %+v", fake.lastOperatorReleaseReq)
 	}
 
 	resp := s.handleRequest(context.Background(), rpcRequest{
