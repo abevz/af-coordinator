@@ -3,10 +3,12 @@ BINDIR ?= $(HOME)/.local/bin
 BACKUPDIR ?= $(HOME)/backups/af-coordinator
 SYSTEMCTL_USER ?= sh contrib/install/systemctl-user.sh
 VERSION ?=
-LD_VERSION_FLAG =
+GIT_REVISION := $(shell git rev-parse HEAD 2>/dev/null || echo unknown)
+LD_FLAGS = -X github.com/abevz/af-coordinator/internal/build.Revision=$(GIT_REVISION)
 ifneq ($(strip $(VERSION)),)
-LD_VERSION_FLAG = -ldflags "-X github.com/abevz/af-coordinator/internal/build.Version=$(VERSION)"
+LD_FLAGS += -X github.com/abevz/af-coordinator/internal/build.Version=$(VERSION)
 endif
+LD_VERSION_FLAG = -ldflags "$(LD_FLAGS)"
 
 .PHONY: preflight fmt vet lint build test build-install install-service uninstall-service restart-service install-launchd uninstall-launchd install-backup uninstall-backup install-backup-systemd uninstall-backup-systemd install-backup-launchd uninstall-backup-launchd
 

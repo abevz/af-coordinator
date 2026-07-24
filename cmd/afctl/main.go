@@ -291,6 +291,9 @@ func runHealth(ctx context.Context, c *client.Client) error {
 	fmt.Printf("Name:       %s\n", health.Name)
 	fmt.Printf("Status:     %s\n", health.Status)
 	fmt.Printf("Version:    %s\n", health.Version)
+	if health.Revision != "" {
+		fmt.Printf("Revision:   %s\n", health.Revision)
+	}
 	fmt.Printf("DBPath:     %s\n", health.DBPath)
 	fmt.Printf("SocketPath: %s\n", health.SocketPath)
 	fmt.Printf("Time:       %s\n", health.Time.UTC().Format(time.RFC3339))

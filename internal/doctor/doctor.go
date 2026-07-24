@@ -124,6 +124,80 @@ func EvaluateVersionSkew(h *core.Health) Result {
 	}
 }
 
+// EvaluateBinaryRevision compares the daemon's build.Revision (the git SHA
+// it was compiled from, set by `make build`/`make build-install`) against
+// `git rev-parse HEAD` in the current working directory. It catches a
+// daemon still running an older commit after a merge that was never
+// followed by a rebuild+restart — the exact class of staleness this check
+// exists to close.
+//
+// It is best-effort and never fails hard: if it can't determine either side
+// (not run from inside a git checkout, not run from the af-coordinator
+// checkout, or the daemon wasn't built with revision embedding), it reports
+// "ok" with an explanatory message rather than a false WARN.
+func EvaluateBinaryRevision(h *core.Health, e OSExec) Result {
+	return evaluateBinaryRevision(h, e, func() ([]byte, error) { return os.ReadFile("go.mod") })
+}
+
+func evaluateBinaryRevision(h *core.Health, e OSExec, readGoMod func() ([]byte, error)) Result {
+	const name = "Binary revision"
+	if h == nil {
+		return Result{Name: name, Status: "WARN", Message: "Daemon health data unavailable"}
+	}
+	if h.Revision == "" || h.Revision == "unknown" {
+		return Result{
+			Name:    name,
+			Status:  "ok",
+			Message: "Daemon revision unknown (not built via `make build-install`); skipping staleness check",
+		}
+	}
+	modData, err := readGoMod()
+	if err != nil || !strings.Contains(string(modData), "module github.com/abevz/af-coordinator") {
+		return Result{
+			Name:    name,
+			Status:  "ok",
+			Message: "Not run from inside the af-coordinator checkout; skipping staleness check",
+		}
+	}
+	out, err := e.Command("git", "rev-parse", "HEAD")
+	if err != nil {
+		return Result{
+			Name:    name,
+			Status:  "ok",
+			Message: "Could not resolve local git HEAD; skipping staleness check",
+		}
+	}
+	localHEAD := strings.TrimSpace(string(out))
+	if localHEAD == "" {
+		return Result{
+			Name:    name,
+			Status:  "ok",
+			Message: "Could not resolve local git HEAD; skipping staleness check",
+		}
+	}
+	if h.Revision != localHEAD {
+		return Result{
+			Name:   name,
+			Status: "WARN",
+			Message: fmt.Sprintf("daemon binary is running revision %s, but HEAD here is %s",
+				shortRev(h.Revision), shortRev(localHEAD)),
+			Hint: "Rebuild and restart: make restart-service",
+		}
+	}
+	return Result{
+		Name:    name,
+		Status:  "ok",
+		Message: "Daemon binary matches local HEAD revision",
+	}
+}
+
+func shortRev(rev string) string {
+	if len(rev) > 12 {
+		return rev[:12]
+	}
+	return rev
+}
+
 func EvaluateBackup(ctx context.Context, e OSExec, backupDir string, now time.Time) Result {
 	return evaluateBackup(ctx, e, backupDir, now, runtime.GOOS, os.Getuid())
 }
@@ -379,6 +453,7 @@ func RunAll(ctx context.Context, c *client.Client, cfg config.Config) []Result {
 	results = append(results, EvaluateVersionSkew(h))
 
 	e := realExec{}
+	results = append(results, EvaluateBinaryRevision(h, e))
 	home, err := os.UserHomeDir()
 	if err == nil {
 		backupDir := filepath.Join(home, "backups", "af-coordinator")

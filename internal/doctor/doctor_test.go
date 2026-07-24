@@ -69,6 +69,86 @@ func TestEvaluateVersionSkew(t *testing.T) {
 	}
 }
 
+func TestEvaluateBinaryRevision(t *testing.T) {
+	goModOK := func() ([]byte, error) { return []byte("module github.com/abevz/af-coordinator\n"), nil }
+	goModMissing := func() ([]byte, error) { return nil, errors.New("no such file") }
+	goModOther := func() ([]byte, error) { return []byte("module example.com/other\n"), nil }
+
+	tests := []struct {
+		name      string
+		h         *core.Health
+		e         mockExec
+		readGoMod func() ([]byte, error)
+		expected  string
+	}{
+		{
+			name:      "nil health",
+			h:         nil,
+			e:         mockExec{},
+			readGoMod: goModOK,
+			expected:  "WARN",
+		},
+		{
+			name:      "daemon revision unknown",
+			h:         &core.Health{Revision: "unknown"},
+			e:         mockExec{},
+			readGoMod: goModOK,
+			expected:  "ok",
+		},
+		{
+			name:      "daemon revision empty",
+			h:         &core.Health{Revision: ""},
+			e:         mockExec{},
+			readGoMod: goModOK,
+			expected:  "ok",
+		},
+		{
+			name:      "not run from the af-coordinator checkout",
+			h:         &core.Health{Revision: "abc123"},
+			e:         mockExec{cmdOut: []byte("abc123\n")},
+			readGoMod: goModOther,
+			expected:  "ok",
+		},
+		{
+			name:      "no go.mod found",
+			h:         &core.Health{Revision: "abc123"},
+			e:         mockExec{cmdOut: []byte("abc123\n")},
+			readGoMod: goModMissing,
+			expected:  "ok",
+		},
+		{
+			name:      "git rev-parse fails",
+			h:         &core.Health{Revision: "abc123"},
+			e:         mockExec{cmdErr: errors.New("not a git repository")},
+			readGoMod: goModOK,
+			expected:  "ok",
+		},
+		{
+			name:      "revision mismatch",
+			h:         &core.Health{Revision: "deadbeef"},
+			e:         mockExec{cmdOut: []byte("abc123\n")},
+			readGoMod: goModOK,
+			expected:  "WARN",
+		},
+		{
+			name:      "revision match",
+			h:         &core.Health{Revision: "abc123"},
+			e:         mockExec{cmdOut: []byte("abc123\n")},
+			readGoMod: goModOK,
+			expected:  "ok",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			res := evaluateBinaryRevision(tc.h, tc.e, tc.readGoMod)
+			if res.Status != tc.expected {
+				t.Errorf("expected %s, got %s: %s", tc.expected, res.Status, res.Message)
+			}
+		})
+	}
+}
+
 func TestEvaluateConfigMismatch(t *testing.T) {
 	cfg := config.Config{
 		SocketPath: "/tmp/sock",

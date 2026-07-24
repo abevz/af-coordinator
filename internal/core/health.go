@@ -9,4 +9,7 @@ type Health struct {
 	SocketPath string    `json:"socket_path"`
 	Time       time.Time `json:"time"`
 	Version    string    `json:"version"`
+	// Revision is the git commit SHA the running daemon binary was built
+	// from ("unknown" if not embedded at build time). See build.Revision.
+	Revision string `json:"revision,omitempty"`
 }
