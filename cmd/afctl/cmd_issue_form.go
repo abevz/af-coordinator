@@ -12,6 +12,11 @@ import (
 )
 
 func runIssueCreateForm(ctx context.Context, c *client.Client, args []string) error {
+	if hasHelpFlag(args) {
+		fmt.Println("Usage: afctl issue create-form — interactive issue creation wizard (no flags)")
+		return nil
+	}
+
 	actor, _ := resolveActor("")
 
 	projects, err := c.ListProjects(ctx)

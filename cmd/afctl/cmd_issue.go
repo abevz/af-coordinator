@@ -99,9 +99,15 @@ func runIssue(ctx context.Context, c *client.Client, args []string) error {
 	}
 }
 
+const issueCreateUsage = "Usage: afctl issue create --project <key> --scope-kind <project|repository|worktree> --title <title> [--type <task|bug|feature|epic|chore>] [--repo <repo>] [--worktree <worktree>] [--external-key <key>] [--description <desc>] [--acceptance <criteria>] [--priority <n>]"
+
 func runIssueCreate(ctx context.Context, c *client.Client, args []string) error {
+	if hasHelpFlag(args) {
+		fmt.Println(issueCreateUsage)
+		return nil
+	}
 	if len(args) < 4 {
-		return fmt.Errorf("%s", "Usage: afctl issue create --project <key> --scope-kind <project|repository|worktree> --title <title> [--type <task|bug|feature|epic|chore>] [--repo <repo>] [--worktree <worktree>] [--external-key <key>] [--description <desc>] [--acceptance <criteria>] [--priority <n>]")
+		return usageErr(issueCreateUsage, "")
 	}
 
 	var req core.CreateIssueRequest
@@ -162,7 +168,7 @@ func runIssueCreate(ctx context.Context, c *client.Client, args []string) error 
 
 	actor, err := resolveActor("")
 	if err != nil {
-		return fmt.Errorf("%v", err)
+		return usageErr(issueCreateUsage, err.Error())
 	}
 	req.Actor = actor
 
@@ -178,9 +184,15 @@ func runIssueCreate(ctx context.Context, c *client.Client, args []string) error 
 	return nil
 }
 
+const issueGetUsage = "Usage: afctl issue get <issue-id-or-short-id> [--full]"
+
 func runIssueGet(ctx context.Context, c *client.Client, args []string) error {
+	if hasHelpFlag(args) {
+		fmt.Println(issueGetUsage)
+		return nil
+	}
 	if len(args) < 1 {
-		return fmt.Errorf("%s", "Usage: afctl issue get <issue-id-or-short-id> [--full]")
+		return usageErr(issueGetUsage, "")
 	}
 
 	fullView := false
@@ -195,7 +207,7 @@ func runIssueGet(ctx context.Context, c *client.Client, args []string) error {
 	}
 
 	if issueID == "" {
-		return fmt.Errorf("%s", "Usage: afctl issue get <issue-id-or-short-id> [--full]")
+		return usageErr(issueGetUsage, "")
 	}
 
 	issue, lease, err := c.GetIssue(ctx, issueID)
@@ -348,7 +360,13 @@ func issueListFlagValue(args []string, index int, flag string) (string, error) {
 	return args[index+1], nil
 }
 
+const issueReadyUsage = "Usage: afctl issue ready [--project <key>] [--repo <repo>]"
+
 func runIssueReady(ctx context.Context, c *client.Client, args []string) error {
+	if hasHelpFlag(args) {
+		fmt.Println(issueReadyUsage)
+		return nil
+	}
 	project := ""
 	repo := ""
 	for i := 0; i < len(args); i++ {
@@ -941,9 +959,15 @@ func runIssueOperatorRelease(ctx context.Context, c *client.Client, args []strin
 	return nil
 }
 
+const issueLinkUsage = "Usage: afctl issue link <issue-id> [--artifact <id-or-path> | --path <relative-path>] [--repo <name>] [--kind spec] [--relation implements]"
+
 func runIssueLink(ctx context.Context, c *client.Client, args []string) error {
+	if hasHelpFlag(args) {
+		fmt.Println(issueLinkUsage)
+		return nil
+	}
 	if len(args) < 1 {
-		return fmt.Errorf("%s", "Usage: afctl issue link <issue-id> [--artifact <id-or-path> | --path <relative-path>] [--repo <name>] [--kind spec] [--relation implements]")
+		return usageErr(issueLinkUsage, "")
 	}
 
 	issueID := args[0]
@@ -981,10 +1005,10 @@ func runIssueLink(ctx context.Context, c *client.Client, args []string) error {
 	}
 
 	if req.Artifact == "" && path == "" {
-		return fmt.Errorf("%s", "--artifact or --path is required")
+		return usageErr(issueLinkUsage, "--artifact or --path is required")
 	}
 	if req.Artifact != "" && path != "" {
-		return fmt.Errorf("%s", "cannot specify both --artifact and --path")
+		return usageErr(issueLinkUsage, "cannot specify both --artifact and --path")
 	}
 
 	if path != "" {
@@ -994,7 +1018,7 @@ func runIssueLink(ctx context.Context, c *client.Client, args []string) error {
 				return fmt.Errorf("failed to get issue: %w", err)
 			}
 			if issue.RepositoryID == "" {
-				return fmt.Errorf("issue is not repository-scoped, --repo is required with --path")
+				return usageErr(issueLinkUsage, "issue is not repository-scoped, --repo is required with --path")
 			}
 			repo = issue.RepositoryID
 		}
@@ -1024,9 +1048,15 @@ func runIssueLink(ctx context.Context, c *client.Client, args []string) error {
 	return nil
 }
 
+const issueUnlinkUsage = "Usage: afctl issue unlink <issue-id> (--path <relative-path> | --artifact <id-or-path>) [--relation implements]"
+
 func runIssueUnlink(ctx context.Context, c *client.Client, args []string) error {
+	if hasHelpFlag(args) {
+		fmt.Println(issueUnlinkUsage)
+		return nil
+	}
 	if len(args) < 1 {
-		return fmt.Errorf("%s", "Usage: afctl issue unlink <issue-id> (--path <relative-path> | --artifact <id-or-path>) [--relation implements]")
+		return usageErr(issueUnlinkUsage, "")
 	}
 
 	issueID := args[0]
@@ -1034,7 +1064,7 @@ func runIssueUnlink(ctx context.Context, c *client.Client, args []string) error 
 
 	flagValue := func(i int) (string, error) {
 		if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
-			return "", fmt.Errorf("%s requires a value", args[i])
+			return "", usageErr(issueUnlinkUsage, fmt.Sprintf("%s requires a value", args[i]))
 		}
 		return args[i+1], nil
 	}
@@ -1059,7 +1089,7 @@ func runIssueUnlink(ctx context.Context, c *client.Client, args []string) error 
 	}
 
 	if req.Artifact == "" {
-		return fmt.Errorf("%s", "--path or --artifact is required")
+		return usageErr(issueUnlinkUsage, "--path or --artifact is required")
 	}
 
 	act, err := resolveActor("")
@@ -1079,9 +1109,15 @@ func runIssueUnlink(ctx context.Context, c *client.Client, args []string) error 
 	return nil
 }
 
+const issueDependencyUsage = "Usage: afctl issue dependency <add|remove> <issue-id> --depends-on <other-issue> [--kind blocks|parent|related|discovered-from]"
+
 func runIssueDependency(ctx context.Context, c *client.Client, args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("%s", "Usage: afctl issue dependency <add|remove> <issue-id> --depends-on <other-issue> [--kind blocks|parent|related|discovered-from]")
+		return usageErr(issueDependencyUsage, "")
+	}
+	if args[0] == "--help" || args[0] == "-h" || args[0] == "help" {
+		fmt.Println(issueDependencyUsage)
+		return nil
 	}
 
 	switch args[0] {
@@ -1090,7 +1126,7 @@ func runIssueDependency(ctx context.Context, c *client.Client, args []string) er
 	case "remove":
 		return runIssueDependencyRemove(ctx, c, args[1:])
 	default:
-		return fmt.Errorf("unknown dependency subcommand: %s\n", args[0])
+		return usageErr(issueDependencyUsage, fmt.Sprintf("unknown dependency subcommand: %s", args[0]))
 	}
 }
 
@@ -1144,13 +1180,13 @@ func resolveDependencyEdge(issueID string, args []string) (dependencyEdge, error
 		}
 	}
 	if forms == 0 {
-		return dependencyEdge{}, fmt.Errorf("%s", "one of --blocked-by, --blocks, or --depends-on is required")
+		return dependencyEdge{}, fmt.Errorf("one of --blocked-by, --blocks, or --depends-on is required")
 	}
 	if forms > 1 {
-		return dependencyEdge{}, fmt.Errorf("%s", "--blocked-by, --blocks, and --depends-on are mutually exclusive")
+		return dependencyEdge{}, fmt.Errorf("--blocked-by, --blocks, and --depends-on are mutually exclusive")
 	}
 	if (blockedBy != "" || blocks != "") && kind != "" {
-		return dependencyEdge{}, fmt.Errorf("%s", "--kind cannot be combined with --blocked-by or --blocks (both mean kind=blocks)")
+		return dependencyEdge{}, fmt.Errorf("--kind cannot be combined with --blocked-by or --blocks (both mean kind=blocks)")
 	}
 
 	edge := dependencyEdge{target: issueID}
@@ -1176,17 +1212,21 @@ func resolveDependencyEdge(issueID string, args []string) (dependencyEdge, error
 }
 
 func runIssueDependencyAdd(ctx context.Context, c *client.Client, args []string) error {
+	if hasHelpFlag(args) {
+		fmt.Println(dependencyAddUsage)
+		return nil
+	}
 	if len(args) < 1 {
-		return fmt.Errorf("%s", dependencyAddUsage)
+		return usageErr(dependencyAddUsage, "")
 	}
 
 	edge, err := resolveDependencyEdge(args[0], args[1:])
 	if err != nil {
-		return err
+		return usageErr(dependencyAddUsage, err.Error())
 	}
 	act, err := resolveActor("")
 	if err != nil {
-		return err
+		return usageErr(dependencyAddUsage, err.Error())
 	}
 	if err := c.AddDependency(ctx, edge.target, core.AddDependencyRequest{
 		DependsOn: edge.dependsOn,
@@ -1204,9 +1244,15 @@ func runIssueDependencyAdd(ctx context.Context, c *client.Client, args []string)
 	return nil
 }
 
+const dependencyRemoveUsage = "Usage: afctl issue dependency remove <issue-id> (--blocked-by <id> | --blocks <id> | --depends-on <id> [--kind blocks])"
+
 func runIssueDependencyRemove(ctx context.Context, c *client.Client, args []string) error {
+	if hasHelpFlag(args) {
+		fmt.Println(dependencyRemoveUsage)
+		return nil
+	}
 	if len(args) < 1 {
-		return fmt.Errorf("%s", "Usage: afctl issue dependency remove <issue-id> (--blocked-by <id> | --blocks <id> | --depends-on <id> [--kind blocks])")
+		return usageErr(dependencyRemoveUsage, "")
 	}
 
 	issueID := args[0]
@@ -1247,13 +1293,13 @@ func runIssueDependencyRemove(ctx context.Context, c *client.Client, args []stri
 		}
 	}
 	if forms == 0 {
-		return fmt.Errorf("%s", "one of --blocked-by, --blocks, or --depends-on is required")
+		return usageErr(dependencyRemoveUsage, "one of --blocked-by, --blocks, or --depends-on is required")
 	}
 	if forms > 1 {
-		return fmt.Errorf("%s", "--blocked-by, --blocks, and --depends-on are mutually exclusive")
+		return usageErr(dependencyRemoveUsage, "--blocked-by, --blocks, and --depends-on are mutually exclusive")
 	}
 	if (blockedBy != "" || blocks != "") && kindSet {
-		return fmt.Errorf("%s", "--kind cannot be combined with --blocked-by or --blocks (both mean kind=blocks)")
+		return usageErr(dependencyRemoveUsage, "--kind cannot be combined with --blocked-by or --blocks (both mean kind=blocks)")
 	}
 
 	// Mirror the add direction so removal targets the same stored edge.
@@ -1267,7 +1313,7 @@ func runIssueDependencyRemove(ctx context.Context, c *client.Client, args []stri
 
 	act, err := resolveActor("")
 	if err != nil {
-		return err
+		return usageErr(dependencyRemoveUsage, err.Error())
 	}
 
 	if err := c.RemoveDependency(ctx, target, core.RemoveDependencyRequest{
@@ -1287,9 +1333,15 @@ func runIssueDependencyRemove(ctx context.Context, c *client.Client, args []stri
 
 // ─── Issue Note ─────────────────────────────────────────────────────────────
 
+const issueNoteUsage = "Usage: afctl issue note <add|list> <issue-id> [--author <name> --body <text>]"
+
 func runIssueNote(ctx context.Context, c *client.Client, args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("%s", "Usage: afctl issue note <add|list> <issue-id> [--author <name> --body <text>]")
+		return usageErr(issueNoteUsage, "")
+	}
+	if args[0] == "--help" || args[0] == "-h" || args[0] == "help" {
+		fmt.Println(issueNoteUsage)
+		return nil
 	}
 
 	switch args[0] {
@@ -1298,13 +1350,19 @@ func runIssueNote(ctx context.Context, c *client.Client, args []string) error {
 	case "list":
 		return runIssueNoteList(ctx, c, args[1:])
 	default:
-		return fmt.Errorf("unknown note subcommand: %s\n", args[0])
+		return usageErr(issueNoteUsage, fmt.Sprintf("unknown note subcommand: %s", args[0]))
 	}
 }
 
+const issueNoteAddUsage = "Usage: afctl issue note add <issue-id> [--author <name>|--actor <name>] --body <text>"
+
 func runIssueNoteAdd(ctx context.Context, c *client.Client, args []string) error {
+	if hasHelpFlag(args) {
+		fmt.Println(issueNoteAddUsage)
+		return nil
+	}
 	if len(args) < 1 {
-		return fmt.Errorf("%s", "Usage: afctl issue note add <issue-id> [--author <name>|--actor <name>] --body <text>")
+		return usageErr(issueNoteAddUsage, "")
 	}
 
 	issueID := args[0]
@@ -1329,10 +1387,10 @@ func runIssueNoteAdd(ctx context.Context, c *client.Client, args []string) error
 	var err error
 	author, err = resolveActor(author)
 	if err != nil {
-		return fmt.Errorf("%s", err)
+		return usageErr(issueNoteAddUsage, err.Error())
 	}
 	if body == "" {
-		return fmt.Errorf("%s", "--body is required")
+		return usageErr(issueNoteAddUsage, "--body is required")
 	}
 
 	note, err := c.CreateNote(ctx, issueID, author, body)
@@ -1351,9 +1409,15 @@ func runIssueNoteAdd(ctx context.Context, c *client.Client, args []string) error
 	return nil
 }
 
+const issueNoteListUsage = "Usage: afctl issue note list <issue-id>"
+
 func runIssueNoteList(ctx context.Context, c *client.Client, args []string) error {
+	if hasHelpFlag(args) {
+		fmt.Println(issueNoteListUsage)
+		return nil
+	}
 	if len(args) < 1 {
-		return fmt.Errorf("%s", "Usage: afctl issue note list <issue-id>")
+		return usageErr(issueNoteListUsage, "")
 	}
 
 	issueID := args[0]
@@ -1381,22 +1445,32 @@ func runIssueNoteList(ctx context.Context, c *client.Client, args []string) erro
 
 // ─── Issue Events ──────────────────────────────────────────────────────────
 
+const issueEventsUsage = "Usage: afctl issue events list <issue-id>"
+
 func runIssueEvents(ctx context.Context, c *client.Client, args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("%s", "Usage: afctl issue events list <issue-id>")
+		return usageErr(issueEventsUsage, "")
+	}
+	if args[0] == "--help" || args[0] == "-h" || args[0] == "help" {
+		fmt.Println(issueEventsUsage)
+		return nil
 	}
 
 	switch args[0] {
 	case "list":
 		return runIssueEventsList(ctx, c, args[1:])
 	default:
-		return fmt.Errorf("unknown events subcommand: %s\n", args[0])
+		return usageErr(issueEventsUsage, fmt.Sprintf("unknown events subcommand: %s", args[0]))
 	}
 }
 
 func runIssueEventsList(ctx context.Context, c *client.Client, args []string) error {
+	if hasHelpFlag(args) {
+		fmt.Println(issueEventsUsage)
+		return nil
+	}
 	if len(args) < 1 {
-		return fmt.Errorf("%s", "Usage: afctl issue events list <issue-id>")
+		return usageErr(issueEventsUsage, "")
 	}
 
 	issueID := args[0]
