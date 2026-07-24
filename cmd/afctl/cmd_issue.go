@@ -14,9 +14,45 @@ import (
 
 // ─── Issue ───────────────────────────────────────────────────────────────────
 
+const issueUsage = "Usage: afctl issue <create|get|list|ready|claim|heartbeat|release|handoff|update|close|operator-close|operator-reopen>"
+
+// hasHelpFlag reports whether args requests help via --help or -h, checked
+// before any positional argument is consumed so `<cmd> -h` never gets
+// mistaken for `<cmd> <issue-id>`.
+func hasHelpFlag(args []string) bool {
+	for _, a := range args {
+		if a == "--help" || a == "-h" {
+			return true
+		}
+	}
+	return false
+}
+
+// lifecycleHint points an agent stuck on a partial or incorrect invocation
+// of a claim/close/handoff-family command at the authoritative lifecycle
+// contract, instead of leaving it to rediscover required flags one error at
+// a time.
+const lifecycleHint = "run: afctl protocol   (full issue lifecycle: ready -> claim -> heartbeat -> close/handoff)"
+
+// usageErr builds a validation error that always shows the full usage line,
+// not just the one missing or malformed flag, so a caller sees every
+// requirement at once. detail is appended as an additional line when
+// non-empty; fail() in main.go already prefixes the result with "error: ",
+// so detail must not repeat that prefix.
+func usageErr(usage, detail string) error {
+	if detail == "" {
+		return fmt.Errorf("%s", usage)
+	}
+	return fmt.Errorf("%s\n%s", usage, detail)
+}
+
 func runIssue(ctx context.Context, c *client.Client, args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("%s", "Usage: afctl issue <create|get|list|ready|claim|heartbeat|release|handoff|update|close|operator-close|operator-reopen>")
+		return usageErr(issueUsage, "")
+	}
+	if args[0] == "--help" || args[0] == "-h" || args[0] == "help" {
+		fmt.Println(issueUsage)
+		return nil
 	}
 
 	switch args[0] {
@@ -124,7 +160,7 @@ func runIssueCreate(ctx context.Context, c *client.Client, args []string) error 
 
 	actor, err := resolveActor("")
 	if err != nil {
-		return fmt.Errorf("error: %v\n", err)
+		return fmt.Errorf("%v", err)
 	}
 	req.Actor = actor
 
@@ -261,7 +297,7 @@ func parseIssueListArgs(args []string) (core.IssueListParams, bool, error) {
 		switch flag {
 		case "--project", "--status", "--type", "--repo", "--worktree", "--assignee", "--external-key", "--limit", "--offset":
 		default:
-			return core.IssueListParams{}, false, fmt.Errorf("error: unknown flag: %s", flag)
+			return core.IssueListParams{}, false, fmt.Errorf("unknown flag: %s", flag)
 		}
 
 		value, err := issueListFlagValue(args, i, flag)
@@ -292,11 +328,11 @@ func parseIssueListArgs(args []string) (core.IssueListParams, bool, error) {
 			params.ExternalKey = value
 		case "--limit", "--offset":
 			if _, parseErr := strconv.Atoi(value); parseErr != nil {
-				return core.IssueListParams{}, false, fmt.Errorf("error: %s requires an integer", flag)
+				return core.IssueListParams{}, false, fmt.Errorf("%s requires an integer", flag)
 			}
 		}
 		if err != nil {
-			return core.IssueListParams{}, false, fmt.Errorf("error: %s %w", flag, err)
+			return core.IssueListParams{}, false, fmt.Errorf("%s %w", flag, err)
 		}
 		i++
 	}
@@ -305,7 +341,7 @@ func parseIssueListArgs(args []string) (core.IssueListParams, bool, error) {
 
 func issueListFlagValue(args []string, index int, flag string) (string, error) {
 	if index+1 >= len(args) || strings.HasPrefix(args[index+1], "--") {
-		return "", fmt.Errorf("error: %s requires a value", flag)
+		return "", fmt.Errorf("%s requires a value", flag)
 	}
 	return args[index+1], nil
 }
@@ -339,9 +375,15 @@ func runIssueReady(ctx context.Context, c *client.Client, args []string) error {
 	return nil
 }
 
+const issueClaimUsage = "Usage: afctl issue claim <issue-id> [--holder <name>|--actor <name>] [--ttl <seconds>] [--session-id <id>]\n" + lifecycleHint
+
 func runIssueClaim(ctx context.Context, c *client.Client, args []string) error {
+	if hasHelpFlag(args) {
+		fmt.Println(issueClaimUsage)
+		return nil
+	}
 	if len(args) < 1 {
-		return fmt.Errorf("%s", "Usage: afctl issue claim <issue-id> [--holder <name>|--actor <name>] [--ttl <seconds>] [--session-id <id>]")
+		return usageErr(issueClaimUsage, "")
 	}
 
 	issueID := args[0]
@@ -386,12 +428,19 @@ func runIssueClaim(ctx context.Context, c *client.Client, args []string) error {
 	fmt.Printf("Lease Token: %s\n", resp.LeaseToken)
 	fmt.Printf("Attempt ID:  %s\n", resp.AttemptID)
 	fmt.Printf("Expires At:  %s\n", resp.ExpiresAt)
+	fmt.Printf("Version:     %d  (use this for --expected-version on close/handoff, not a value read from `issue get`)\n", resp.Version)
 	return nil
 }
 
+const issueHeartbeatUsage = "Usage: afctl issue heartbeat <issue-id> --lease-token <token> [--ttl <seconds>]\n" + lifecycleHint
+
 func runIssueHeartbeat(ctx context.Context, c *client.Client, args []string) error {
+	if hasHelpFlag(args) {
+		fmt.Println(issueHeartbeatUsage)
+		return nil
+	}
 	if len(args) < 1 {
-		return fmt.Errorf("%s", "Usage: afctl issue heartbeat <issue-id> --lease-token <token> [--ttl <seconds>]")
+		return usageErr(issueHeartbeatUsage, "")
 	}
 
 	issueID := args[0]
@@ -414,7 +463,7 @@ func runIssueHeartbeat(ctx context.Context, c *client.Client, args []string) err
 	}
 
 	if leaseToken == "" {
-		return fmt.Errorf("%s", "error: --lease-token is required")
+		return usageErr(issueHeartbeatUsage, "--lease-token is required")
 	}
 
 	expiresAt, err := c.HeartbeatLease(ctx, issueID, leaseToken, ttl)
@@ -429,9 +478,15 @@ func runIssueHeartbeat(ctx context.Context, c *client.Client, args []string) err
 	return nil
 }
 
+const issueReleaseUsage = "Usage: afctl issue release <issue-id> --lease-token <token>\n" + lifecycleHint
+
 func runIssueRelease(ctx context.Context, c *client.Client, args []string) error {
+	if hasHelpFlag(args) {
+		fmt.Println(issueReleaseUsage)
+		return nil
+	}
 	if len(args) < 1 {
-		return fmt.Errorf("%s", "Usage: afctl issue release <issue-id> --lease-token <token>")
+		return usageErr(issueReleaseUsage, "")
 	}
 
 	issueID := args[0]
@@ -448,7 +503,7 @@ func runIssueRelease(ctx context.Context, c *client.Client, args []string) error
 	}
 
 	if leaseToken == "" {
-		return fmt.Errorf("%s", "error: --lease-token is required")
+		return usageErr(issueReleaseUsage, "--lease-token is required")
 	}
 
 	if err := c.ReleaseLease(ctx, issueID, leaseToken); err != nil {
@@ -462,9 +517,15 @@ func runIssueRelease(ctx context.Context, c *client.Client, args []string) error
 	return nil
 }
 
+const issueHandoffUsage = "Usage: afctl issue handoff <issue-id> --lease-token <token> --note \"HANDOFF: next steps\"\n" + lifecycleHint
+
 func runIssueHandoff(ctx context.Context, c *client.Client, args []string) error {
+	if hasHelpFlag(args) {
+		fmt.Println(issueHandoffUsage)
+		return nil
+	}
 	if len(args) < 1 {
-		return fmt.Errorf("%s", "Usage: afctl issue handoff <issue-id> --lease-token <token> --note \"HANDOFF: next steps\"")
+		return usageErr(issueHandoffUsage, "")
 	}
 
 	issueID := args[0]
@@ -483,14 +544,14 @@ func runIssueHandoff(ctx context.Context, c *client.Client, args []string) error
 				i++
 			}
 		default:
-			return fmt.Errorf("unknown flag for issue handoff: %s", args[i])
+			return usageErr(issueHandoffUsage, fmt.Sprintf("unknown flag: %s", args[i]))
 		}
 	}
 	if leaseToken == "" {
-		return fmt.Errorf("%s", "error: --lease-token is required")
+		return usageErr(issueHandoffUsage, "--lease-token is required")
 	}
 	if err := core.ValidateHandoffRequest(core.HandoffRequest{Note: note}); err != nil {
-		return fmt.Errorf("error: %v", err)
+		return usageErr(issueHandoffUsage, err.Error())
 	}
 
 	resp, err := c.HandoffLease(ctx, issueID, leaseToken, note)
@@ -505,9 +566,15 @@ func runIssueHandoff(ctx context.Context, c *client.Client, args []string) error
 	return nil
 }
 
+const issueUpdateUsage = "Usage: afctl issue update <issue-id> [--title ...] [--type <task|bug|feature|epic|chore>] [--external-key ...] [--description ...] [--acceptance ...] [--priority N] [--assignee ...] [--status ...] --expected-version N [--lease-token ...]"
+
 func runIssueUpdate(ctx context.Context, c *client.Client, args []string) error {
+	if hasHelpFlag(args) {
+		fmt.Println(issueUpdateUsage)
+		return nil
+	}
 	if len(args) < 1 {
-		return fmt.Errorf("%s", "Usage: afctl issue update <issue-id> [--title ...] [--type <task|bug|feature|epic|chore>] [--external-key ...] [--description ...] [--acceptance ...] [--priority N] [--assignee ...] [--status ...] --expected-version N [--lease-token ...]")
+		return usageErr(issueUpdateUsage, "")
 	}
 
 	issueID := args[0]
@@ -570,12 +637,12 @@ func runIssueUpdate(ctx context.Context, c *client.Client, args []string) error 
 	}
 
 	if req.ExpectedVersion < 0 {
-		return fmt.Errorf("%s", "error: --expected-version is required")
+		return usageErr(issueUpdateUsage, "--expected-version is required")
 	}
 
 	actor, err := resolveActor("")
 	if err != nil {
-		return fmt.Errorf("error: %v\n", err)
+		return usageErr(issueUpdateUsage, err.Error())
 	}
 	req.Actor = actor
 
@@ -591,9 +658,15 @@ func runIssueUpdate(ctx context.Context, c *client.Client, args []string) error 
 	return nil
 }
 
+const issueCloseUsage = "Usage: afctl issue close <issue-id> --resolution done|cancelled --expected-version N --lease-token ... [--branch <name>] [--pr-url <url>] [--commit-sha <sha>] [--note \"what was done\"]\n" + lifecycleHint
+
 func runIssueClose(ctx context.Context, c *client.Client, args []string) error {
+	if hasHelpFlag(args) {
+		fmt.Println(issueCloseUsage)
+		return nil
+	}
 	if len(args) < 1 {
-		return fmt.Errorf("%s", "Usage: afctl issue close <issue-id> --resolution done|cancelled --expected-version N --lease-token ... [--branch <name>] [--pr-url <url>] [--commit-sha <sha>] [--note \"what was done\"]")
+		return usageErr(issueCloseUsage, "")
 	}
 
 	issueID := args[0]
@@ -641,18 +714,18 @@ func runIssueClose(ctx context.Context, c *client.Client, args []string) error {
 	}
 
 	if req.Resolution == "" {
-		return fmt.Errorf("%s", "error: --resolution is required (done or cancelled)")
+		return usageErr(issueCloseUsage, "--resolution is required (done or cancelled)")
 	}
 	if req.ExpectedVersion < 0 {
-		return fmt.Errorf("%s", "error: --expected-version is required")
+		return usageErr(issueCloseUsage, "--expected-version is required (use the Version from your most recent `issue claim` response)")
 	}
 	if req.LeaseToken == "" {
-		return fmt.Errorf("%s", "error: --lease-token is required")
+		return usageErr(issueCloseUsage, "--lease-token is required (from `issue claim`)")
 	}
 
 	actor, err := resolveActor("")
 	if err != nil {
-		return fmt.Errorf("error: %v\n", err)
+		return usageErr(issueCloseUsage, err.Error())
 	}
 	req.Actor = actor
 
@@ -680,9 +753,15 @@ func runIssueClose(ctx context.Context, c *client.Client, args []string) error {
 	return nil
 }
 
+const issueOperatorCloseUsage = "Usage: afctl issue operator-close <issue-id> --resolution done|cancelled --expected-version N --reason \"why operator closure is needed\"\n" + lifecycleHint
+
 func runIssueOperatorClose(ctx context.Context, c *client.Client, args []string) error {
+	if hasHelpFlag(args) {
+		fmt.Println(issueOperatorCloseUsage)
+		return nil
+	}
 	if len(args) < 1 {
-		return fmt.Errorf("%s", "Usage: afctl issue operator-close <issue-id> --resolution done|cancelled --expected-version N --reason \"why operator closure is needed\"")
+		return usageErr(issueOperatorCloseUsage, "")
 	}
 
 	issueID := args[0]
@@ -705,27 +784,27 @@ func runIssueOperatorClose(ctx context.Context, c *client.Client, args []string)
 				i++
 			}
 		default:
-			return fmt.Errorf("unknown flag for issue operator-close: %s", args[i])
+			return usageErr(issueOperatorCloseUsage, fmt.Sprintf("unknown flag: %s", args[i]))
 		}
 	}
 	if req.Resolution == "" {
-		return fmt.Errorf("%s", "error: --resolution is required (done or cancelled)")
+		return usageErr(issueOperatorCloseUsage, "--resolution is required (done or cancelled)")
 	}
 	if req.ExpectedVersion <= 0 {
-		return fmt.Errorf("%s", "error: --expected-version is required")
+		return usageErr(issueOperatorCloseUsage, "--expected-version is required")
 	}
 	if strings.TrimSpace(req.Reason) == "" {
-		return fmt.Errorf("%s", "error: --reason is required")
+		return usageErr(issueOperatorCloseUsage, "--reason is required")
 	}
 	actor, err := resolveActor("")
 	if err != nil {
-		return fmt.Errorf("error: %v\n", err)
+		return usageErr(issueOperatorCloseUsage, err.Error())
 	}
 	req.Actor = actor
 
 	token := os.Getenv("AF_OPERATOR_TOKEN")
 	if token == "" {
-		return fmt.Errorf("%s", "error: AF_OPERATOR_TOKEN environment variable is required")
+		return usageErr(issueOperatorCloseUsage, "AF_OPERATOR_TOKEN environment variable is required")
 	}
 	c.SetOperatorToken(token)
 
@@ -741,9 +820,15 @@ func runIssueOperatorClose(ctx context.Context, c *client.Client, args []string)
 	return nil
 }
 
+const issueOperatorReopenUsage = "Usage: afctl issue operator-reopen <issue-id> --expected-version N --reason \"why work is reopening\"\n" + lifecycleHint
+
 func runIssueOperatorReopen(ctx context.Context, c *client.Client, args []string) error {
+	if hasHelpFlag(args) {
+		fmt.Println(issueOperatorReopenUsage)
+		return nil
+	}
 	if len(args) < 1 {
-		return fmt.Errorf("%s", "Usage: afctl issue operator-reopen <issue-id> --expected-version N --reason \"why work is reopening\"")
+		return usageErr(issueOperatorReopenUsage, "")
 	}
 
 	issueID := args[0]
@@ -761,24 +846,24 @@ func runIssueOperatorReopen(ctx context.Context, c *client.Client, args []string
 				i++
 			}
 		default:
-			return fmt.Errorf("unknown flag for issue operator-reopen: %s", args[i])
+			return usageErr(issueOperatorReopenUsage, fmt.Sprintf("unknown flag: %s", args[i]))
 		}
 	}
 	if req.ExpectedVersion <= 0 {
-		return fmt.Errorf("%s", "error: --expected-version is required")
+		return usageErr(issueOperatorReopenUsage, "--expected-version is required")
 	}
 	if strings.TrimSpace(req.Reason) == "" {
-		return fmt.Errorf("%s", "error: --reason is required")
+		return usageErr(issueOperatorReopenUsage, "--reason is required")
 	}
 	actor, err := resolveActor("")
 	if err != nil {
-		return fmt.Errorf("error: %v\n", err)
+		return usageErr(issueOperatorReopenUsage, err.Error())
 	}
 	req.Actor = actor
 
 	token := os.Getenv("AF_OPERATOR_TOKEN")
 	if token == "" {
-		return fmt.Errorf("%s", "error: AF_OPERATOR_TOKEN environment variable is required")
+		return usageErr(issueOperatorReopenUsage, "AF_OPERATOR_TOKEN environment variable is required")
 	}
 	c.SetOperatorToken(token)
 
@@ -834,10 +919,10 @@ func runIssueLink(ctx context.Context, c *client.Client, args []string) error {
 	}
 
 	if req.Artifact == "" && path == "" {
-		return fmt.Errorf("%s", "error: --artifact or --path is required")
+		return fmt.Errorf("%s", "--artifact or --path is required")
 	}
 	if req.Artifact != "" && path != "" {
-		return fmt.Errorf("%s", "error: cannot specify both --artifact and --path")
+		return fmt.Errorf("%s", "cannot specify both --artifact and --path")
 	}
 
 	if path != "" {
@@ -847,7 +932,7 @@ func runIssueLink(ctx context.Context, c *client.Client, args []string) error {
 				return fmt.Errorf("failed to get issue: %w", err)
 			}
 			if issue.RepositoryID == "" {
-				return fmt.Errorf("error: issue is not repository-scoped, --repo is required with --path")
+				return fmt.Errorf("issue is not repository-scoped, --repo is required with --path")
 			}
 			repo = issue.RepositoryID
 		}
@@ -887,7 +972,7 @@ func runIssueUnlink(ctx context.Context, c *client.Client, args []string) error 
 
 	flagValue := func(i int) (string, error) {
 		if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
-			return "", fmt.Errorf("error: %s requires a value", args[i])
+			return "", fmt.Errorf("%s requires a value", args[i])
 		}
 		return args[i+1], nil
 	}
@@ -912,7 +997,7 @@ func runIssueUnlink(ctx context.Context, c *client.Client, args []string) error 
 	}
 
 	if req.Artifact == "" {
-		return fmt.Errorf("%s", "error: --path or --artifact is required")
+		return fmt.Errorf("%s", "--path or --artifact is required")
 	}
 
 	act, err := resolveActor("")
@@ -997,13 +1082,13 @@ func resolveDependencyEdge(issueID string, args []string) (dependencyEdge, error
 		}
 	}
 	if forms == 0 {
-		return dependencyEdge{}, fmt.Errorf("%s", "error: one of --blocked-by, --blocks, or --depends-on is required")
+		return dependencyEdge{}, fmt.Errorf("%s", "one of --blocked-by, --blocks, or --depends-on is required")
 	}
 	if forms > 1 {
-		return dependencyEdge{}, fmt.Errorf("%s", "error: --blocked-by, --blocks, and --depends-on are mutually exclusive")
+		return dependencyEdge{}, fmt.Errorf("%s", "--blocked-by, --blocks, and --depends-on are mutually exclusive")
 	}
 	if (blockedBy != "" || blocks != "") && kind != "" {
-		return dependencyEdge{}, fmt.Errorf("%s", "error: --kind cannot be combined with --blocked-by or --blocks (both mean kind=blocks)")
+		return dependencyEdge{}, fmt.Errorf("%s", "--kind cannot be combined with --blocked-by or --blocks (both mean kind=blocks)")
 	}
 
 	edge := dependencyEdge{target: issueID}
@@ -1100,13 +1185,13 @@ func runIssueDependencyRemove(ctx context.Context, c *client.Client, args []stri
 		}
 	}
 	if forms == 0 {
-		return fmt.Errorf("%s", "error: one of --blocked-by, --blocks, or --depends-on is required")
+		return fmt.Errorf("%s", "one of --blocked-by, --blocks, or --depends-on is required")
 	}
 	if forms > 1 {
-		return fmt.Errorf("%s", "error: --blocked-by, --blocks, and --depends-on are mutually exclusive")
+		return fmt.Errorf("%s", "--blocked-by, --blocks, and --depends-on are mutually exclusive")
 	}
 	if (blockedBy != "" || blocks != "") && kindSet {
-		return fmt.Errorf("%s", "error: --kind cannot be combined with --blocked-by or --blocks (both mean kind=blocks)")
+		return fmt.Errorf("%s", "--kind cannot be combined with --blocked-by or --blocks (both mean kind=blocks)")
 	}
 
 	// Mirror the add direction so removal targets the same stored edge.
@@ -1185,7 +1270,7 @@ func runIssueNoteAdd(ctx context.Context, c *client.Client, args []string) error
 		return fmt.Errorf("%s", err)
 	}
 	if body == "" {
-		return fmt.Errorf("%s", "error: --body is required")
+		return fmt.Errorf("%s", "--body is required")
 	}
 
 	note, err := c.CreateNote(ctx, issueID, author, body)

@@ -1,5 +1,11 @@
 # Agent Protocol v1
 
+Any `afctl issue` lifecycle subcommand (`claim`, `heartbeat`, `release`,
+`handoff`, `close`, `operator-close`, `operator-reopen`) prints its full
+`Usage:` line — not just the one missing flag — on any validation error, and
+accepts `-h`/`--help` to print the same usage without side effects or a
+daemon round trip.
+
 ## Session loop
 
 Every agent session follows this cycle:
@@ -22,10 +28,16 @@ Every agent session follows this cycle:
    ```
    afctl issue claim <short_id> --actor <name> --ttl 900 [--session-id <non-secret-id>]
    ```
-   Exports `lease_token` and `attempt_id`. Keep the token secret — it proves
-   your right to mutate the issue. The attempt ID is safe lifecycle
+   Exports `lease_token`, `attempt_id`, and `version`. Keep the token secret —
+   it proves your right to mutate the issue. The attempt ID is safe lifecycle
    correlation; an optional session ID must also be non-secret and never
    changes the acting identity.
+
+   Claiming increments the issue's version as a side effect. **Use the
+   `version` from this claim response — not one read earlier from `issue
+   get`** — as `--expected-version` on the close/handoff that ends this
+   attempt; a version read before claiming is stale the instant the claim
+   succeeds and will fail with `version_conflict` (exit code 2).
 
    Default TTL is 3600s. Use `--ttl 900` for shorter leases.
 

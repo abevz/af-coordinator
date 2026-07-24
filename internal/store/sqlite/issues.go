@@ -363,7 +363,8 @@ func ClaimIssueWithSession(ctx context.Context, db *sql.DB, issueID, holder stri
 
 	// Check issue exists and is open.
 	var status, issueType string
-	err = tx.QueryRowContext(ctx, `SELECT status, issue_type FROM issues WHERE id = ?`, issueID).Scan(&status, &issueType)
+	var version int
+	err = tx.QueryRowContext(ctx, `SELECT status, issue_type, version FROM issues WHERE id = ?`, issueID).Scan(&status, &issueType, &version)
 	if err == sql.ErrNoRows {
 		return core.ClaimResponse{}, core.NewAPIError(core.ErrNotFound, "issue not found: "+issueID)
 	}
@@ -424,6 +425,7 @@ func ClaimIssueWithSession(ctx context.Context, db *sql.DB, issueID, holder stri
 			LeaseToken: existingToken,
 			ExpiresAt:  newExpiry,
 			AttemptID:  existingAttemptID,
+			Version:    version,
 			Reattached: true,
 		}, nil
 	}
@@ -501,7 +503,7 @@ func ClaimIssueWithSession(ctx context.Context, db *sql.DB, issueID, holder stri
 		return core.ClaimResponse{}, fmt.Errorf("commit tx: %w", err)
 	}
 
-	return core.ClaimResponse{LeaseToken: leaseToken, ExpiresAt: expiresAt, AttemptID: attemptID}, nil
+	return core.ClaimResponse{LeaseToken: leaseToken, ExpiresAt: expiresAt, AttemptID: attemptID, Version: version + 1}, nil
 }
 
 // HeartbeatLease extends the TTL on an existing lease.
