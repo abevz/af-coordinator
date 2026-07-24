@@ -723,6 +723,12 @@ func runIssueOperatorClose(ctx context.Context, c *client.Client, args []string)
 	}
 	req.Actor = actor
 
+	token := os.Getenv("AF_OPERATOR_TOKEN")
+	if token == "" {
+		return fmt.Errorf("%s", "error: AF_OPERATOR_TOKEN environment variable is required")
+	}
+	c.SetOperatorToken(token)
+
 	result, err := c.OperatorCloseIssue(ctx, issueID, req)
 	if err != nil {
 		fail(err)
@@ -769,6 +775,12 @@ func runIssueOperatorReopen(ctx context.Context, c *client.Client, args []string
 		return fmt.Errorf("error: %v\n", err)
 	}
 	req.Actor = actor
+
+	token := os.Getenv("AF_OPERATOR_TOKEN")
+	if token == "" {
+		return fmt.Errorf("%s", "error: AF_OPERATOR_TOKEN environment variable is required")
+	}
+	c.SetOperatorToken(token)
 
 	issue, err := c.OperatorReopenIssue(ctx, issueID, req)
 	if err != nil {

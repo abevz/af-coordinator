@@ -30,8 +30,9 @@ func (e *ClientError) Error() string {
 
 // Client is an HTTP client that connects to the daemon over a Unix socket.
 type Client struct {
-	socketPath string
-	httpClient *http.Client
+	socketPath    string
+	httpClient    *http.Client
+	operatorToken string
 }
 
 // New creates a new Client connected to the given Unix socket path.
@@ -539,6 +540,11 @@ func (c *Client) ListReadyIssues(ctx context.Context, project, repo string) ([]c
 	return result.Issues, nil
 }
 
+// SetOperatorToken sets the bearer token used for operator-authorization requests.
+func (c *Client) SetOperatorToken(token string) {
+	c.operatorToken = token
+}
+
 // doJSON performs an HTTP request and decodes the JSON response.
 func (c *Client) doJSON(ctx context.Context, method, path string, body any, target any) error {
 	var reqBody []byte
@@ -555,6 +561,9 @@ func (c *Client) doJSON(ctx context.Context, method, path string, body any, targ
 		return fmt.Errorf("build request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if c.operatorToken != "" {
+		req.Header.Set("Authorization", "Bearer "+c.operatorToken)
+	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
