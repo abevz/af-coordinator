@@ -136,6 +136,8 @@ This is the compact route-to-implementation inventory for the current daemon.
   `sqlite.OperatorCloseIssue`
 - `POST /v1/issues/{issue_id}/operator-reopen` -> `handleOperatorReopenIssue` ->
   `sqlite.OperatorReopenIssue`
+- `POST /v1/issues/{issue_id}/operator-release` -> `handleOperatorReleaseIssue`
+  -> `sqlite.OperatorReleaseIssue`
 - `POST /v1/issues/{issue_id}/dependencies` -> `handleAddDependency` ->
   `sqlite.AddDependency`
 - `DELETE /v1/issues/{issue_id}/dependencies/{depends_on}?kind=` ->
@@ -254,15 +256,27 @@ This is the compact route-to-implementation inventory for the current daemon.
   for reopening `done` or `cancelled` work. Requires `expected_version`,
   `actor`, and non-empty `reason`; it never accepts a lease token and emits
   `issue_reopened` with the source and target status.
+- `POST /v1/issues/{issue_id}/operator-release` — explicit local-operator
+  recovery path for an issue stuck `in_progress` because its lease token was
+  lost before TTL expiry. Requires `expected_version`, `actor`, and
+  non-empty `reason`; it never accepts a lease token, only accepts an
+  `in_progress` issue, clears the lease, and returns the issue directly to
+  `open` (no terminal transition) via `issue_operator_released`.
 
 ## Leases
 
 - `POST /v1/issues/{issue_id}/claim` — body: `holder`, `ttl_seconds`, and
-  optional non-secret `session_id`; returns `lease_token`, `expires_at`, and
-  daemon-generated `attempt_id`. The attempt ID correlates lifecycle events;
-  the lease token remains secret and never appears in events or issue reads.
-  Claim fails `lease_held` if an unexpired lease exists, moves the issue
-  `open -> in_progress`, and rejects epics with `validation_failed`.
+  optional non-secret `session_id`; returns `lease_token`, `expires_at`,
+  daemon-generated `attempt_id`, and `version`. Claiming increments the
+  issue's version as a side effect, so this returned `version` — not one
+  read earlier via `GET /v1/issues/{issue_id}` — is what a caller must use
+  as `expected_version` on the close/handoff that ends this attempt. The
+  attempt ID correlates lifecycle events; the lease token remains secret and
+  never appears in events or issue reads. Claim fails `lease_held` if an
+  unexpired lease exists, moves the issue `open -> in_progress`, and rejects
+  epics with `validation_failed`. A same-holder reattach to an already-active
+  lease returns the existing lease's `version` unchanged (reattaching does
+  not itself bump it) with `reattached: true`.
 - `POST /v1/issues/{issue_id}/heartbeat` — body: `lease_token`,
   `ttl_seconds`; extends `expires_at`; appends no event
 - `POST /v1/issues/{issue_id}/release` — body: `lease_token`; deletes the
