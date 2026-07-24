@@ -141,6 +141,9 @@ manifest, and installs the three binaries into `~/.local/bin` by default.
 make test
 ```
 
+CI (`.github/workflows/ci.yml`) runs `vet`, a `gofmt -l` check, `golangci-lint`, `test`, and
+`build` on every pull request and on push to `main`; a PR must be green before merging.
+
 ### Run the daemon
 
 ```bash

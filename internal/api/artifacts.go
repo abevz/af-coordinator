@@ -58,12 +58,12 @@ func handleListArtifactRoots(st store.CoordinatorStore, logger *slog.Logger) htt
 
 		if repoFilter != "" {
 			// Verify the repo exists first.
-			repo, err := st.GetRepo(r.Context(), repoFilter)
-			if err != nil {
-				if writeRepoLookupError(w, err, repoFilter) {
+			repo, getErr := st.GetRepo(r.Context(), repoFilter)
+			if getErr != nil {
+				if writeRepoLookupError(w, getErr, repoFilter) {
 					return
 				}
-				logger.Error("failed to resolve repo for artifact root list", "repo", repoFilter, "error", err)
+				logger.Error("failed to resolve repo for artifact root list", "repo", repoFilter, "error", getErr)
 				writeError(w, http.StatusInternalServerError, "internal_error", "failed to resolve repository")
 				return
 			}
@@ -131,12 +131,12 @@ func handleListArtifacts(st store.CoordinatorStore, logger *slog.Logger) http.Ha
 
 		if repoFilter != "" {
 			// Verify the repo exists first.
-			repo, err := st.GetRepo(r.Context(), repoFilter)
-			if err != nil {
-				if writeRepoLookupError(w, err, repoFilter) {
+			repo, getErr := st.GetRepo(r.Context(), repoFilter)
+			if getErr != nil {
+				if writeRepoLookupError(w, getErr, repoFilter) {
 					return
 				}
-				logger.Error("failed to resolve repo for artifact list", "repo", repoFilter, "error", err)
+				logger.Error("failed to resolve repo for artifact list", "repo", repoFilter, "error", getErr)
 				writeError(w, http.StatusInternalServerError, "internal_error", "failed to resolve repository")
 				return
 			}
