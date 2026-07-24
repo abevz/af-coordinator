@@ -612,7 +612,7 @@ func runIssueHandoff(ctx context.Context, c *client.Client, args []string) error
 	return nil
 }
 
-const issueUpdateUsage = "Usage: afctl issue update <issue-id> [--title ...] [--type <task|bug|feature|epic|chore>] [--external-key ...] [--description ...] [--acceptance ...] [--priority N] [--assignee ...] [--status ...] --expected-version N [--lease-token ...]"
+const issueUpdateUsage = "Usage: afctl issue update <issue-id> [--title ...] [--type <task|bug|feature|epic|chore>] [--external-key ...] [--description ...] [--acceptance ...] [--priority N] [--assignee ...] [--status ...] --expected-version N [--lease-token ...] [--release]"
 
 func runIssueUpdate(ctx context.Context, c *client.Client, args []string) error {
 	if hasHelpFlag(args) {
@@ -679,6 +679,8 @@ func runIssueUpdate(ctx context.Context, c *client.Client, args []string) error 
 				req.LeaseToken = args[i+1]
 				i++
 			}
+		case "--release":
+			req.ReleaseLease = true
 		}
 	}
 
