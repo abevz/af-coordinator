@@ -53,10 +53,10 @@ func parseStatsArgs(args []string) (report.Query, bool, error) {
 		switch flag {
 		case "--project", "--repo", "--since", "--until":
 		default:
-			return report.Query{}, false, fmt.Errorf("error: unknown flag: %s", flag)
+			return report.Query{}, false, fmt.Errorf("unknown flag: %s", flag)
 		}
 		if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
-			return report.Query{}, false, fmt.Errorf("error: %s requires a value", flag)
+			return report.Query{}, false, fmt.Errorf("%s requires a value", flag)
 		}
 		value := args[i+1]
 		switch flag {

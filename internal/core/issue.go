@@ -167,6 +167,12 @@ type ClaimResponse struct {
 	LeaseToken string `json:"lease_token"`
 	ExpiresAt  string `json:"expires_at"`
 	AttemptID  string `json:"attempt_id"`
+	// Version is the issue's version immediately after this claim. Claiming
+	// increments the issue version as a side effect, so this is the value to
+	// pass as --expected-version on the close/handoff that ends this attempt
+	// — not a version read earlier from `issue get`, which is stale the
+	// instant a claim succeeds.
+	Version int `json:"version"`
 	// Reattached is true when the same holder reattached to an existing active
 	// lease rather than opening a fresh claim. The LeaseToken and AttemptID
 	// are those of the original claim.

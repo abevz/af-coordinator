@@ -60,7 +60,7 @@ func runRepoAdd(ctx context.Context, c *client.Client, args []string) error {
 		case "--remotes":
 			if i+1 < len(args) {
 				if err := json.Unmarshal([]byte(args[i+1]), &req.Remotes); err != nil {
-					return fmt.Errorf("error: invalid --remotes JSON: %v\n", err)
+					return fmt.Errorf("invalid --remotes JSON: %v", err)
 				}
 				i++
 			}

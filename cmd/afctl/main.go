@@ -49,6 +49,10 @@ func main() {
 		printUsage()
 		os.Exit(1)
 	}
+	if filtered[0] == "-h" || filtered[0] == "--help" || filtered[0] == "help" {
+		printUsage()
+		return
+	}
 
 	c := client.New(cfg.SocketPath)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -105,7 +109,7 @@ func shouldCheckDaemonVersion(args []string) bool {
 	if len(args) == 0 || args[0] == "init" || args[0] == "protocol" {
 		return false
 	}
-	for _, arg := range args[1:] {
+	for _, arg := range args {
 		if arg == "--help" || arg == "-h" {
 			return false
 		}

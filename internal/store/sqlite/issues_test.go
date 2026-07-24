@@ -639,6 +639,16 @@ func TestClaimIssue(t *testing.T) {
 	if got.Status != "in_progress" {
 		t.Errorf("expected status 'in_progress', got %q", got.Status)
 	}
+	// The claim response's Version must already reflect the increment that
+	// claiming performs as a side effect, so a caller can use it directly as
+	// --expected-version on close without a stale value read from an earlier
+	// `issue get`.
+	if claim.Version != got.Version {
+		t.Errorf("expected claim response version %d to match post-claim issue version %d", claim.Version, got.Version)
+	}
+	if claim.Version != issue.Version+1 {
+		t.Errorf("expected claim to increment version from %d to %d, got %d", issue.Version, issue.Version+1, claim.Version)
+	}
 	if lease == nil {
 		t.Fatal("expected active lease")
 	}
@@ -3834,6 +3844,9 @@ func TestClaimIssueSameHolderReattach(t *testing.T) {
 			}
 			if tc.wantAttemptID != "" && resp.AttemptID != tc.wantAttemptID {
 				t.Errorf("AttemptID = %q, want %q", resp.AttemptID, tc.wantAttemptID)
+			}
+			if tc.name == "same_holder_reattach" && resp.Version != firstResp.Version {
+				t.Errorf("reattach must not change version: got %d, want %d (from initial claim)", resp.Version, firstResp.Version)
 			}
 		})
 	}

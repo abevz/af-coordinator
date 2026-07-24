@@ -90,27 +90,27 @@ func TestRunIssueUnlinkRequiresFlagValues(t *testing.T) {
 		{
 			name:    "path missing value",
 			args:    []string{"afc-1", "--path"},
-			wantErr: "error: --path requires a value",
+			wantErr: "--path requires a value",
 		},
 		{
 			name:    "artifact missing value",
 			args:    []string{"afc-1", "--artifact"},
-			wantErr: "error: --artifact requires a value",
+			wantErr: "--artifact requires a value",
 		},
 		{
 			name:    "relation missing value",
 			args:    []string{"afc-1", "--artifact", "docs/spec.md", "--relation"},
-			wantErr: "error: --relation requires a value",
+			wantErr: "--relation requires a value",
 		},
 		{
 			name:    "artifact value is another flag",
 			args:    []string{"afc-1", "--artifact", "--relation", "implements"},
-			wantErr: "error: --artifact requires a value",
+			wantErr: "--artifact requires a value",
 		},
 		{
 			name:    "relation value is another flag",
 			args:    []string{"afc-1", "--artifact", "docs/spec.md", "--relation", "--path"},
-			wantErr: "error: --relation requires a value",
+			wantErr: "--relation requires a value",
 		},
 	}
 
@@ -181,6 +181,59 @@ func TestIssueHandoffValidatesRequiredHandoffNote(t *testing.T) {
 			err := runIssue(context.Background(), nil, tt.args)
 			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 				t.Fatalf("error = %v, want %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// TestIssueLifecycleCommandsShowFullUsageOnError verifies that claim/close-
+// family commands print the complete Usage: line plus a pointer to `afctl
+// protocol` on any validation failure, instead of only the single missing
+// flag, and that -h/--help short-circuits to the same usage without
+// touching the (nil) client.
+func TestIssueLifecycleCommandsShowFullUsageOnError(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "claim missing id", args: []string{"claim"}},
+		{name: "heartbeat missing lease token", args: []string{"heartbeat", "afc-1"}},
+		{name: "release missing lease token", args: []string{"release", "afc-1"}},
+		{name: "handoff missing lease token", args: []string{"handoff", "afc-1"}},
+		{name: "close missing everything", args: []string{"close", "afc-1"}},
+		{name: "close missing expected-version", args: []string{"close", "afc-1", "--resolution", "done", "--lease-token", "t"}},
+		{name: "close missing lease-token", args: []string{"close", "afc-1", "--resolution", "done", "--expected-version", "2"}},
+		{name: "operator-close missing everything", args: []string{"operator-close", "afc-1"}},
+		{name: "operator-reopen missing everything", args: []string{"operator-reopen", "afc-1"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := runIssue(context.Background(), nil, tt.args)
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			if !strings.Contains(err.Error(), "Usage: afctl issue "+tt.args[0]) {
+				t.Errorf("error = %q, want it to contain the full Usage: line for %q", err.Error(), tt.args[0])
+			}
+			if !strings.Contains(err.Error(), "run: afctl protocol") {
+				t.Errorf("error = %q, want it to point at `afctl protocol`", err.Error())
+			}
+		})
+	}
+}
+
+func TestIssueLifecycleCommandsHelpFlagShortCircuits(t *testing.T) {
+	subcommands := []string{"claim", "heartbeat", "release", "handoff", "close", "operator-close", "operator-reopen"}
+	for _, sub := range subcommands {
+		t.Run(sub, func(t *testing.T) {
+			// A nil client would panic if the command tried to reach the
+			// daemon; a nil-error return proves -h short-circuited first.
+			if err := runIssue(context.Background(), nil, []string{sub, "-h"}); err != nil {
+				t.Errorf("runIssue(%q, -h) = %v, want nil", sub, err)
+			}
+			if err := runIssue(context.Background(), nil, []string{sub, "--help"}); err != nil {
+				t.Errorf("runIssue(%q, --help) = %v, want nil", sub, err)
 			}
 		})
 	}

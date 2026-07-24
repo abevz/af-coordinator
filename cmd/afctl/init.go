@@ -42,7 +42,7 @@ func runInit(args []string) error {
 		case "--json":
 			// Already parsed globally, ignore
 		default:
-			return fmt.Errorf("error: unknown flag: %s\n", args[i])
+			return fmt.Errorf("unknown flag: %s", args[i])
 		}
 	}
 
