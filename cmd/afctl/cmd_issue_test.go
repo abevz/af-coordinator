@@ -247,3 +247,72 @@ func TestIssueLifecycleCommandsHelpFlagShortCircuits(t *testing.T) {
 		})
 	}
 }
+
+// TestNonLifecycleIssueCommandsShowFullUsageOnError extends the afc-76
+// full-usage-on-error treatment (originally only claim/close-family
+// commands) to the remaining issue subcommands. These don't carry
+// lifecycleHint -- it's specific to the claim/close lease lifecycle -- so
+// only the full Usage: line is asserted, not the protocol pointer.
+func TestNonLifecycleIssueCommandsShowFullUsageOnError(t *testing.T) {
+	tests := []struct {
+		name      string
+		args      []string
+		wantUsage string
+	}{
+		{name: "create missing everything", args: []string{"create"}, wantUsage: "Usage: afctl issue create"},
+		{name: "get missing id", args: []string{"get"}, wantUsage: "Usage: afctl issue get"},
+		{name: "link missing everything", args: []string{"link", "afc-1"}, wantUsage: "Usage: afctl issue link"},
+		{name: "unlink missing everything", args: []string{"unlink", "afc-1"}, wantUsage: "Usage: afctl issue unlink"},
+		{name: "dependency missing subcommand", args: []string{"dependency"}, wantUsage: "Usage: afctl issue dependency "},
+		{name: "dependency add missing everything", args: []string{"dependency", "add", "afc-1"}, wantUsage: "Usage: afctl issue dependency add"},
+		{name: "dependency remove missing everything", args: []string{"dependency", "remove", "afc-1"}, wantUsage: "Usage: afctl issue dependency remove"},
+		{name: "note missing subcommand", args: []string{"note"}, wantUsage: "Usage: afctl issue note "},
+		{name: "note add missing body", args: []string{"note", "add", "afc-1"}, wantUsage: "Usage: afctl issue note add"},
+		{name: "note list missing id", args: []string{"note", "list"}, wantUsage: "Usage: afctl issue note list"},
+		{name: "events missing subcommand", args: []string{"events"}, wantUsage: "Usage: afctl issue events"},
+		{name: "events list missing id", args: []string{"events", "list"}, wantUsage: "Usage: afctl issue events list"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := runIssue(context.Background(), nil, tt.args)
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			if !strings.Contains(err.Error(), tt.wantUsage) {
+				t.Errorf("error = %q, want it to contain %q", err.Error(), tt.wantUsage)
+			}
+		})
+	}
+}
+
+func TestNonLifecycleIssueCommandsHelpFlagShortCircuits(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "create", args: []string{"create", "-h"}},
+		{name: "get", args: []string{"get", "-h"}},
+		{name: "ready", args: []string{"ready", "-h"}},
+		{name: "link", args: []string{"link", "-h"}},
+		{name: "unlink", args: []string{"unlink", "-h"}},
+		{name: "dependency", args: []string{"dependency", "-h"}},
+		{name: "dependency add", args: []string{"dependency", "add", "-h"}},
+		{name: "dependency remove", args: []string{"dependency", "remove", "-h"}},
+		{name: "note", args: []string{"note", "-h"}},
+		{name: "note add", args: []string{"note", "add", "-h"}},
+		{name: "note list", args: []string{"note", "list", "-h"}},
+		{name: "events", args: []string{"events", "-h"}},
+		{name: "events list", args: []string{"events", "list", "-h"}},
+		{name: "create-form", args: []string{"create-form", "-h"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// A nil client would panic if the command tried to reach the
+			// daemon; a nil-error return proves -h short-circuited first.
+			if err := runIssue(context.Background(), nil, tt.args); err != nil {
+				t.Errorf("runIssue(%v) = %v, want nil", tt.args, err)
+			}
+		})
+	}
+}
