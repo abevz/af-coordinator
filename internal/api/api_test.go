@@ -1771,6 +1771,83 @@ func TestOperatorCloseAndReopenIssue(t *testing.T) {
 	}
 }
 
+func TestOperatorCloseIssueWithMetadata(t *testing.T) {
+	server, db := newTestServer(t)
+	now := time.Now().UTC().Format(time.RFC3339)
+	t.Setenv("AF_OPERATOR_TOKEN", "test-token")
+	if _, err := db.Exec(
+		`INSERT INTO projects (id, key, name, description, next_issue_seq, created_at, updated_at)
+		 VALUES ('proj-1', 'test', 'Test', '', 1, ?, ?)`, now, now,
+	); err != nil {
+		t.Fatal(err)
+	}
+	issueID := "issue-meta"
+	if _, err := db.Exec(
+		`INSERT INTO issues (id, short_id, project_id, scope_kind, title, description, status, priority, assignee, version, created_at, updated_at)
+		 VALUES (?, 'test-1', 'proj-1', 'project', 'Meta close', '', 'open', 3, '', 1, ?, ?)`,
+		issueID, now, now,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	body := `{"resolution":"done","expected_version":1,"actor":"operator","reason":"merged via PR","branch":"feat/close-meta","pr_url":"https://github.com/example/repo/pull/99","commit_sha":"abc123def","note":"Closed via operator after merge"}`
+	req, err := http.NewRequest(http.MethodPost, server.URL+"/v1/issues/"+issueID+"/operator-close", strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer test-token")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Status     string `json:"status"`
+		Resolution string `json:"resolution"`
+		Branch     string `json:"branch"`
+		PRURL      string `json:"pr_url"`
+		CommitSHA  string `json:"commit_sha"`
+		ClosedAt   string `json:"closed_at"`
+	}
+	result = decodeJSON[struct {
+		Status     string `json:"status"`
+		Resolution string `json:"resolution"`
+		Branch     string `json:"branch"`
+		PRURL      string `json:"pr_url"`
+		CommitSHA  string `json:"commit_sha"`
+		ClosedAt   string `json:"closed_at"`
+	}](t, resp)
+
+	if result.Status != "closed" || result.Resolution != "done" {
+		t.Fatalf("unexpected close response: %+v", result)
+	}
+	if result.Branch != "feat/close-meta" {
+		t.Fatalf("result.Branch = %q, want feat/close-meta", result.Branch)
+	}
+	if result.PRURL != "https://github.com/example/repo/pull/99" {
+		t.Fatalf("result.PRURL = %q, want https://github.com/example/repo/pull/99", result.PRURL)
+	}
+	if result.CommitSHA != "abc123def" {
+		t.Fatalf("result.CommitSHA = %q, want abc123def", result.CommitSHA)
+	}
+	if result.ClosedAt == "" {
+		t.Fatal("expected closed_at in close response")
+	}
+
+	// Verify note was inserted.
+	var noteCount int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM notes WHERE issue_id = ?`, issueID).Scan(&noteCount); err != nil {
+		t.Fatal(err)
+	}
+	if noteCount != 1 {
+		t.Fatalf("expected 1 note, got %d", noteCount)
+	}
+}
+
 func TestCloseIssueWithoutLeaseReturnsGone(t *testing.T) {
 	server, db := newTestServer(t)
 	now := time.Now().UTC().Format(time.RFC3339)

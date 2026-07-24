@@ -775,7 +775,7 @@ func runIssueClose(ctx context.Context, c *client.Client, args []string) error {
 	return nil
 }
 
-const issueOperatorCloseUsage = "Usage: afctl issue operator-close <issue-id> --resolution done|cancelled --expected-version N --reason \"why operator closure is needed\"\n" + lifecycleHint
+const issueOperatorCloseUsage = "Usage: afctl issue operator-close <issue-id> --resolution done|cancelled [--expected-version N] --reason \"why operator closure is needed\" [--branch \u003cname\u003e] [--pr-url \u003curl\u003e] [--commit-sha \u003csha\u003e] [--note \"what was done\"]\n" + lifecycleHint
 
 func runIssueOperatorClose(ctx context.Context, c *client.Client, args []string) error {
 	if hasHelpFlag(args) {
@@ -795,6 +795,21 @@ func runIssueOperatorClose(ctx context.Context, c *client.Client, args []string)
 				req.Resolution = args[i+1]
 				i++
 			}
+		case "--branch":
+			if i+1 < len(args) {
+				req.Branch = args[i+1]
+				i++
+			}
+		case "--pr-url":
+			if i+1 < len(args) {
+				req.PRURL = args[i+1]
+				i++
+			}
+		case "--commit-sha":
+			if i+1 < len(args) {
+				req.CommitSHA = args[i+1]
+				i++
+			}
 		case "--expected-version":
 			if i+1 < len(args) {
 				fmt.Sscanf(args[i+1], "%d", &req.ExpectedVersion)
@@ -805,12 +820,25 @@ func runIssueOperatorClose(ctx context.Context, c *client.Client, args []string)
 				req.Reason = args[i+1]
 				i++
 			}
+		case "--note":
+			if i+1 < len(args) {
+				req.Note = args[i+1]
+				i++
+			}
 		default:
 			return usageErr(issueOperatorCloseUsage, fmt.Sprintf("unknown flag: %s", args[i]))
 		}
 	}
 	if req.Resolution == "" {
 		return usageErr(issueOperatorCloseUsage, "--resolution is required (done or cancelled)")
+	}
+	// Auto-resolve version when not provided by the user.
+	if req.ExpectedVersion == -1 {
+		issue, _, err := c.GetIssue(ctx, issueID)
+		if err != nil {
+			return usageErr(issueOperatorCloseUsage, fmt.Sprintf("failed to fetch current issue version: %v", err))
+		}
+		req.ExpectedVersion = issue.Version
 	}
 	if req.ExpectedVersion <= 0 {
 		return usageErr(issueOperatorCloseUsage, "--expected-version is required")
@@ -839,6 +867,18 @@ func runIssueOperatorClose(ctx context.Context, c *client.Client, args []string)
 		return nil
 	}
 	fmt.Println("Issue closed by operator.")
+	if result.Branch != "" {
+		fmt.Printf("Branch:      %s\n", result.Branch)
+	}
+	if result.PRURL != "" {
+		fmt.Printf("PR URL:      %s\n", result.PRURL)
+	}
+	if result.CommitSHA != "" {
+		fmt.Printf("Commit SHA:  %s\n", result.CommitSHA)
+	}
+	if result.ExternalKey != "" {
+		fmt.Printf("External:    %s\n", result.ExternalKey)
+	}
 	return nil
 }
 
