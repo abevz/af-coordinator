@@ -46,6 +46,13 @@ make restart-service
 `DBUS_SESSION_BUS_ADDRESS` from `/run/user/$(id -u)/bus` when they are missing,
 which keeps service targets working from non-interactive agent environments.
 
+Run `make install-hooks` once to avoid needing to remember `make
+restart-service` at all: it installs a `post-merge` git hook
+(`contrib/git-hooks/post-merge`) that auto-rebuilds and restarts the daemon
+whenever a merge lands on `main`. Either way, `afctl doctor`'s "Binary
+revision" check catches a daemon still running an older commit than the
+local checkout and tells you to restart it.
+
 ## macOS LaunchAgent
 
 Build the binaries and install the daemon as a user LaunchAgent:

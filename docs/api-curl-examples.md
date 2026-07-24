@@ -127,8 +127,8 @@ curl -s -X PATCH --unix-socket $AFC_SOCK \
 
 ### Claim an issue
 Claiming transitions the issue to `in_progress`, returns a secret `lease_token`,
-and returns a safe `attempt_id` for correlating lifecycle events. `session_id`
-is optional non-secret caller correlation metadata.
+a safe `attempt_id` for correlating lifecycle events, and `version`.
+`session_id` is optional non-secret caller correlation metadata.
 ```bash
 curl -s -X POST --unix-socket $AFC_SOCK \
   -H "Content-Type: application/json" \
@@ -140,7 +140,10 @@ curl -s -X POST --unix-socket $AFC_SOCK \
   http://localhost/v1/issues/afc-15/claim | jq
 ```
 
-*Extract the token from the response, e.g., `export TOKEN="uuid-from-response"`.*
+*Extract the token from the response, e.g., `export TOKEN="uuid-from-response"`.
+Claiming increments the issue's version as a side effect — use the `version`
+from this response, not one read earlier, as `expected_version` on the
+eventual close/handoff.*
 
 ### Heartbeat (Renew Lease)
 ```bash
@@ -221,6 +224,22 @@ curl -s -X POST --unix-socket $AFC_SOCK \
     "reason": "new evidence requires follow-up"
   }' \
   http://localhost/v1/issues/afc-10/operator-reopen | jq
+```
+
+### Operator-release a stuck in_progress claim
+Recovers an issue whose lease token was lost before TTL expiry (e.g. a
+script crashed right after claiming). Only accepts an `in_progress` issue,
+never a lease token, and returns the issue directly to `open` without a
+terminal transition.
+```bash
+curl -s -X POST --unix-socket $AFC_SOCK \
+  -H "Content-Type: application/json" \
+  -d '{
+    "expected_version": 2,
+    "actor": "'"$AFC_ACTOR"'",
+    "reason": "flaky-script crashed before persisting the lease token"
+  }' \
+  http://localhost/v1/issues/afc-10/operator-release | jq
 ```
 
 ---
