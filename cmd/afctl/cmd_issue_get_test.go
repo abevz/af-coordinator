@@ -137,7 +137,7 @@ func TestPrintIssuesTableShowsDependenciesAndBlockedBy(t *testing.T) {
 		t.Fatal(err)
 	}
 	os.Stdout = w
-	printIssuesTable([]core.Issue{issue})
+	printIssuesTable([]core.Issue{issue}, nil)
 	_ = w.Close()
 	os.Stdout = oldStdout
 
@@ -162,6 +162,52 @@ func TestPrintIssuesTableShowsDependenciesAndBlockedBy(t *testing.T) {
 	}
 	if strings.Index(out, "TAGS") < strings.Index(out, "DEPS") {
 		t.Fatalf("expected TAGS after DEPS: %q", out)
+	}
+}
+
+func TestPrintIssuesTableRespectsColumnSelection(t *testing.T) {
+	issue := core.Issue{
+		ID:        "issue-1",
+		ShortID:   "afc-1",
+		Status:    "open",
+		IssueType: "feature",
+		Title:     "Narrow row",
+		Tags:      []string{"area/frontend"},
+	}
+
+	oldStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = w
+	printIssuesTable([]core.Issue{issue}, []string{"short", "status", "title"})
+	_ = w.Close()
+	os.Stdout = oldStdout
+
+	var buf bytes.Buffer
+	if _, err := buf.ReadFrom(r); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+
+	for _, want := range []string{"SHORT", "STATUS", "TITLE", "afc-1", "open"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("table output missing %q: %q", want, out)
+		}
+	}
+	for _, unwanted := range []string{"ID", "TYPE", "ASSIGNEE", "CLAIMED", "BLOCKED BY", "DEPS", "TAGS"} {
+		if strings.Contains(out, unwanted) {
+			t.Fatalf("table output should omit unselected column %q: %q", unwanted, out)
+		}
+	}
+	header := strings.SplitN(out, "\n", 2)[0]
+	fullHeaderWidth := 0
+	for _, col := range issueColumnDefs() {
+		fullHeaderWidth += col.width + 1
+	}
+	if len(header) >= fullHeaderWidth {
+		t.Fatalf("narrow column selection should be shorter than the full %d-char header, got %d chars: %q", fullHeaderWidth, len(header), header)
 	}
 }
 
