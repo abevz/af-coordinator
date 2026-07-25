@@ -399,7 +399,7 @@ func issueListFlagValue(args []string, index int, flag string) (string, error) {
 	return args[index+1], nil
 }
 
-const issueReadyUsage = "Usage: afctl issue ready [--project <key>] [--repo <repo>] [--tag <namespace/value>]..."
+const issueReadyUsage = "Usage: afctl issue ready [--project <key>] [--repo <repo>] [--tag <namespace/value[,..]>]..."
 
 func runIssueReady(ctx context.Context, c *client.Client, args []string) error {
 	if hasHelpFlag(args) {
@@ -408,7 +408,7 @@ func runIssueReady(ctx context.Context, c *client.Client, args []string) error {
 	}
 	project := ""
 	repo := ""
-	var tags []string
+	var rawTags []string
 	for i := 0; i < len(args); i++ {
 		if args[i] == "--project" && i+1 < len(args) {
 			project = args[i+1]
@@ -417,9 +417,13 @@ func runIssueReady(ctx context.Context, c *client.Client, args []string) error {
 			repo = args[i+1]
 			i++
 		} else if args[i] == "--tag" && i+1 < len(args) {
-			tags = append(tags, args[i+1])
+			rawTags = append(rawTags, args[i+1])
 			i++
 		}
+	}
+	tags, err := core.NormalizeIssueListValues(rawTags)
+	if err != nil {
+		return fmt.Errorf("--tag %w", err)
 	}
 
 	issues, err := c.ListReadyIssues(ctx, project, repo, tags)

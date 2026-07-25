@@ -128,6 +128,7 @@ func TestPrintIssuesTableShowsDependenciesAndBlockedBy(t *testing.T) {
 			{DependsOnShortID: "afc-2", Kind: "blocks"},
 			{DependsOnShortID: "afc-epic", Kind: "parent"},
 		},
+		Tags: []string{"area/frontend", "exec/auto"},
 	}
 
 	oldStdout := os.Stdout
@@ -145,7 +146,7 @@ func TestPrintIssuesTableShowsDependenciesAndBlockedBy(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := buf.String()
-	for _, want := range []string{"BLOCKED BY", "DEPS", "open [B]", "afc-2", "parent:afc-epic"} {
+	for _, want := range []string{"BLOCKED BY", "DEPS", "TAGS", "open [B]", "afc-2", "parent:afc-epic", "area/frontend,exec/auto"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("table output missing %q: %q", want, out)
 		}
@@ -158,6 +159,9 @@ func TestPrintIssuesTableShowsDependenciesAndBlockedBy(t *testing.T) {
 	}
 	if strings.Index(out, "DEPS") < strings.Index(out, "BLOCKED BY") {
 		t.Fatalf("expected DEPS after BLOCKED BY: %q", out)
+	}
+	if strings.Index(out, "TAGS") < strings.Index(out, "DEPS") {
+		t.Fatalf("expected TAGS after DEPS: %q", out)
 	}
 }
 

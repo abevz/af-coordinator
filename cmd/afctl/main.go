@@ -555,10 +555,11 @@ func printIssuesTable(issues []core.Issue) {
 		claimedWidth   = 10
 		blockedByWidth = 18
 		depsWidth      = 34
+		tagsWidth      = 24
 	)
-	format := "%-*s %-*s %-*s %-*s %-*s %-*s %-*s %-*s %-*s\n"
-	fmt.Printf(format, idWidth, "ID", shortWidth, "SHORT", statusWidth, "STATUS", typeWidth, "TYPE", titleWidth, "TITLE", assigneeWidth, "ASSIGNEE", claimedWidth, "CLAIMED", blockedByWidth, "BLOCKED BY", depsWidth, "DEPS")
-	fmt.Printf(format, idWidth, "---", shortWidth, "-----", statusWidth, "------", typeWidth, "----", titleWidth, "-----", assigneeWidth, "-------", claimedWidth, "-------", blockedByWidth, "----------", depsWidth, "----")
+	format := "%-*s %-*s %-*s %-*s %-*s %-*s %-*s %-*s %-*s %-*s\n"
+	fmt.Printf(format, idWidth, "ID", shortWidth, "SHORT", statusWidth, "STATUS", typeWidth, "TYPE", titleWidth, "TITLE", assigneeWidth, "ASSIGNEE", claimedWidth, "CLAIMED", blockedByWidth, "BLOCKED BY", depsWidth, "DEPS", tagsWidth, "TAGS")
+	fmt.Printf(format, idWidth, "---", shortWidth, "-----", statusWidth, "------", typeWidth, "----", titleWidth, "-----", assigneeWidth, "-------", claimedWidth, "-------", blockedByWidth, "----------", depsWidth, "----", tagsWidth, "----")
 	for _, i := range issues {
 		id := truncate(i.ID, idWidth)
 		title := truncate(i.Title, titleWidth)
@@ -573,7 +574,8 @@ func printIssuesTable(issues []core.Issue) {
 		claimed := truncate(i.Holder, claimedWidth)
 		blockedBy := truncate(strings.Join(i.BlockedBy, ","), blockedByWidth)
 		dependencies := truncate(formatIssueDependencies(i.Dependencies), depsWidth)
-		fmt.Printf(format, idWidth, id, shortWidth, shortID, statusWidth, status, typeWidth, issueType, titleWidth, title, assigneeWidth, assignee, claimedWidth, claimed, blockedByWidth, blockedBy, depsWidth, dependencies)
+		tags := truncate(strings.Join(i.Tags, ","), tagsWidth)
+		fmt.Printf(format, idWidth, id, shortWidth, shortID, statusWidth, status, typeWidth, issueType, titleWidth, title, assigneeWidth, assignee, claimedWidth, claimed, blockedByWidth, blockedBy, depsWidth, dependencies, tagsWidth, tags)
 	}
 }
 

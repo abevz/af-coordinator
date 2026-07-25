@@ -445,3 +445,35 @@ func TestRunIssueReadyEncodesRepeatedTagQuery(t *testing.T) {
 		t.Fatalf("tag query = %q, want %q", gotTags, want)
 	}
 }
+
+func TestRunIssueReadySplitsCommaSeparatedTagQuery(t *testing.T) {
+	socketPath := filepath.Join(t.TempDir(), "ready-comma.sock")
+	listener, err := net.Listen("unix", socketPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+
+	var gotTags []string
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/issues/ready" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		gotTags = r.URL.Query()["tag"]
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"issues":[]}`))
+	}))
+	server.Listener.Close()
+	server.Listener = listener
+	server.Start()
+	defer server.Close()
+
+	if err := runIssueReady(context.Background(), client.New(socketPath), []string{
+		"--project", "afc", "--tag", "exec/auto,area/frontend",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"exec/auto", "area/frontend"}; !reflect.DeepEqual(gotTags, want) {
+		t.Fatalf("tag query = %q, want %q", gotTags, want)
+	}
+}
