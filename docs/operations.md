@@ -215,6 +215,9 @@ afctl ls --project afc,aion --type epic,chore --status open,in_progress
 # Dependency-aware table columns
 afctl ls --project aion --status open
 
+# Narrow terminal: pick only the columns you need, in any order
+afctl ls --project aion --columns short,status,title
+
 # Show the complete filter contract without contacting the daemon
 afctl ls --help
 
@@ -235,7 +238,7 @@ The human-readable issue list keeps task context together and puts dependency
 state at the end of each row:
 
 ```text
-ID SHORT STATUS TYPE TITLE ASSIGNEE CLAIMED BLOCKED BY DEPS
+ID SHORT STATUS TYPE TITLE ASSIGNEE CLAIMED BLOCKED BY DEPS TAGS
 ```
 
 - `STATUS` includes `[B]` when an unfinished `blocks` dependency makes the
@@ -245,6 +248,12 @@ ID SHORT STATUS TYPE TITLE ASSIGNEE CLAIMED BLOCKED BY DEPS
 - `DEPS` lists non-blocking relationships such as `parent:`, `related:`, and
   `discovered-from:`. Blocking relationships are shown in `BLOCKED BY` to
   avoid duplicating the same information.
+- `TAGS` lists the issue's namespaced tags, comma-joined.
+- The full default row is wide; pass `--columns <key[,key...]>` (valid keys:
+  `id`, `short`, `status`, `type`, `title`, `assignee`, `claimed`,
+  `blocked_by`, `deps`, `tags`) to `afctl ls`/`issue list`/`issue ready` to
+  select a narrower subset, in any order. Omitting the flag keeps this
+  default column set.
 
 With `--json`, the issue object exposes the same derived state as optional
 `blocked` and `blocked_by` fields, while `dependencies` retains the complete
