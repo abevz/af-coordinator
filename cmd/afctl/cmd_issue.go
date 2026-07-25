@@ -308,10 +308,13 @@ Filters:
   --tag <namespace/value[,..]>   Tag(s); an issue must carry every listed
                                   tag (AND), repeatable
   --limit <n> --offset <n>       Reserved pagination parameters
+  --columns <key[,key...]>       Table columns to display, in order
+                                  (default: id,short,status,type,title,
+                                  assignee,claimed,blocked_by,deps,tags)
 `
 
 func runIssueList(ctx context.Context, c *client.Client, args []string) error {
-	params, help, err := parseIssueListArgs(args)
+	params, columns, help, err := parseIssueListArgs(args)
 	if err != nil {
 		return err
 	}
@@ -332,26 +335,27 @@ func runIssueList(ctx context.Context, c *client.Client, args []string) error {
 		fmt.Println("No issues found.")
 		return nil
 	}
-	printIssuesTable(issues)
+	printIssuesTable(issues, columns)
 	return nil
 }
 
-func parseIssueListArgs(args []string) (core.IssueListParams, bool, error) {
+func parseIssueListArgs(args []string) (core.IssueListParams, []string, bool, error) {
 	var params core.IssueListParams
+	var columns []string
 	for i := 0; i < len(args); i++ {
 		flag := args[i]
 		if flag == "--help" || flag == "-h" {
-			return core.IssueListParams{}, true, nil
+			return core.IssueListParams{}, nil, true, nil
 		}
 		switch flag {
-		case "--project", "--status", "--type", "--repo", "--worktree", "--assignee", "--external-key", "--tag", "--limit", "--offset":
+		case "--project", "--status", "--type", "--repo", "--worktree", "--assignee", "--external-key", "--tag", "--limit", "--offset", "--columns":
 		default:
-			return core.IssueListParams{}, false, fmt.Errorf("unknown flag: %s", flag)
+			return core.IssueListParams{}, nil, false, fmt.Errorf("unknown flag: %s", flag)
 		}
 
 		value, err := issueListFlagValue(args, i, flag)
 		if err != nil {
-			return core.IssueListParams{}, false, err
+			return core.IssueListParams{}, nil, false, err
 		}
 
 		switch flag {
@@ -381,15 +385,17 @@ func parseIssueListArgs(args []string) (core.IssueListParams, bool, error) {
 			params.Tags = append(params.Tags, values...)
 		case "--limit", "--offset":
 			if _, parseErr := strconv.Atoi(value); parseErr != nil {
-				return core.IssueListParams{}, false, fmt.Errorf("%s requires an integer", flag)
+				return core.IssueListParams{}, nil, false, fmt.Errorf("%s requires an integer", flag)
 			}
+		case "--columns":
+			columns, err = parseIssueColumns(value)
 		}
 		if err != nil {
-			return core.IssueListParams{}, false, fmt.Errorf("%s %w", flag, err)
+			return core.IssueListParams{}, nil, false, fmt.Errorf("%s %w", flag, err)
 		}
 		i++
 	}
-	return params, false, nil
+	return params, columns, false, nil
 }
 
 func issueListFlagValue(args []string, index int, flag string) (string, error) {
@@ -399,7 +405,7 @@ func issueListFlagValue(args []string, index int, flag string) (string, error) {
 	return args[index+1], nil
 }
 
-const issueReadyUsage = "Usage: afctl issue ready [--project <key>] [--repo <repo>] [--tag <namespace/value[,..]>]..."
+const issueReadyUsage = "Usage: afctl issue ready [--project <key>] [--repo <repo>] [--tag <namespace/value[,..]>]... [--columns <key[,key...]>]"
 
 func runIssueReady(ctx context.Context, c *client.Client, args []string) error {
 	if hasHelpFlag(args) {
@@ -409,6 +415,7 @@ func runIssueReady(ctx context.Context, c *client.Client, args []string) error {
 	project := ""
 	repo := ""
 	var rawTags []string
+	var columns []string
 	for i := 0; i < len(args); i++ {
 		if args[i] == "--project" && i+1 < len(args) {
 			project = args[i+1]
@@ -418,6 +425,13 @@ func runIssueReady(ctx context.Context, c *client.Client, args []string) error {
 			i++
 		} else if args[i] == "--tag" && i+1 < len(args) {
 			rawTags = append(rawTags, args[i+1])
+			i++
+		} else if args[i] == "--columns" && i+1 < len(args) {
+			var err error
+			columns, err = parseIssueColumns(args[i+1])
+			if err != nil {
+				return err
+			}
 			i++
 		}
 	}
@@ -438,7 +452,7 @@ func runIssueReady(ctx context.Context, c *client.Client, args []string) error {
 		fmt.Println("No ready issues found.")
 		return nil
 	}
-	printIssuesTable(issues)
+	printIssuesTable(issues, columns)
 	return nil
 }
 

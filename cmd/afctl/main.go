@@ -543,39 +543,122 @@ func printIssueFull(i core.Issue, l *core.IssueLease, events []core.Event, notes
 	}
 }
 
-// printIssuesTable displays a list of issues in a fixed-width table format.
-func printIssuesTable(issues []core.Issue) {
-	const (
-		idWidth        = 10
-		shortWidth     = 10
-		statusWidth    = 13
-		typeWidth      = 8
-		titleWidth     = 42
-		assigneeWidth  = 10
-		claimedWidth   = 10
-		blockedByWidth = 18
-		depsWidth      = 34
-		tagsWidth      = 24
-	)
-	format := "%-*s %-*s %-*s %-*s %-*s %-*s %-*s %-*s %-*s %-*s\n"
-	fmt.Printf(format, idWidth, "ID", shortWidth, "SHORT", statusWidth, "STATUS", typeWidth, "TYPE", titleWidth, "TITLE", assigneeWidth, "ASSIGNEE", claimedWidth, "CLAIMED", blockedByWidth, "BLOCKED BY", depsWidth, "DEPS", tagsWidth, "TAGS")
-	fmt.Printf(format, idWidth, "---", shortWidth, "-----", statusWidth, "------", typeWidth, "----", titleWidth, "-----", assigneeWidth, "-------", claimedWidth, "-------", blockedByWidth, "----------", depsWidth, "----", tagsWidth, "----")
-	for _, i := range issues {
-		id := truncate(i.ID, idWidth)
-		title := truncate(i.Title, titleWidth)
-		status := statusSymbol(i.Status) + " " + i.Status
-		if i.Blocked && i.Status != "blocked" {
-			status += " [B]"
+// issueColumn is one selectable column of the issue table: its --columns key,
+// header text, fixed print width, and how to render it for a given issue.
+type issueColumn struct {
+	key    string
+	header string
+	width  int
+	value  func(core.Issue) string
+}
+
+// issueColumnDefs is the full set of columns available to --columns, in the
+// default display order.
+func issueColumnDefs() []issueColumn {
+	return []issueColumn{
+		{"id", "ID", 10, func(i core.Issue) string { return truncate(i.ID, 10) }},
+		{"short", "SHORT", 10, func(i core.Issue) string { return truncate(i.ShortID, 10) }},
+		{"status", "STATUS", 13, func(i core.Issue) string {
+			status := statusSymbol(i.Status) + " " + i.Status
+			if i.Blocked && i.Status != "blocked" {
+				status += " [B]"
+			}
+			return truncate(status, 13)
+		}},
+		{"type", "TYPE", 8, func(i core.Issue) string { return truncate(i.IssueType, 8) }},
+		{"title", "TITLE", 42, func(i core.Issue) string { return truncate(i.Title, 42) }},
+		{"assignee", "ASSIGNEE", 10, func(i core.Issue) string { return truncate(i.Assignee, 10) }},
+		{"claimed", "CLAIMED", 10, func(i core.Issue) string { return truncate(i.Holder, 10) }},
+		{"blocked_by", "BLOCKED BY", 18, func(i core.Issue) string { return truncate(strings.Join(i.BlockedBy, ","), 18) }},
+		{"deps", "DEPS", 34, func(i core.Issue) string { return truncate(formatIssueDependencies(i.Dependencies), 34) }},
+		{"tags", "TAGS", 24, func(i core.Issue) string { return truncate(strings.Join(i.Tags, ","), 24) }},
+	}
+}
+
+// defaultIssueColumns is the column key order used when --columns is not given.
+func defaultIssueColumns() []string {
+	defs := issueColumnDefs()
+	keys := make([]string, len(defs))
+	for i, d := range defs {
+		keys[i] = d.key
+	}
+	return keys
+}
+
+// parseIssueColumns validates a comma-separated --columns value against the
+// known column keys and returns them in the order given (repeats allowed).
+func parseIssueColumns(value string) ([]string, error) {
+	defs := issueColumnDefs()
+	valid := make(map[string]bool, len(defs))
+	names := make([]string, len(defs))
+	for i, d := range defs {
+		valid[d.key] = true
+		names[i] = d.key
+	}
+
+	var columns []string
+	for _, part := range strings.Split(value, ",") {
+		key := strings.TrimSpace(part)
+		if key == "" {
+			continue
 		}
-		shortID := truncate(i.ShortID, shortWidth)
-		status = truncate(status, statusWidth)
-		issueType := truncate(i.IssueType, typeWidth)
-		assignee := truncate(i.Assignee, assigneeWidth)
-		claimed := truncate(i.Holder, claimedWidth)
-		blockedBy := truncate(strings.Join(i.BlockedBy, ","), blockedByWidth)
-		dependencies := truncate(formatIssueDependencies(i.Dependencies), depsWidth)
-		tags := truncate(strings.Join(i.Tags, ","), tagsWidth)
-		fmt.Printf(format, idWidth, id, shortWidth, shortID, statusWidth, status, typeWidth, issueType, titleWidth, title, assigneeWidth, assignee, claimedWidth, claimed, blockedByWidth, blockedBy, depsWidth, dependencies, tagsWidth, tags)
+		if !valid[key] {
+			return nil, fmt.Errorf("unknown column %q (valid: %s)", key, strings.Join(names, ", "))
+		}
+		columns = append(columns, key)
+	}
+	if len(columns) == 0 {
+		return nil, fmt.Errorf("--columns requires at least one column")
+	}
+	return columns, nil
+}
+
+// printIssuesTable displays a list of issues in a fixed-width table format,
+// showing only the given columns (in the given order). A nil or empty
+// columns list falls back to defaultIssueColumns.
+func printIssuesTable(issues []core.Issue, columns []string) {
+	if len(columns) == 0 {
+		columns = defaultIssueColumns()
+	}
+	byKey := make(map[string]issueColumn, len(columns))
+	for _, d := range issueColumnDefs() {
+		byKey[d.key] = d
+	}
+	selected := make([]issueColumn, 0, len(columns))
+	for _, key := range columns {
+		if d, ok := byKey[key]; ok {
+			selected = append(selected, d)
+		}
+	}
+	if len(selected) == 0 {
+		selected = issueColumnDefs()
+	}
+
+	var format strings.Builder
+	for i := range selected {
+		if i > 0 {
+			format.WriteByte(' ')
+		}
+		format.WriteString("%-*s")
+	}
+	format.WriteByte('\n')
+	rowFormat := format.String()
+
+	headerArgs := make([]interface{}, 0, len(selected)*2)
+	dashArgs := make([]interface{}, 0, len(selected)*2)
+	for _, col := range selected {
+		headerArgs = append(headerArgs, col.width, col.header)
+		dashArgs = append(dashArgs, col.width, strings.Repeat("-", len(col.header)))
+	}
+	fmt.Printf(rowFormat, headerArgs...)
+	fmt.Printf(rowFormat, dashArgs...)
+
+	for _, i := range issues {
+		rowArgs := make([]interface{}, 0, len(selected)*2)
+		for _, col := range selected {
+			rowArgs = append(rowArgs, col.width, col.value(i))
+		}
+		fmt.Printf(rowFormat, rowArgs...)
 	}
 }
 

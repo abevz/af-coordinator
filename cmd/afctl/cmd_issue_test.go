@@ -16,11 +16,12 @@ import (
 
 func TestParseIssueListArgs(t *testing.T) {
 	tests := []struct {
-		name     string
-		args     []string
-		want     core.IssueListParams
-		wantHelp bool
-		wantErr  string
+		name        string
+		args        []string
+		want        core.IssueListParams
+		wantColumns []string
+		wantHelp    bool
+		wantErr     string
 	}{
 		{
 			name: "csv and repeated filters",
@@ -38,15 +39,22 @@ func TestParseIssueListArgs(t *testing.T) {
 				Tags: []string{"area/frontend", "theme/dark"},
 			},
 		},
+		{
+			name:        "columns",
+			args:        []string{"--columns", "short,status,title"},
+			want:        core.IssueListParams{},
+			wantColumns: []string{"short", "status", "title"},
+		},
 		{name: "help", args: []string{"--help"}, wantHelp: true},
 		{name: "unknown flag", args: []string{"--wat"}, wantErr: "unknown flag"},
 		{name: "missing value", args: []string{"--project"}, wantErr: "requires a value"},
 		{name: "empty csv element", args: []string{"--type", "epic,"}, wantErr: "empty elements"},
+		{name: "unknown column", args: []string{"--columns", "nope"}, wantErr: "unknown column"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, help, err := parseIssueListArgs(tt.args)
+			got, columns, help, err := parseIssueListArgs(tt.args)
 			if tt.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 					t.Fatalf("error = %v, want %q", err, tt.wantErr)
@@ -61,6 +69,9 @@ func TestParseIssueListArgs(t *testing.T) {
 			}
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Fatalf("params = %#v, want %#v", got, tt.want)
+			}
+			if !reflect.DeepEqual(columns, tt.wantColumns) {
+				t.Fatalf("columns = %#v, want %#v", columns, tt.wantColumns)
 			}
 		})
 	}
@@ -475,5 +486,14 @@ func TestRunIssueReadySplitsCommaSeparatedTagQuery(t *testing.T) {
 	}
 	if want := []string{"exec/auto", "area/frontend"}; !reflect.DeepEqual(gotTags, want) {
 		t.Fatalf("tag query = %q, want %q", gotTags, want)
+	}
+}
+
+func TestRunIssueReadyRejectsUnknownColumn(t *testing.T) {
+	err := runIssueReady(context.Background(), client.New("/nonexistent.sock"), []string{
+		"--columns", "nope",
+	})
+	if err == nil || !strings.Contains(err.Error(), "unknown column") {
+		t.Fatalf("error = %v, want unknown column", err)
 	}
 }
