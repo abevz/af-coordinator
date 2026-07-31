@@ -17,8 +17,9 @@ type Note struct {
 
 // CreateNoteRequest is the JSON body for POST /v1/issues/{issue_id}/notes.
 type CreateNoteRequest struct {
-	Author string `json:"author"`
-	Body   string `json:"body"`
+	Author         string `json:"author"`
+	Body           string `json:"body"`
+	InvocationMode string `json:"invocation_mode,omitempty"`
 }
 
 // Event represents an event in the issue activity timeline.
@@ -49,6 +50,49 @@ func ValidIssueType(t string) bool {
 		}
 	}
 	return false
+}
+
+// Invocation mode records how a claim, note, or close was initiated. It is
+// caller-supplied and never inferred from the process tree, so a manual
+// one-shot launcher run and an unattended scheduled run stay distinguishable
+// in the audit trail (afc-95).
+const (
+	// InvocationModeInteractive marks a run initiated by a human or a
+	// one-shot launcher (for example `afctl issue run` from a shell).
+	InvocationModeInteractive = "interactive"
+	// InvocationModeScheduled marks an unattended scheduled run (daemon or
+	// cron) that picked the issue up on its own.
+	InvocationModeScheduled = "scheduled"
+	// InvocationModeUnknown is the conservative default recorded when the
+	// caller did not declare a mode. It is a statement of absence, never an
+	// answer: a reader must not read `unknown` as scheduled.
+	InvocationModeUnknown = "unknown"
+)
+
+// InvocationModes lists the valid invocation-mode values in the public
+// contract (snake_case by design, see AGENTS.md).
+var InvocationModes = []string{InvocationModeInteractive, InvocationModeScheduled, InvocationModeUnknown}
+
+// ValidInvocationMode reports whether mode is a known invocation mode.
+func ValidInvocationMode(mode string) bool {
+	for _, v := range InvocationModes {
+		if mode == v {
+			return true
+		}
+	}
+	return false
+}
+
+// NormalizeInvocationMode applies the conservative default to an omitted
+// value and rejects unknown non-empty values.
+func NormalizeInvocationMode(mode string) (string, error) {
+	if mode == "" {
+		return InvocationModeUnknown, nil
+	}
+	if !ValidInvocationMode(mode) {
+		return "", fmt.Errorf("invocation_mode must be one of: %s", strings.Join(InvocationModes, ", "))
+	}
+	return mode, nil
 }
 
 // Issue represents a task or work item in a project.
@@ -166,9 +210,10 @@ func NormalizeIssueListValues(values []string) ([]string, error) {
 
 // ClaimRequest is the JSON body for POST /v1/issues/{issue_id}/claim.
 type ClaimRequest struct {
-	Holder     string `json:"holder"`
-	TTLSeconds int    `json:"ttl_seconds"`
-	SessionID  string `json:"session_id,omitempty"`
+	Holder         string `json:"holder"`
+	TTLSeconds     int    `json:"ttl_seconds"`
+	SessionID      string `json:"session_id,omitempty"`
+	InvocationMode string `json:"invocation_mode,omitempty"`
 }
 
 // ClaimResponse is returned on successful claim.
@@ -202,8 +247,9 @@ type ReleaseRequest struct {
 // HandoffRequest is the JSON body for POST /v1/issues/{issue_id}/handoff.
 // The server derives the note author from the active lease holder.
 type HandoffRequest struct {
-	LeaseToken string `json:"lease_token"`
-	Note       string `json:"note"`
+	LeaseToken     string `json:"lease_token"`
+	Note           string `json:"note"`
+	InvocationMode string `json:"invocation_mode,omitempty"`
 }
 
 // HandoffResponse is returned after atomically recording a HANDOFF note and
@@ -238,6 +284,7 @@ type CloseIssueRequest struct {
 	LeaseToken      string `json:"lease_token"`
 	Actor           string `json:"actor,omitempty"`
 	Note            string `json:"note,omitempty"`
+	InvocationMode  string `json:"invocation_mode,omitempty"`
 }
 
 // OperatorCloseIssueRequest closes an issue through the explicit local
@@ -251,6 +298,7 @@ type OperatorCloseIssueRequest struct {
 	Actor           string `json:"actor"`
 	Reason          string `json:"reason"`
 	Note            string `json:"note,omitempty"`
+	InvocationMode  string `json:"invocation_mode,omitempty"`
 }
 
 // OperatorReopenIssueRequest reopens terminal work through the explicit local

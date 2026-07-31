@@ -456,7 +456,7 @@ func runIssueReady(ctx context.Context, c *client.Client, args []string) error {
 	return nil
 }
 
-const issueClaimUsage = "Usage: afctl issue claim <issue-id> [--holder <name>|--actor <name>] [--ttl <seconds>] [--session-id <id>]\n" + lifecycleHint
+const issueClaimUsage = "Usage: afctl issue claim <issue-id> [--holder <name>|--actor <name>] [--ttl <seconds>] [--session-id <id>] [--invocation-mode interactive|scheduled|unknown]\n" + lifecycleHint
 
 func runIssueClaim(ctx context.Context, c *client.Client, args []string) error {
 	if hasHelpFlag(args) {
@@ -471,6 +471,7 @@ func runIssueClaim(ctx context.Context, c *client.Client, args []string) error {
 	holder := ""
 	ttl := 3600
 	sessionID := ""
+	invocationMode := ""
 
 	for i := 1; i < len(args); i++ {
 		switch args[i] {
@@ -489,6 +490,11 @@ func runIssueClaim(ctx context.Context, c *client.Client, args []string) error {
 				sessionID = args[i+1]
 				i++
 			}
+		case "--invocation-mode":
+			if i+1 < len(args) {
+				invocationMode = args[i+1]
+				i++
+			}
 		}
 	}
 
@@ -497,8 +503,15 @@ func runIssueClaim(ctx context.Context, c *client.Client, args []string) error {
 	if err != nil {
 		return fmt.Errorf("%s", err)
 	}
+	if invocationMode != "" {
+		normalized, nerr := core.NormalizeInvocationMode(invocationMode)
+		if nerr != nil {
+			return usageErr(issueClaimUsage, nerr.Error())
+		}
+		invocationMode = normalized
+	}
 
-	resp, err := c.ClaimIssueWithSession(ctx, issueID, holder, ttl, sessionID)
+	resp, err := c.ClaimIssueWithSessionAndMode(ctx, issueID, holder, ttl, sessionID, invocationMode)
 	if err != nil {
 		fail(err)
 	}
@@ -598,7 +611,7 @@ func runIssueRelease(ctx context.Context, c *client.Client, args []string) error
 	return nil
 }
 
-const issueHandoffUsage = "Usage: afctl issue handoff <issue-id> --lease-token <token> --note \"HANDOFF: next steps\"\n" + lifecycleHint
+const issueHandoffUsage = "Usage: afctl issue handoff <issue-id> --lease-token <token> --note \"HANDOFF: next steps\" [--invocation-mode interactive|scheduled|unknown]\n" + lifecycleHint
 
 func runIssueHandoff(ctx context.Context, c *client.Client, args []string) error {
 	if hasHelpFlag(args) {
@@ -612,6 +625,7 @@ func runIssueHandoff(ctx context.Context, c *client.Client, args []string) error
 	issueID := args[0]
 	leaseToken := ""
 	note := ""
+	invocationMode := ""
 	for i := 1; i < len(args); i++ {
 		switch args[i] {
 		case "--lease-token":
@@ -622,6 +636,11 @@ func runIssueHandoff(ctx context.Context, c *client.Client, args []string) error
 		case "--note":
 			if i+1 < len(args) {
 				note = args[i+1]
+				i++
+			}
+		case "--invocation-mode":
+			if i+1 < len(args) {
+				invocationMode = args[i+1]
 				i++
 			}
 		default:
@@ -635,7 +654,15 @@ func runIssueHandoff(ctx context.Context, c *client.Client, args []string) error
 		return usageErr(issueHandoffUsage, err.Error())
 	}
 
-	resp, err := c.HandoffLease(ctx, issueID, leaseToken, note)
+	if invocationMode != "" {
+		normalized, nerr := core.NormalizeInvocationMode(invocationMode)
+		if nerr != nil {
+			return usageErr(issueHandoffUsage, nerr.Error())
+		}
+		invocationMode = normalized
+	}
+
+	resp, err := c.HandoffLeaseWithMode(ctx, issueID, leaseToken, note, invocationMode)
 	if err != nil {
 		fail(err)
 	}
@@ -741,7 +768,7 @@ func runIssueUpdate(ctx context.Context, c *client.Client, args []string) error 
 	return nil
 }
 
-const issueCloseUsage = "Usage: afctl issue close <issue-id> --resolution done|cancelled --expected-version N --lease-token ... [--branch <name>] [--pr-url <url>] [--commit-sha <sha>] [--note \"what was done\"]\n" + lifecycleHint
+const issueCloseUsage = "Usage: afctl issue close <issue-id> --resolution done|cancelled --expected-version N --lease-token ... [--branch <name>] [--pr-url <url>] [--commit-sha <sha>] [--note \"what was done\"] [--invocation-mode interactive|scheduled|unknown]\n" + lifecycleHint
 
 func runIssueClose(ctx context.Context, c *client.Client, args []string) error {
 	if hasHelpFlag(args) {
@@ -788,6 +815,11 @@ func runIssueClose(ctx context.Context, c *client.Client, args []string) error {
 				req.LeaseToken = args[i+1]
 				i++
 			}
+		case "--invocation-mode":
+			if i+1 < len(args) {
+				req.InvocationMode = args[i+1]
+				i++
+			}
 		case "--note":
 			if i+1 < len(args) {
 				req.Note = args[i+1]
@@ -811,6 +843,13 @@ func runIssueClose(ctx context.Context, c *client.Client, args []string) error {
 		return usageErr(issueCloseUsage, err.Error())
 	}
 	req.Actor = actor
+	if req.InvocationMode != "" {
+		normalized, nerr := core.NormalizeInvocationMode(req.InvocationMode)
+		if nerr != nil {
+			return usageErr(issueCloseUsage, nerr.Error())
+		}
+		req.InvocationMode = normalized
+	}
 
 	result, err := c.CloseIssue(ctx, issueID, req)
 	if err != nil {
@@ -1523,7 +1562,7 @@ func runIssueNote(ctx context.Context, c *client.Client, args []string) error {
 	}
 }
 
-const issueNoteAddUsage = "Usage: afctl issue note add <issue-id> [--author <name>|--actor <name>] --body <text>"
+const issueNoteAddUsage = "Usage: afctl issue note add <issue-id> [--author <name>|--actor <name>] --body <text> [--invocation-mode interactive|scheduled|unknown]"
 
 func runIssueNoteAdd(ctx context.Context, c *client.Client, args []string) error {
 	if hasHelpFlag(args) {
@@ -1537,6 +1576,7 @@ func runIssueNoteAdd(ctx context.Context, c *client.Client, args []string) error
 	issueID := args[0]
 	author := ""
 	body := ""
+	invocationMode := ""
 
 	for i := 1; i < len(args); i++ {
 		switch args[i] {
@@ -1548,6 +1588,11 @@ func runIssueNoteAdd(ctx context.Context, c *client.Client, args []string) error
 		case "--body":
 			if i+1 < len(args) {
 				body = args[i+1]
+				i++
+			}
+		case "--invocation-mode":
+			if i+1 < len(args) {
+				invocationMode = args[i+1]
 				i++
 			}
 		}
@@ -1562,7 +1607,15 @@ func runIssueNoteAdd(ctx context.Context, c *client.Client, args []string) error
 		return usageErr(issueNoteAddUsage, "--body is required")
 	}
 
-	note, err := c.CreateNote(ctx, issueID, author, body)
+	if invocationMode != "" {
+		normalized, nerr := core.NormalizeInvocationMode(invocationMode)
+		if nerr != nil {
+			return usageErr(issueNoteAddUsage, nerr.Error())
+		}
+		invocationMode = normalized
+	}
+
+	note, err := c.CreateNoteWithMode(ctx, issueID, author, body, invocationMode)
 	if err != nil {
 		fail(err)
 	}

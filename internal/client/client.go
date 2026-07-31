@@ -325,7 +325,16 @@ func (c *Client) ClaimIssue(ctx context.Context, issueID, holder string, ttlSeco
 // ClaimIssueWithSession sends a claim with optional non-secret session
 // correlation metadata. Session identity never replaces the lease holder.
 func (c *Client) ClaimIssueWithSession(ctx context.Context, issueID, holder string, ttlSeconds int, sessionID string) (core.ClaimResponse, error) {
-	body := core.ClaimRequest{Holder: holder, TTLSeconds: ttlSeconds, SessionID: sessionID}
+	return c.ClaimIssueWithSessionAndMode(ctx, issueID, holder, ttlSeconds, sessionID, "")
+}
+
+// ClaimIssueWithSessionAndMode sends a claim with optional non-secret session
+// correlation metadata and a caller-declared invocation mode. The mode is
+// recorded on the claim event; an empty mode is left for the daemon to
+// normalize to the conservative "unknown" default rather than inferring
+// anything from the process tree.
+func (c *Client) ClaimIssueWithSessionAndMode(ctx context.Context, issueID, holder string, ttlSeconds int, sessionID, invocationMode string) (core.ClaimResponse, error) {
+	body := core.ClaimRequest{Holder: holder, TTLSeconds: ttlSeconds, SessionID: sessionID, InvocationMode: invocationMode}
 	var result core.ClaimResponse
 	if err := c.doJSON(ctx, http.MethodPost, "/v1/issues/"+issueID+"/claim", body, &result); err != nil {
 		return core.ClaimResponse{}, err
@@ -353,7 +362,14 @@ func (c *Client) ReleaseLease(ctx context.Context, issueID, leaseToken string) e
 
 // HandoffLease sends a HANDOFF note and lease release as one atomic request.
 func (c *Client) HandoffLease(ctx context.Context, issueID, leaseToken, note string) (core.HandoffResponse, error) {
-	body := core.HandoffRequest{LeaseToken: leaseToken, Note: note}
+	return c.HandoffLeaseWithMode(ctx, issueID, leaseToken, note, "")
+}
+
+// HandoffLeaseWithMode sends a HANDOFF note and lease release as one atomic
+// request, recording a caller-declared invocation mode on the handoff note's
+// audit event. An empty mode normalizes to "unknown" on the daemon.
+func (c *Client) HandoffLeaseWithMode(ctx context.Context, issueID, leaseToken, note, invocationMode string) (core.HandoffResponse, error) {
+	body := core.HandoffRequest{LeaseToken: leaseToken, Note: note, InvocationMode: invocationMode}
 	var result core.HandoffResponse
 	if err := c.doJSON(ctx, http.MethodPost, "/v1/issues/"+issueID+"/handoff", body, &result); err != nil {
 		return core.HandoffResponse{}, err
@@ -484,7 +500,14 @@ func (c *Client) RemoveTag(ctx context.Context, issueID, tag, actor string) erro
 
 // CreateNote sends a POST /v1/issues/{issueID}/notes request.
 func (c *Client) CreateNote(ctx context.Context, issueID, author, body string) (core.Note, error) {
-	req := core.CreateNoteRequest{Author: author, Body: body}
+	return c.CreateNoteWithMode(ctx, issueID, author, body, "")
+}
+
+// CreateNoteWithMode sends a POST /v1/issues/{issueID}/notes request with a
+// caller-declared invocation mode recorded on the note_added audit event. An
+// empty mode normalizes to "unknown" on the daemon.
+func (c *Client) CreateNoteWithMode(ctx context.Context, issueID, author, body, invocationMode string) (core.Note, error) {
+	req := core.CreateNoteRequest{Author: author, Body: body, InvocationMode: invocationMode}
 	var result struct {
 		Note core.Note `json:"note"`
 	}

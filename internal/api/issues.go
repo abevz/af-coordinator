@@ -179,8 +179,13 @@ func handleClaimIssue(st store.CoordinatorStore, logger *slog.Logger) http.Handl
 		if req.TTLSeconds <= 0 {
 			req.TTLSeconds = 3600
 		}
+		invocationMode, err := core.NormalizeInvocationMode(req.InvocationMode)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, core.ErrValidationFailed, err.Error())
+			return
+		}
 
-		resp, err := st.ClaimIssueWithSession(r.Context(), issueID, req.Holder, req.TTLSeconds, req.SessionID)
+		resp, err := st.ClaimIssueWithMode(r.Context(), issueID, req.Holder, req.TTLSeconds, req.SessionID, invocationMode)
 		if err != nil {
 			if apiErr, ok := errAsAPIError(err); ok {
 				switch apiErr.Code {
@@ -302,6 +307,12 @@ func handleHandoffLease(st store.CoordinatorStore, logger *slog.Logger) http.Han
 			writeError(w, http.StatusBadRequest, core.ErrValidationFailed, err.Error())
 			return
 		}
+		normalizedMode, err := core.NormalizeInvocationMode(req.InvocationMode)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, core.ErrValidationFailed, err.Error())
+			return
+		}
+		req.InvocationMode = normalizedMode
 
 		resp, err := st.HandoffLease(r.Context(), issueID, req)
 		if err != nil {
@@ -451,6 +462,12 @@ func handleCloseIssue(st store.CoordinatorStore, logger *slog.Logger) http.Handl
 			writeError(w, http.StatusBadRequest, core.ErrValidationFailed, "actor is required")
 			return
 		}
+		normalizedMode, err := core.NormalizeInvocationMode(req.InvocationMode)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, core.ErrValidationFailed, err.Error())
+			return
+		}
+		req.InvocationMode = normalizedMode
 
 		result, err := st.CloseIssue(r.Context(), issueID, req)
 		if err != nil {
@@ -502,6 +519,12 @@ func handleOperatorCloseIssue(st store.CoordinatorStore, logger *slog.Logger) ht
 				"actor, reason, and expected_version are required")
 			return
 		}
+		normalizedMode, err := core.NormalizeInvocationMode(req.InvocationMode)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, core.ErrValidationFailed, err.Error())
+			return
+		}
+		req.InvocationMode = normalizedMode
 
 		result, err := st.OperatorCloseIssue(r.Context(), issueID, req)
 		if err != nil {
@@ -880,6 +903,12 @@ func handleCreateNote(st store.CoordinatorStore, logger *slog.Logger) http.Handl
 			writeError(w, http.StatusBadRequest, core.ErrValidationFailed, "body is required")
 			return
 		}
+		normalizedMode, err := core.NormalizeInvocationMode(req.InvocationMode)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, core.ErrValidationFailed, err.Error())
+			return
+		}
+		req.InvocationMode = normalizedMode
 
 		note, err := st.CreateNote(r.Context(), issueID, req)
 		if err != nil {

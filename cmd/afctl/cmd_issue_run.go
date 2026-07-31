@@ -14,7 +14,7 @@ import (
 	"github.com/abevz/af-coordinator/internal/core"
 )
 
-const issueRunUsage = "Usage: afctl issue run <issue-id> [--actor <name>] [--ttl <seconds>] [--close-resolution done|cancelled] [--branch <name>] [--pr-url <url>] [--commit-sha <sha>] [--note <text>] -- <command> [args...]\n" + lifecycleHint +
+const issueRunUsage = "Usage: afctl issue run <issue-id> [--actor <name>] [--ttl <seconds>] [--close-resolution done|cancelled] [--branch <name>] [--pr-url <url>] [--commit-sha <sha>] [--note <text>] [--invocation-mode interactive|scheduled|unknown] -- <command> [args...]\n" + lifecycleHint +
 	"\nOwns claim -> heartbeat -> close/handoff around a single subprocess, so the lease token never leaves this process's memory: it cannot be lost the way a multi-step script can lose it before persisting it. On exit 0, closes with --close-resolution (default done). On any other exit, or on Ctrl-C, hands the lease off with an auto-generated HANDOFF: note instead of closing."
 
 // runIssueRun claims issueID, execs the given command with the lease
@@ -51,6 +51,7 @@ func runIssueRun(ctx context.Context, c *client.Client, args []string) error {
 	ttl := 900
 	closeResolution := "done"
 	var branch, prURL, commitSHA, note string
+	invocationMode := ""
 
 	for i := 1; i < len(flagArgs); i++ {
 		switch flagArgs[i] {
@@ -89,6 +90,11 @@ func runIssueRun(ctx context.Context, c *client.Client, args []string) error {
 				note = flagArgs[i+1]
 				i++
 			}
+		case "--invocation-mode":
+			if i+1 < len(flagArgs) {
+				invocationMode = flagArgs[i+1]
+				i++
+			}
 		default:
 			return usageErr(issueRunUsage, fmt.Sprintf("unknown flag: %s", flagArgs[i]))
 		}
@@ -104,8 +110,15 @@ func runIssueRun(ctx context.Context, c *client.Client, args []string) error {
 	if err != nil {
 		return usageErr(issueRunUsage, err.Error())
 	}
+	if invocationMode != "" {
+		normalized, nerr := core.NormalizeInvocationMode(invocationMode)
+		if nerr != nil {
+			return usageErr(issueRunUsage, nerr.Error())
+		}
+		invocationMode = normalized
+	}
 
-	claim, err := c.ClaimIssueWithSession(ctx, issueID, holder, ttl, "")
+	claim, err := c.ClaimIssueWithSessionAndMode(ctx, issueID, holder, ttl, "", invocationMode)
 	if err != nil {
 		fail(err)
 	}
@@ -164,6 +177,7 @@ func runIssueRun(ctx context.Context, c *client.Client, args []string) error {
 			LeaseToken:      claim.LeaseToken,
 			Actor:           holder,
 			Note:            note,
+			InvocationMode:  invocationMode,
 		})
 		if err != nil {
 			return fmt.Errorf("command succeeded but close failed: %w", err)
@@ -185,7 +199,7 @@ func runIssueRun(ctx context.Context, c *client.Client, args []string) error {
 	if ctx.Err() != nil {
 		handoffNote = "HANDOFF: issue run cancelled"
 	}
-	if _, err := c.HandoffLease(background, issueID, claim.LeaseToken, handoffNote); err != nil {
+	if _, err := c.HandoffLeaseWithMode(background, issueID, claim.LeaseToken, handoffNote, invocationMode); err != nil {
 		return fmt.Errorf("command failed (%v) and handoff also failed: %w", runErr, err)
 	}
 	fmt.Fprintf(os.Stderr, "issue run: command failed, lease handed off with note: %s\n", handoffNote)
