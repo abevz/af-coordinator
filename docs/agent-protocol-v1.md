@@ -28,7 +28,7 @@ Every agent session follows this cycle:
 
 2. **Claim it**
    ```
-   afctl issue claim <short_id> --actor <name> --ttl 900 [--session-id <non-secret-id>]
+   afctl issue claim <short_id> --actor <name> --ttl 900 [--session-id <non-secret-id>] [--invocation-mode interactive|scheduled]
    ```
    Exports `lease_token`, `attempt_id`, and `version`. Keep the token secret —
    it proves your right to mutate the issue. The attempt ID is safe lifecycle
@@ -42,6 +42,15 @@ Every agent session follows this cycle:
    succeeds and will fail with `version_conflict` (exit code 2).
 
    Default TTL is 3600s. Use `--ttl 900` for shorter leases.
+
+   Every claim, note, and close records an `invocation_mode` on its audit
+   event alongside the actor (`issue_claimed`, `note_added`, `issue_closed`,
+   `issue_operator_closed`). The caller declares it with `--invocation-mode`:
+   `interactive` (human or one-shot launcher run) or `scheduled` (unattended
+   daemon/cron run). It is never inferred from the process tree. Omitted
+   values are recorded as `unknown` — a statement of absence, never an
+   answer — so a reader of history can tell the two apart without consulting
+   log files.
 
 3. **Heartbeat during work**
    Extend your lease every ⅓ of TTL (every 300s for 900s TTL):
@@ -253,6 +262,7 @@ Commands with `--json` succeed or fail with typed exit codes so the caller can r
 - Claim an issue before mutating files that belong to it.
 - One claim per agent at a time, unless the tasks are trivially coupled (same repo, same session).
 - **Identity**: `afctl` automatically infers your agent name and process PID from the process tree (e.g. `agy-4725`). You may optionally override this by exporting `AF_COORDINATOR_ACTOR=<agent-name>`.
+- **Invocation mode**: how a claim/note/close was initiated (`interactive` vs `scheduled`) is declared by the caller with `--invocation-mode` and recorded on the audit event; it is never inferred from the process tree, and an omitted value records as `unknown`.
 - Resolve actor from: `--actor` flag > `AF_COORDINATOR_ACTOR` env variable > process tree climbing > `USER` env variable > error.
 
 ## Worktree hygiene

@@ -396,6 +396,19 @@ func ClaimIssue(ctx context.Context, db *sql.DB, issueID, holder string, ttlSeco
 // identity used by lifecycle events. Session IDs are optional caller supplied
 // correlation data; they do not affect holder or lease authorization.
 func ClaimIssueWithSession(ctx context.Context, db *sql.DB, issueID, holder string, ttlSeconds int, sessionID string) (core.ClaimResponse, error) {
+	return ClaimIssueWithMode(ctx, db, issueID, holder, ttlSeconds, sessionID, "")
+}
+
+// ClaimIssueWithMode acquires a lease like ClaimIssueWithSession and records
+// the caller-declared invocation mode on the claim event. An empty value
+// normalizes to the conservative "unknown" default; the mode is never
+// inferred from the process tree.
+func ClaimIssueWithMode(ctx context.Context, db *sql.DB, issueID, holder string, ttlSeconds int, sessionID, invocationMode string) (core.ClaimResponse, error) {
+	invocationMode, err := core.NormalizeInvocationMode(invocationMode)
+	if err != nil {
+		return core.ClaimResponse{}, core.NewAPIError(core.ErrValidationFailed, err.Error())
+	}
+
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return core.ClaimResponse{}, fmt.Errorf("begin tx: %w", err)
@@ -451,10 +464,11 @@ func ClaimIssueWithSession(ctx context.Context, db *sql.DB, issueID, holder stri
 			return core.ClaimResponse{}, fmt.Errorf("renew lease: %w", err)
 		}
 		reattachPayload := map[string]any{
-			"attempt_id":  existingAttemptID,
-			"ttl_seconds": ttlSeconds,
-			"expires_at":  newExpiry,
-			"session_id":  sessionID,
+			"attempt_id":      existingAttemptID,
+			"ttl_seconds":     ttlSeconds,
+			"expires_at":      newExpiry,
+			"session_id":      sessionID,
+			"invocation_mode": invocationMode,
 		}
 		if err := insertEvent(ctx, tx, issueID, holder, "lease_reattached", reattachPayload, nowStr); err != nil {
 			return core.ClaimResponse{}, err
@@ -531,10 +545,11 @@ func ClaimIssueWithSession(ctx context.Context, db *sql.DB, issueID, holder stri
 	}
 
 	payload := map[string]any{
-		"attempt_id":  attemptID,
-		"ttl_seconds": ttlSeconds,
-		"expires_at":  expiresAt,
-		"session_id":  sessionID,
+		"attempt_id":      attemptID,
+		"ttl_seconds":     ttlSeconds,
+		"expires_at":      expiresAt,
+		"session_id":      sessionID,
+		"invocation_mode": invocationMode,
 	}
 	if err := insertEvent(ctx, tx, issueID, holder, "issue_claimed", payload, nowStr); err != nil {
 		return core.ClaimResponse{}, err
@@ -656,6 +671,11 @@ func HandoffLease(ctx context.Context, db *sql.DB, issueID string, req core.Hand
 		return core.HandoffResponse{}, core.NewAPIError(core.ErrValidationFailed, "lease_token is required")
 	}
 
+	invocationMode, err := core.NormalizeInvocationMode(req.InvocationMode)
+	if err != nil {
+		return core.HandoffResponse{}, core.NewAPIError(core.ErrValidationFailed, err.Error())
+	}
+
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return core.HandoffResponse{}, fmt.Errorf("begin tx: %w", err)
@@ -689,7 +709,7 @@ func HandoffLease(ctx context.Context, db *sql.DB, issueID string, req core.Hand
 	); err != nil {
 		return core.HandoffResponse{}, fmt.Errorf("insert handoff note: %w", err)
 	}
-	if err := insertEvent(ctx, tx, issueID, holder, "note_added", map[string]any{}, now); err != nil {
+	if err := insertEvent(ctx, tx, issueID, holder, "note_added", map[string]any{"invocation_mode": invocationMode}, now); err != nil {
 		return core.HandoffResponse{}, err
 	}
 
@@ -992,6 +1012,11 @@ func CloseIssue(ctx context.Context, db *sql.DB, issueID string, req core.CloseI
 		return core.CloseIssueResult{}, err
 	}
 
+	invocationMode, err := core.NormalizeInvocationMode(req.InvocationMode)
+	if err != nil {
+		return core.CloseIssueResult{}, core.NewAPIError(core.ErrValidationFailed, err.Error())
+	}
+
 	now := time.Now().UTC().Format(time.RFC3339)
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
@@ -1043,12 +1068,13 @@ func CloseIssue(ctx context.Context, db *sql.DB, issueID string, req core.CloseI
 	// A close note is appended before its closing event so the audit stream has
 	// a deterministic note-then-close order.
 	if req.Note != "" {
-		if err := insertCloseNote(ctx, tx, issueID, req.Actor, req.Note, now); err != nil {
+		if err := insertCloseNote(ctx, tx, issueID, req.Actor, req.Note, now, invocationMode); err != nil {
 			return core.CloseIssueResult{}, err
 		}
 	}
 
 	payload := terminalEventPayload(issue.Status, req.Resolution, issue.ExternalKey)
+	payload["invocation_mode"] = invocationMode
 	payload["attempt_id"] = attemptID
 	payload["end_reason"] = req.Resolution
 	if req.Branch != "" {
@@ -1079,6 +1105,11 @@ func OperatorCloseIssue(ctx context.Context, db *sql.DB, issueID string, req cor
 	}
 	if err := validateResolution(req.Resolution); err != nil {
 		return core.CloseIssueResult{}, err
+	}
+
+	invocationMode, err := core.NormalizeInvocationMode(req.InvocationMode)
+	if err != nil {
+		return core.CloseIssueResult{}, core.NewAPIError(core.ErrValidationFailed, err.Error())
 	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
@@ -1115,12 +1146,13 @@ func OperatorCloseIssue(ctx context.Context, db *sql.DB, issueID string, req cor
 	// A close note is appended before its closing event so the audit stream has
 	// a deterministic note-then-close order.
 	if req.Note != "" {
-		if err := insertCloseNote(ctx, tx, issueID, req.Actor, req.Note, now); err != nil {
+		if err := insertCloseNote(ctx, tx, issueID, req.Actor, req.Note, now, invocationMode); err != nil {
 			return core.CloseIssueResult{}, err
 		}
 	}
 
 	payload := terminalEventPayload(issue.Status, req.Resolution, issue.ExternalKey)
+	payload["invocation_mode"] = invocationMode
 	payload["reason"] = req.Reason
 	if req.Branch != "" {
 		payload["branch"] = req.Branch
@@ -1331,14 +1363,14 @@ func updateTerminalIssue(ctx context.Context, tx *sql.Tx, issue core.Issue, reso
 	}, nil
 }
 
-func insertCloseNote(ctx context.Context, tx *sql.Tx, issueID, actor, note, now string) error {
+func insertCloseNote(ctx context.Context, tx *sql.Tx, issueID, actor, note, now, invocationMode string) error {
 	if _, err := tx.ExecContext(ctx,
 		`INSERT INTO notes (id, issue_id, author, body, created_at) VALUES (?, ?, ?, ?, ?)`,
 		uuid.New().String(), issueID, actor, note, now,
 	); err != nil {
 		return fmt.Errorf("insert note: %w", err)
 	}
-	return insertEvent(ctx, tx, issueID, actor, "note_added", map[string]any{}, now)
+	return insertEvent(ctx, tx, issueID, actor, "note_added", map[string]any{"invocation_mode": invocationMode}, now)
 }
 
 func terminalEventPayload(fromStatus, resolution, externalKey string) map[string]any {
@@ -1662,6 +1694,11 @@ func CreateNote(ctx context.Context, db *sql.DB, issueID string, req core.Create
 		return core.Note{}, err
 	}
 
+	invocationMode, err := core.NormalizeInvocationMode(req.InvocationMode)
+	if err != nil {
+		return core.Note{}, core.NewAPIError(core.ErrValidationFailed, err.Error())
+	}
+
 	now := time.Now().UTC().Format(time.RFC3339)
 	id := uuid.New().String()
 
@@ -1681,10 +1718,14 @@ func CreateNote(ctx context.Context, db *sql.DB, issueID string, req core.Create
 	}
 
 	// Append event.
+	notePayload, err := json.Marshal(map[string]string{"invocation_mode": invocationMode})
+	if err != nil {
+		return core.Note{}, fmt.Errorf("marshal note event payload: %w", err)
+	}
 	_, err = tx.ExecContext(ctx,
 		`INSERT INTO events (id, issue_id, actor, event_type, payload_json, created_at)
 		 VALUES (?, ?, ?, ?, ?, ?)`,
-		uuid.New().String(), issueID, req.Author, "note_added", `{}`, now,
+		uuid.New().String(), issueID, req.Author, "note_added", string(notePayload), now,
 	)
 	if err != nil {
 		return core.Note{}, fmt.Errorf("insert event: %w", err)
