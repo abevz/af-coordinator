@@ -1850,6 +1850,106 @@ func TestOperatorCloseIssueWithMetadata(t *testing.T) {
 	}
 }
 
+// TestOperatorCloseReopenTokenValidation verifies that operator-close and
+// operator-reopen fail closed with 403 forbidden when AF_OPERATOR_TOKEN is
+// missing/empty or when the Authorization header does not match the expected
+// Bearer token. os.Getenv returns "" for both a missing and an empty
+// AF_OPERATOR_TOKEN, so the empty env value deterministically simulates the
+// not-configured branch for both. These subtests must not call t.Parallel
+// because they rely on t.Setenv.
+func TestOperatorCloseReopenTokenValidation(t *testing.T) {
+	closeBody := `{"resolution":"done","expected_version":1,"actor":"operator","reason":"token validation"}`
+	reopenBody := `{"expected_version":1,"actor":"operator","reason":"token validation"}`
+
+	tests := []struct {
+		name       string
+		endpoint   string
+		body       string
+		envToken   string
+		authHeader string
+		wantMsg    string
+	}{
+		{
+			name:       "close missing/empty token env",
+			endpoint:   "operator-close",
+			body:       closeBody,
+			envToken:   "",
+			authHeader: "Bearer test-token",
+			wantMsg:    "AF_OPERATOR_TOKEN not configured on server",
+		},
+		{
+			name:       "reopen missing/empty token env",
+			endpoint:   "operator-reopen",
+			body:       reopenBody,
+			envToken:   "",
+			authHeader: "Bearer test-token",
+			wantMsg:    "AF_OPERATOR_TOKEN not configured on server",
+		},
+		{
+			name:       "close mismatched token",
+			endpoint:   "operator-close",
+			body:       closeBody,
+			envToken:   "test-token",
+			authHeader: "Bearer wrong-token",
+			wantMsg:    "invalid or missing operator token",
+		},
+		{
+			name:       "reopen mismatched token",
+			endpoint:   "operator-reopen",
+			body:       reopenBody,
+			envToken:   "test-token",
+			authHeader: "Bearer wrong-token",
+			wantMsg:    "invalid or missing operator token",
+		},
+		{
+			name:       "close missing authorization header",
+			endpoint:   "operator-close",
+			body:       closeBody,
+			envToken:   "test-token",
+			authHeader: "",
+			wantMsg:    "invalid or missing operator token",
+		},
+		{
+			name:       "reopen missing authorization header",
+			endpoint:   "operator-reopen",
+			body:       reopenBody,
+			envToken:   "test-token",
+			authHeader: "",
+			wantMsg:    "invalid or missing operator token",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("AF_OPERATOR_TOKEN", tt.envToken)
+			server, _ := newTestServer(t)
+
+			req, err := http.NewRequest(http.MethodPost, server.URL+"/v1/issues/issue-token-validation/"+tt.endpoint, strings.NewReader(tt.body))
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.Header.Set("Content-Type", "application/json")
+			if tt.authHeader != "" {
+				req.Header.Set("Authorization", tt.authHeader)
+			}
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if resp.StatusCode != http.StatusForbidden {
+				t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusForbidden)
+			}
+			apiErr := decodeJSON[core.APIErrorResponse](t, resp)
+			if apiErr.Error.Code != core.ErrForbidden {
+				t.Fatalf("error code = %q, want %q", apiErr.Error.Code, core.ErrForbidden)
+			}
+			if apiErr.Error.Message != tt.wantMsg {
+				t.Fatalf("error message = %q, want %q", apiErr.Error.Message, tt.wantMsg)
+			}
+		})
+	}
+}
+
 func TestCloseIssueWithoutLeaseReturnsGone(t *testing.T) {
 	server, db := newTestServer(t)
 	now := time.Now().UTC().Format(time.RFC3339)
