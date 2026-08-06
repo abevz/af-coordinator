@@ -175,6 +175,13 @@ afctl issue dependency add utils-12 --depends-on utils-11 --kind blocks
 afctl ls --project utils --status open     # what remains
 afctl show --full utils-10                 # epic with its trail
 
+# Querying all child tasks of a specific parent (e.g. utils-10):
+# A) Human-readable table output filtered by parent ID:
+afctl issue list | grep "parent:utils-10"
+
+# B) Programmatic JSON output filtered by parent dependency:
+afctl issue list --json | jq -r '.[] | select(.dependencies[]? | .kind == "parent" and (.depends_on_short_id == "utils-10" or .depends_on_id == "utils-10")) | "\(.short_id)\t[\(.status)]\t\(.title)"'
+
 # 5. When the last child is done, explicitly close the unclaimable epic
 afctl issue operator-close utils-10 --resolution done --expected-version N \
   --reason "all children done; restic in production since afc-…"
