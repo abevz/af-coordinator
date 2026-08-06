@@ -125,9 +125,25 @@ func buildAfctlForRunTest(t *testing.T) string {
 	return binPath
 }
 
+// testSocketDir returns a short-lived temp directory for unix sockets.
+// t.TempDir() embeds the full test name, and when TMPDIR itself is long (as
+// in sandboxed CI environments) the resulting socket path can exceed the
+// platform's sun_path limit (108 bytes on Linux), making net.Listen fail with
+// "bind: invalid argument". A short random directory keeps paths well under
+// the limit regardless of the test name.
+func testSocketDir(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "af-sock-")
+	if err != nil {
+		t.Fatalf("os.MkdirTemp: %v", err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	return dir
+}
+
 func startMockCoordinator(t *testing.T, mock *mockCoordinator) string {
 	t.Helper()
-	sockPath := filepath.Join(t.TempDir(), "af-coordinator.sock")
+	sockPath := filepath.Join(testSocketDir(t), "af-coordinator.sock")
 	l, err := net.Listen("unix", sockPath)
 	if err != nil {
 		t.Fatalf("listen: %v", err)

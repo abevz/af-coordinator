@@ -1,6 +1,10 @@
 package main
 
-import "testing"
+import (
+	"context"
+	"strings"
+	"testing"
+)
 
 func TestResolveDependencyEdge(t *testing.T) {
 	cases := []struct {
@@ -85,4 +89,39 @@ func TestResolveDependencyEdge(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestTopLevelDependencyRoutesToIssueNamespace verifies that a misplaced
+// `afctl dependency ...` invocation lands in the issue dependency namespace
+// (canonical: `afctl issue dependency`) so errors name the working path
+// instead of the global usage block.
+func TestTopLevelDependencyRoutesToIssueNamespace(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "no subcommand", args: nil},
+		{name: "unknown subcommand", args: []string{"bogus"}},
+		{name: "add missing everything", args: []string{"add"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := runDependency(context.Background(), nil, tt.args)
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			if !strings.Contains(err.Error(), "Usage: afctl issue dependency") {
+				t.Errorf("error = %q, want it to name the issue dependency path", err.Error())
+			}
+		})
+	}
+
+	t.Run("help short-circuits", func(t *testing.T) {
+		if err := runDependency(context.Background(), nil, []string{"-h"}); err != nil {
+			t.Errorf("runDependency(-h) = %v, want nil", err)
+		}
+		if err := runDependency(context.Background(), nil, []string{"--help"}); err != nil {
+			t.Errorf("runDependency(--help) = %v, want nil", err)
+		}
+	})
 }
