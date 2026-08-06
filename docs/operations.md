@@ -247,7 +247,7 @@ ID SHORT STATUS TYPE TITLE ASSIGNEE CLAIMED BLOCKED BY DEPS TAGS
   dependency is not shown as an active blocker.
 - `DEPS` lists non-blocking relationships such as `parent:`, `related:`, and
   `discovered-from:`. Blocking relationships are shown in `BLOCKED BY` to
-  avoid duplicating the same information.
+  avoid duplicating the same information. To list all child tasks belonging to a parent issue (e.g. `aion-500`), filter table output with `grep "parent:aion-500"`.
 - `TAGS` lists the issue's namespaced tags, comma-joined.
 - The full default row is wide; pass `--columns <key[,key...]>` (valid keys:
   `id`, `short`, `status`, `type`, `title`, `assignee`, `claimed`,
@@ -257,7 +257,8 @@ ID SHORT STATUS TYPE TITLE ASSIGNEE CLAIMED BLOCKED BY DEPS TAGS
 
 With `--json`, the issue object exposes the same derived state as optional
 `blocked` and `blocked_by` fields, while `dependencies` retains the complete
-relationship list.
+relationship list. To query children of `aion-500` from JSON output:
+`afctl issue list --json | jq -r '.[] | select(.dependencies[]? | .kind == "parent" and (.depends_on_short_id == "aion-500" or .depends_on_id == "aion-500"))'`
 
 ## Agent guidance sync
 
