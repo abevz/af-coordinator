@@ -103,3 +103,49 @@ func TestRevisionSkew(t *testing.T) {
 		})
 	}
 }
+
+// TestVersionCommandReportsBuildRevision verifies that afctl can report the
+// build revision embedded via Makefile ldflags, so an installed binary can be
+// compared against the source checkout (`git rev-parse HEAD`). Both the
+// `version` command and the `--version` flag must work without a daemon.
+func TestVersionCommandReportsBuildRevision(t *testing.T) {
+	tmpDir := t.TempDir()
+	binPath := filepath.Join(tmpDir, "afctl")
+	const localRevision = "test-revision-xyz"
+	cmd := exec.Command("go", "build", "-buildvcs=false",
+		"-ldflags", "-X github.com/abevz/af-coordinator/internal/build.Revision="+localRevision,
+		"-o", binPath, ".")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("failed to build afctl: %v\noutput: %s", err, out)
+	}
+
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "version command", args: []string{"version"}},
+		{name: "version flag", args: []string{"--version"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runCmd := exec.Command(binPath, tt.args...)
+			runCmd.Dir = t.TempDir()
+			// Point at a socket that does not exist: `version` must never
+			// require a daemon, so any accidental health probe would fail.
+			runCmd.Env = append(os.Environ(), "AF_COORDINATOR_SOCKET="+filepath.Join(tmpDir, "does-not-exist.sock"))
+			var stdout, stderr bytes.Buffer
+			runCmd.Stdout = &stdout
+			runCmd.Stderr = &stderr
+			if err := runCmd.Run(); err != nil {
+				t.Fatalf("afctl %v failed: %v\nstderr: %s", tt.args, err, stderr.String())
+			}
+			if !strings.Contains(stdout.String(), localRevision) {
+				t.Errorf("stdout = %q, want it to contain revision %q", stdout.String(), localRevision)
+			}
+			if strings.Contains(stdout.String(), "unknown") {
+				t.Errorf("stdout = %q, want the embedded revision, not the unknown default", stdout.String())
+			}
+		})
+	}
+}

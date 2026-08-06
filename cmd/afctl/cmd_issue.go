@@ -14,7 +14,7 @@ import (
 
 // ─── Issue ───────────────────────────────────────────────────────────────────
 
-const issueUsage = "Usage: afctl issue <create|get|list|ready|claim|heartbeat|release|handoff|run|edit|update|close|operator-close|operator-reopen|operator-release|cancel>"
+const issueUsage = "Usage: afctl issue <create|create-form|get|list|ready|claim|heartbeat|release|handoff|run|edit|update|close|operator-close|operator-reopen|operator-release|cancel|link|unlink|dependency|note|tag|events>"
 
 // hasHelpFlag reports whether args requests help via --help or -h, checked
 // before any positional argument is consumed so `<cmd> -h` never gets
@@ -103,7 +103,7 @@ func runIssue(ctx context.Context, c *client.Client, args []string) error {
 	case "events":
 		return runIssueEvents(ctx, c, args[1:])
 	default:
-		return fmt.Errorf("unknown issue subcommand: %s\n", args[0])
+		return usageErr(issueUsage, fmt.Sprintf("unknown issue subcommand: %s", args[0]))
 	}
 }
 

@@ -426,7 +426,7 @@ func TestNonLifecycleIssueCommandsHelpFlagShortCircuits(t *testing.T) {
 }
 
 func TestRunIssueReadyEncodesRepeatedTagQuery(t *testing.T) {
-	socketPath := filepath.Join(t.TempDir(), "ready.sock")
+	socketPath := filepath.Join(testSocketDir(t), "ready.sock")
 	listener, err := net.Listen("unix", socketPath)
 	if err != nil {
 		t.Fatal(err)
@@ -458,7 +458,7 @@ func TestRunIssueReadyEncodesRepeatedTagQuery(t *testing.T) {
 }
 
 func TestRunIssueReadySplitsCommaSeparatedTagQuery(t *testing.T) {
-	socketPath := filepath.Join(t.TempDir(), "ready-comma.sock")
+	socketPath := filepath.Join(testSocketDir(t), "ready-comma.sock")
 	listener, err := net.Listen("unix", socketPath)
 	if err != nil {
 		t.Fatal(err)
@@ -495,5 +495,30 @@ func TestRunIssueReadyRejectsUnknownColumn(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "unknown column") {
 		t.Fatalf("error = %v, want unknown column", err)
+	}
+}
+
+// TestRunIssueUnknownSubcommandShowsNamespaceUsage verifies that an unknown
+// issue subcommand prints the full issue namespace usage (naming every valid
+// alternative, including dependency/note/tag/events/link/unlink) instead of a
+// bare error line, so an agent can find the working path.
+func TestRunIssueUnknownSubcommandShowsNamespaceUsage(t *testing.T) {
+	err := runIssue(context.Background(), nil, []string{"dependancy"})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	for _, want := range []string{
+		"unknown issue subcommand: dependancy",
+		"Usage: afctl issue ",
+		"dependency",
+		"note",
+		"tag",
+		"events",
+		"link",
+		"unlink",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error = %q, want it to contain %q", err.Error(), want)
+		}
 	}
 }

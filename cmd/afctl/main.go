@@ -53,6 +53,10 @@ func main() {
 		printUsage()
 		return
 	}
+	if filtered[0] == "--version" {
+		printVersion()
+		return
+	}
 
 	c := client.New(cfg.SocketPath)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -92,10 +96,14 @@ func main() {
 		err = runStats(ctx, c, filtered[1:])
 	case "issue":
 		err = runIssue(ctx, c, filtered[1:])
+	case "dependency":
+		err = runDependency(ctx, c, filtered[1:])
 	case "ls":
 		err = runLs(ctx, c, filtered[1:])
 	case "show":
 		err = runShow(ctx, c, filtered[1:])
+	case "version":
+		printVersion()
 	default:
 		printUsage()
 		os.Exit(1)
@@ -106,7 +114,7 @@ func main() {
 }
 
 func shouldCheckDaemonRevision(args []string) bool {
-	if len(args) == 0 || args[0] == "init" || args[0] == "protocol" {
+	if len(args) == 0 || args[0] == "init" || args[0] == "protocol" || args[0] == "version" {
 		return false
 	}
 	for _, arg := range args {
@@ -183,6 +191,7 @@ Commands:
       remove            Remove a dependency between two issues
   ls [filters]           List issues (shortcut for issue list; use --help for filters)
   show <issue-id> [--full] Show issue details (shortcut for issue get)
+  version                Print the afctl build revision
 `)
 }
 
@@ -317,6 +326,22 @@ func runShow(ctx context.Context, c *client.Client, args []string) error {
 		return fmt.Errorf("Usage: afctl show <issue-id-or-short-id> [--full]")
 	}
 	return runIssueGet(ctx, c, args)
+}
+
+// runDependency is a top-level shortcut for `afctl issue dependency`. It keeps
+// a misplaced `afctl dependency ...` invocation inside the issue dependency
+// namespace, so usage errors name the canonical `afctl issue dependency` path
+// instead of falling through to the generic global usage block.
+func runDependency(ctx context.Context, c *client.Client, args []string) error {
+	return runIssueDependency(ctx, c, args)
+}
+
+// printVersion reports the afctl build revision so an installed binary can be
+// compared against the source checkout (`git rev-parse HEAD`). build.Revision
+// is embedded by the Makefile ldflags; it reads "unknown" for plain
+// `go build`/`go install` binaries that skipped the Makefile.
+func printVersion() {
+	fmt.Printf("afctl revision %s\n", build.Revision)
 }
 
 func printIssue(i core.Issue) {
