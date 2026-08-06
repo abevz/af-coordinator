@@ -2,12 +2,15 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/abevz/af-coordinator/internal/client"
@@ -520,5 +523,265 @@ func TestRunIssueUnknownSubcommandShowsNamespaceUsage(t *testing.T) {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error = %q, want it to contain %q", err.Error(), want)
 		}
+	}
+}
+
+// TestIssueExpectedVersionAutoResolve verifies the CLI-side auto-resolution
+// contract for update and the operator-* family: --expected-version may be
+// omitted, or spelled as "latest" or as --force, and the CLI then fetches the
+// issue's current version via GetIssue and sends that concrete version to the
+// API. An explicit numeric --expected-version is still forwarded verbatim and
+// must not trigger the extra GET.
+func TestIssueExpectedVersionAutoResolve(t *testing.T) {
+	tests := []struct {
+		name        string
+		args        []string // args after "issue"
+		method      string
+		path        string // mutation endpoint
+		wantGet     bool   // true when auto-resolve should issue a GET
+		explicitVer int    // expected_version forwarded when wantGet is false
+	}{
+		{
+			name:    "update --force",
+			args:    []string{"update", "afc-1", "--force"},
+			method:  http.MethodPatch,
+			path:    "/v1/issues/afc-1",
+			wantGet: true,
+		},
+		{
+			name:    "update --expected-version latest",
+			args:    []string{"update", "afc-1", "--expected-version", "latest"},
+			method:  http.MethodPatch,
+			path:    "/v1/issues/afc-1",
+			wantGet: true,
+		},
+		{
+			name:    "update omitted version auto-resolves",
+			args:    []string{"update", "afc-1", "--title", "renamed"},
+			method:  http.MethodPatch,
+			path:    "/v1/issues/afc-1",
+			wantGet: true,
+		},
+		{
+			name:        "update explicit version is forwarded verbatim",
+			args:        []string{"update", "afc-1", "--expected-version", "4", "--title", "renamed"},
+			method:      http.MethodPatch,
+			path:        "/v1/issues/afc-1",
+			explicitVer: 4,
+		},
+		{
+			name:    "operator-close --force",
+			args:    []string{"operator-close", "afc-1", "--resolution", "done", "--force", "--reason", "parent completed"},
+			method:  http.MethodPost,
+			path:    "/v1/issues/afc-1/operator-close",
+			wantGet: true,
+		},
+		{
+			name:    "operator-close --expected-version latest",
+			args:    []string{"operator-close", "afc-1", "--resolution", "done", "--expected-version", "latest", "--reason", "parent completed"},
+			method:  http.MethodPost,
+			path:    "/v1/issues/afc-1/operator-close",
+			wantGet: true,
+		},
+		{
+			name:    "operator-close omitted version auto-resolves",
+			args:    []string{"operator-close", "afc-1", "--resolution", "done", "--reason", "parent completed"},
+			method:  http.MethodPost,
+			path:    "/v1/issues/afc-1/operator-close",
+			wantGet: true,
+		},
+		{
+			name:        "operator-close explicit version is forwarded verbatim",
+			args:        []string{"operator-close", "afc-1", "--resolution", "done", "--expected-version", "4", "--reason", "parent completed"},
+			method:      http.MethodPost,
+			path:        "/v1/issues/afc-1/operator-close",
+			explicitVer: 4,
+		},
+		{
+			name:    "operator-reopen --force",
+			args:    []string{"operator-reopen", "afc-1", "--force", "--reason", "needs more work"},
+			method:  http.MethodPost,
+			path:    "/v1/issues/afc-1/operator-reopen",
+			wantGet: true,
+		},
+		{
+			name:    "operator-reopen --expected-version latest",
+			args:    []string{"operator-reopen", "afc-1", "--expected-version", "latest", "--reason", "needs more work"},
+			method:  http.MethodPost,
+			path:    "/v1/issues/afc-1/operator-reopen",
+			wantGet: true,
+		},
+		{
+			name:    "operator-reopen omitted version auto-resolves",
+			args:    []string{"operator-reopen", "afc-1", "--reason", "needs more work"},
+			method:  http.MethodPost,
+			path:    "/v1/issues/afc-1/operator-reopen",
+			wantGet: true,
+		},
+		{
+			name:        "operator-reopen explicit version is forwarded verbatim",
+			args:        []string{"operator-reopen", "afc-1", "--expected-version", "4", "--reason", "needs more work"},
+			method:      http.MethodPost,
+			path:        "/v1/issues/afc-1/operator-reopen",
+			explicitVer: 4,
+		},
+		{
+			name:    "operator-release --force",
+			args:    []string{"operator-release", "afc-1", "--force", "--reason", "lease token lost"},
+			method:  http.MethodPost,
+			path:    "/v1/issues/afc-1/operator-release",
+			wantGet: true,
+		},
+		{
+			name:    "operator-release --expected-version latest",
+			args:    []string{"operator-release", "afc-1", "--expected-version", "latest", "--reason", "lease token lost"},
+			method:  http.MethodPost,
+			path:    "/v1/issues/afc-1/operator-release",
+			wantGet: true,
+		},
+		{
+			name:    "operator-release omitted version auto-resolves",
+			args:    []string{"operator-release", "afc-1", "--reason", "lease token lost"},
+			method:  http.MethodPost,
+			path:    "/v1/issues/afc-1/operator-release",
+			wantGet: true,
+		},
+		{
+			name:        "operator-release explicit version is forwarded verbatim",
+			args:        []string{"operator-release", "afc-1", "--expected-version", "4", "--reason", "lease token lost"},
+			method:      http.MethodPost,
+			path:        "/v1/issues/afc-1/operator-release",
+			explicitVer: 4,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("AF_OPERATOR_TOKEN", "test-operator-token")
+			oldActor := defaultActor
+			defaultActor = "test-actor"
+			defer func() { defaultActor = oldActor }()
+
+			sockPath := filepath.Join(testSocketDir(t), "expected-version.sock")
+			listener, err := net.Listen("unix", sockPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer listener.Close()
+
+			var (
+				mu          sync.Mutex
+				gotGet      bool
+				gotExpected int
+			)
+			server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodGet {
+					if r.URL.Path != "/v1/issues/afc-1" {
+						t.Errorf("unexpected GET path: %s", r.URL.Path)
+					}
+					mu.Lock()
+					gotGet = true
+					mu.Unlock()
+					w.Header().Set("Content-Type", "application/json")
+					_, _ = w.Write([]byte(`{"issue":{"id":"afc-1","status":"open","version":7}}`))
+					return
+				}
+				if r.Method != tt.method || r.URL.Path != tt.path {
+					t.Errorf("unexpected mutation request: %s %s", r.Method, r.URL.Path)
+					w.WriteHeader(http.StatusNotFound)
+					return
+				}
+				var body map[string]any
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Errorf("decode mutation body: %v", err)
+					w.WriteHeader(http.StatusBadRequest)
+					return
+				}
+				if v, ok := body["expected_version"].(float64); ok {
+					mu.Lock()
+					gotExpected = int(v)
+					mu.Unlock()
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"issue":{"id":"afc-1","status":"open","version":8}}`))
+			}))
+			server.Listener.Close()
+			server.Listener = listener
+			server.Start()
+			defer server.Close()
+
+			if err := runIssue(context.Background(), client.New(sockPath), tt.args); err != nil {
+				t.Fatalf("runIssue(%v): %v", tt.args, err)
+			}
+
+			mu.Lock()
+			defer mu.Unlock()
+			if tt.wantGet && !gotGet {
+				t.Fatal("auto-resolve should fetch the issue version via GET /v1/issues/afc-1")
+			}
+			if !tt.wantGet && gotGet {
+				t.Fatal("explicit --expected-version must not trigger the auto-resolve GET")
+			}
+			want := 7
+			if !tt.wantGet {
+				want = tt.explicitVer
+			}
+			if gotExpected != want {
+				t.Fatalf("mutation expected_version = %d, want %d", gotExpected, want)
+			}
+		})
+	}
+}
+
+// TestAutoResolveVersionStillSurfacesConcurrentConflict verifies that the
+// CLI-side auto-resolution does not weaken optimistic concurrency: after the
+// CLI has fetched the current version via GetIssue, a concurrent edit by
+// another actor bumps the version, so a mutation carrying the now-stale
+// resolved version must still surface the API's version_conflict error (and
+// the exit-code mapping used by fail()).
+func TestAutoResolveVersionStillSurfacesConcurrentConflict(t *testing.T) {
+	sockPath := filepath.Join(testSocketDir(t), "version-conflict.sock")
+	listener, err := net.Listen("unix", sockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/issues/afc-1" && r.Method == http.MethodGet {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"issue":{"id":"afc-1","status":"open","version":5}}`))
+			return
+		}
+		// A second actor bumped the issue between the CLI's fetch and this
+		// mutation, so the resolved version is stale.
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		_, _ = w.Write([]byte(`{"error":{"code":"version_conflict","message":"issue changed concurrently"}}`))
+	}))
+	server.Listener.Close()
+	server.Listener = listener
+	server.Start()
+	defer server.Close()
+
+	c := client.New(sockPath)
+	version := -1
+	if err := resolveExpectedVersion(context.Background(), c, "usage", "afc-1", &version); err != nil {
+		t.Fatalf("resolveExpectedVersion: %v", err)
+	}
+	if version != 5 {
+		t.Fatalf("resolved version = %d, want 5", version)
+	}
+
+	_, err = c.UpdateIssue(context.Background(), "afc-1", core.UpdateIssueRequest{ExpectedVersion: version})
+	var clientErr *client.ClientError
+	if !errors.As(err, &clientErr) {
+		t.Fatalf("UpdateIssue error = %v, want *client.ClientError", err)
+	}
+	if clientErr.Code != core.ErrConflict {
+		t.Fatalf("error code = %q, want %q", clientErr.Code, core.ErrConflict)
+	}
+	if got := mapExitCodeErr(err); got != 2 {
+		t.Fatalf("mapExitCodeErr = %d, want 2 (version_conflict)", got)
 	}
 }
