@@ -46,6 +46,25 @@ func usageErr(usage, detail string) error {
 	return fmt.Errorf("%s\n%s", usage, detail)
 }
 
+// resolveExpectedVersion fills version with the issue's current version when
+// it is still the unset sentinel -1, which is the case when --expected-version
+// is omitted, set to "latest", or --force is given. Resolution is a CLI
+// convenience only: the request sent to the API always carries a concrete
+// version number, so the server-side optimistic-concurrency check is
+// unchanged. Each caller keeps its own post-resolution guard, preserving the
+// per-command sentinel semantics (update: < 0, operator-*: <= 0).
+func resolveExpectedVersion(ctx context.Context, c *client.Client, usage, issueID string, version *int) error {
+	if *version != -1 {
+		return nil
+	}
+	issue, _, err := c.GetIssue(ctx, issueID)
+	if err != nil {
+		return usageErr(usage, fmt.Sprintf("failed to fetch current issue version: %v", err))
+	}
+	*version = issue.Version
+	return nil
+}
+
 func runIssue(ctx context.Context, c *client.Client, args []string) error {
 	if len(args) < 1 {
 		return usageErr(issueUsage, "")
@@ -674,7 +693,7 @@ func runIssueHandoff(ctx context.Context, c *client.Client, args []string) error
 	return nil
 }
 
-const issueUpdateUsage = "Usage: afctl issue update <issue-id> [--title ...] [--type <task|bug|feature|epic|chore>] [--external-key ...] [--description ...] [--acceptance ...] [--priority N] [--assignee ...] [--status ...] --expected-version N [--lease-token ...] [--release]"
+const issueUpdateUsage = "Usage: afctl issue update <issue-id> [--title ...] [--type <task|bug|feature|epic|chore>] [--external-key ...] [--description ...] [--acceptance ...] [--priority N] [--assignee ...] [--status ...] [--expected-version N|latest] [--force] [--lease-token ...] [--release]"
 
 func runIssueUpdate(ctx context.Context, c *client.Client, args []string) error {
 	if hasHelpFlag(args) {
@@ -733,7 +752,11 @@ func runIssueUpdate(ctx context.Context, c *client.Client, args []string) error 
 			}
 		case "--expected-version":
 			if i+1 < len(args) {
-				fmt.Sscanf(args[i+1], "%d", &req.ExpectedVersion)
+				if args[i+1] == "latest" {
+					req.ExpectedVersion = -1
+				} else {
+					fmt.Sscanf(args[i+1], "%d", &req.ExpectedVersion)
+				}
 				i++
 			}
 		case "--lease-token":
@@ -743,9 +766,15 @@ func runIssueUpdate(ctx context.Context, c *client.Client, args []string) error 
 			}
 		case "--release":
 			req.ReleaseLease = true
+		case "--force":
+			req.ExpectedVersion = -1
 		}
 	}
 
+	// Auto-resolve the version when omitted, --expected-version latest, or --force.
+	if err := resolveExpectedVersion(ctx, c, issueUpdateUsage, issueID, &req.ExpectedVersion); err != nil {
+		return err
+	}
 	if req.ExpectedVersion < 0 {
 		return usageErr(issueUpdateUsage, "--expected-version is required")
 	}
@@ -875,7 +904,7 @@ func runIssueClose(ctx context.Context, c *client.Client, args []string) error {
 	return nil
 }
 
-const issueOperatorCloseUsage = "Usage: afctl issue operator-close <issue-id> --resolution done|cancelled [--expected-version N] --reason \"why operator closure is needed\" [--branch \u003cname\u003e] [--pr-url \u003curl\u003e] [--commit-sha \u003csha\u003e] [--note \"what was done\"]\n" + lifecycleHint
+const issueOperatorCloseUsage = "Usage: afctl issue operator-close <issue-id> --resolution done|cancelled [--expected-version N|latest] [--force] --reason \"why operator closure is needed\" [--branch \u003cname\u003e] [--pr-url \u003curl\u003e] [--commit-sha \u003csha\u003e] [--note \"what was done\"]\n" + lifecycleHint
 
 func runIssueOperatorClose(ctx context.Context, c *client.Client, args []string) error {
 	if hasHelpFlag(args) {
@@ -912,7 +941,11 @@ func runIssueOperatorClose(ctx context.Context, c *client.Client, args []string)
 			}
 		case "--expected-version":
 			if i+1 < len(args) {
-				fmt.Sscanf(args[i+1], "%d", &req.ExpectedVersion)
+				if args[i+1] == "latest" {
+					req.ExpectedVersion = -1
+				} else {
+					fmt.Sscanf(args[i+1], "%d", &req.ExpectedVersion)
+				}
 				i++
 			}
 		case "--reason":
@@ -925,6 +958,8 @@ func runIssueOperatorClose(ctx context.Context, c *client.Client, args []string)
 				req.Note = args[i+1]
 				i++
 			}
+		case "--force":
+			req.ExpectedVersion = -1
 		default:
 			return usageErr(issueOperatorCloseUsage, fmt.Sprintf("unknown flag: %s", args[i]))
 		}
@@ -932,13 +967,9 @@ func runIssueOperatorClose(ctx context.Context, c *client.Client, args []string)
 	if req.Resolution == "" {
 		return usageErr(issueOperatorCloseUsage, "--resolution is required (done or cancelled)")
 	}
-	// Auto-resolve version when not provided by the user.
-	if req.ExpectedVersion == -1 {
-		issue, _, err := c.GetIssue(ctx, issueID)
-		if err != nil {
-			return usageErr(issueOperatorCloseUsage, fmt.Sprintf("failed to fetch current issue version: %v", err))
-		}
-		req.ExpectedVersion = issue.Version
+	// Auto-resolve the version when omitted, --expected-version latest, or --force.
+	if err := resolveExpectedVersion(ctx, c, issueOperatorCloseUsage, issueID, &req.ExpectedVersion); err != nil {
+		return err
 	}
 	if req.ExpectedVersion <= 0 {
 		return usageErr(issueOperatorCloseUsage, "--expected-version is required")
@@ -982,7 +1013,7 @@ func runIssueOperatorClose(ctx context.Context, c *client.Client, args []string)
 	return nil
 }
 
-const issueOperatorReopenUsage = "Usage: afctl issue operator-reopen <issue-id> --expected-version N --reason \"why work is reopening\"\n" + lifecycleHint
+const issueOperatorReopenUsage = "Usage: afctl issue operator-reopen <issue-id> [--expected-version N|latest] [--force] --reason \"why work is reopening\"\n" + lifecycleHint
 
 func runIssueOperatorReopen(ctx context.Context, c *client.Client, args []string) error {
 	if hasHelpFlag(args) {
@@ -999,7 +1030,11 @@ func runIssueOperatorReopen(ctx context.Context, c *client.Client, args []string
 		switch args[i] {
 		case "--expected-version":
 			if i+1 < len(args) {
-				fmt.Sscanf(args[i+1], "%d", &req.ExpectedVersion)
+				if args[i+1] == "latest" {
+					req.ExpectedVersion = -1
+				} else {
+					fmt.Sscanf(args[i+1], "%d", &req.ExpectedVersion)
+				}
 				i++
 			}
 		case "--reason":
@@ -1007,15 +1042,21 @@ func runIssueOperatorReopen(ctx context.Context, c *client.Client, args []string
 				req.Reason = args[i+1]
 				i++
 			}
+		case "--force":
+			req.ExpectedVersion = -1
 		default:
 			return usageErr(issueOperatorReopenUsage, fmt.Sprintf("unknown flag: %s", args[i]))
 		}
 	}
-	if req.ExpectedVersion <= 0 {
-		return usageErr(issueOperatorReopenUsage, "--expected-version is required")
-	}
 	if strings.TrimSpace(req.Reason) == "" {
 		return usageErr(issueOperatorReopenUsage, "--reason is required")
+	}
+	// Auto-resolve the version when omitted, --expected-version latest, or --force.
+	if err := resolveExpectedVersion(ctx, c, issueOperatorReopenUsage, issueID, &req.ExpectedVersion); err != nil {
+		return err
+	}
+	if req.ExpectedVersion <= 0 {
+		return usageErr(issueOperatorReopenUsage, "--expected-version is required")
 	}
 	actor, err := resolveActor("")
 	if err != nil {
@@ -1041,7 +1082,7 @@ func runIssueOperatorReopen(ctx context.Context, c *client.Client, args []string
 	return nil
 }
 
-const issueOperatorReleaseUsage = "Usage: afctl issue operator-release <issue-id> --expected-version N --reason \"why the lease is being force-cleared\"\n" +
+const issueOperatorReleaseUsage = "Usage: afctl issue operator-release <issue-id> [--expected-version N|latest] [--force] --reason \"why the lease is being force-cleared\"\n" +
 	"Recovers a stuck in_progress claim whose lease token was lost before its TTL expired: clears the lease and returns the issue to open, without closing it.\n" + lifecycleHint
 
 func runIssueOperatorRelease(ctx context.Context, c *client.Client, args []string) error {
@@ -1059,7 +1100,11 @@ func runIssueOperatorRelease(ctx context.Context, c *client.Client, args []strin
 		switch args[i] {
 		case "--expected-version":
 			if i+1 < len(args) {
-				fmt.Sscanf(args[i+1], "%d", &req.ExpectedVersion)
+				if args[i+1] == "latest" {
+					req.ExpectedVersion = -1
+				} else {
+					fmt.Sscanf(args[i+1], "%d", &req.ExpectedVersion)
+				}
 				i++
 			}
 		case "--reason":
@@ -1067,15 +1112,21 @@ func runIssueOperatorRelease(ctx context.Context, c *client.Client, args []strin
 				req.Reason = args[i+1]
 				i++
 			}
+		case "--force":
+			req.ExpectedVersion = -1
 		default:
 			return usageErr(issueOperatorReleaseUsage, fmt.Sprintf("unknown flag: %s", args[i]))
 		}
 	}
-	if req.ExpectedVersion <= 0 {
-		return usageErr(issueOperatorReleaseUsage, "--expected-version is required")
-	}
 	if strings.TrimSpace(req.Reason) == "" {
 		return usageErr(issueOperatorReleaseUsage, "--reason is required")
+	}
+	// Auto-resolve the version when omitted, --expected-version latest, or --force.
+	if err := resolveExpectedVersion(ctx, c, issueOperatorReleaseUsage, issueID, &req.ExpectedVersion); err != nil {
+		return err
+	}
+	if req.ExpectedVersion <= 0 {
+		return usageErr(issueOperatorReleaseUsage, "--expected-version is required")
 	}
 	actor, err := resolveActor("")
 	if err != nil {
