@@ -4,6 +4,7 @@ package store
 import (
 	"context"
 	"io"
+	"time"
 
 	"github.com/abevz/af-coordinator/internal/core"
 	coordinatorexport "github.com/abevz/af-coordinator/internal/export"
@@ -45,8 +46,13 @@ type CoordinatorStore interface {
 	ClaimIssue(ctx context.Context, issueID, holder string, ttlSeconds int) (core.ClaimResponse, error)
 	ClaimIssueWithSession(ctx context.Context, issueID, holder string, ttlSeconds int, sessionID string) (core.ClaimResponse, error)
 	ClaimIssueWithMode(ctx context.Context, issueID, holder string, ttlSeconds int, sessionID, invocationMode string) (core.ClaimResponse, error)
-	HeartbeatLease(ctx context.Context, issueID, leaseToken string, ttlSeconds int) (string, error)
-	ReleaseLease(ctx context.Context, issueID, leaseToken string) error
+	// HeartbeatLease renews the current unexpired lease. now is the daemon's UTC
+	// wall-clock boundary; the renewal must affect exactly the lease identified
+	// by issueID, leaseToken, and leaseGeneration or it fails with lease_expired.
+	HeartbeatLease(ctx context.Context, issueID, leaseToken string, leaseGeneration int64, ttlSeconds int, now time.Time) (string, error)
+	// ReleaseLease atomically removes the current unexpired lease and records
+	// the release transition/event. now is the daemon's UTC wall-clock boundary.
+	ReleaseLease(ctx context.Context, issueID, leaseToken string, leaseGeneration int64, now time.Time) error
 	HandoffLease(ctx context.Context, issueID string, req core.HandoffRequest) (core.HandoffResponse, error)
 	UpdateIssue(ctx context.Context, issueID string, req core.UpdateIssueRequest) (core.Issue, error)
 	CloseIssue(ctx context.Context, issueID string, req core.CloseIssueRequest) (core.CloseIssueResult, error)

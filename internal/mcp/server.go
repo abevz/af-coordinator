@@ -27,7 +27,7 @@ type CoordinatorClient interface {
 	ListReadyIssues(ctx context.Context, project, repo string, tags []string) ([]core.Issue, error)
 	ClaimIssue(ctx context.Context, issueID, holder string, ttlSeconds int) (core.ClaimResponse, error)
 	ClaimIssueWithSession(ctx context.Context, issueID, holder string, ttlSeconds int, sessionID string) (core.ClaimResponse, error)
-	HeartbeatLease(ctx context.Context, issueID, leaseToken string, ttlSeconds int) (string, error)
+	HeartbeatLease(ctx context.Context, issueID, leaseToken string, leaseGeneration int64, ttlSeconds int) (string, error)
 	HandoffLease(ctx context.Context, issueID, leaseToken, note string) (core.HandoffResponse, error)
 	CreateNote(ctx context.Context, issueID, author, body string) (core.Note, error)
 	ListNotes(ctx context.Context, issueID string) ([]core.Note, error)
@@ -242,9 +242,10 @@ func (s *Server) callTool(ctx context.Context, params toolCallParams) (any, erro
 		return s.client.ClaimIssueWithSession(ctx, args.IssueID, holder, args.TTLSeconds, args.SessionID)
 	case "heartbeat_issue":
 		var args struct {
-			IssueID    string `json:"issue_id"`
-			LeaseToken string `json:"lease_token"`
-			TTLSeconds int    `json:"ttl_seconds"`
+			IssueID         string `json:"issue_id"`
+			LeaseToken      string `json:"lease_token"`
+			LeaseGeneration int64  `json:"lease_generation"`
+			TTLSeconds      int    `json:"ttl_seconds"`
 		}
 		if err := unmarshalArgs(params.Arguments, &args); err != nil {
 			return nil, err
@@ -252,7 +253,10 @@ func (s *Server) callTool(ctx context.Context, params toolCallParams) (any, erro
 		if args.IssueID == "" || args.LeaseToken == "" {
 			return nil, fmt.Errorf("issue_id and lease_token are required")
 		}
-		expiresAt, err := s.client.HeartbeatLease(ctx, args.IssueID, args.LeaseToken, args.TTLSeconds)
+		if args.LeaseGeneration <= 0 {
+			return nil, fmt.Errorf("lease_generation is required")
+		}
+		expiresAt, err := s.client.HeartbeatLease(ctx, args.IssueID, args.LeaseToken, args.LeaseGeneration, args.TTLSeconds)
 		if err != nil {
 			return nil, err
 		}
@@ -487,6 +491,7 @@ func (s *Server) tools() []map[string]any {
 		toolDefinition("heartbeat_issue", "Extend an active lease.", objectSchema([]schemaField{
 			{name: "issue_id", fieldType: "string", description: "Issue UUID or short id.", required: true},
 			{name: "lease_token", fieldType: "string", description: "Current lease token.", required: true},
+			{name: "lease_generation", fieldType: "integer", description: "Fencing generation from the claim that created the lease.", required: true},
 			{name: "ttl_seconds", fieldType: "integer", description: "Optional lease TTL in seconds; daemon default applies when omitted."},
 		})),
 		toolDefinition("handoff_issue", "Atomically add a required HANDOFF note and release an active lease.", objectSchema([]schemaField{

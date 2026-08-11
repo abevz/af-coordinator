@@ -65,7 +65,7 @@ func (f *fakeClient) ClaimIssueWithSession(_ context.Context, issueID, holder st
 	f.lastSessionID = sessionID
 	return f.claimResp, nil
 }
-func (f *fakeClient) HeartbeatLease(_ context.Context, issueID, leaseToken string, ttlSeconds int) (string, error) {
+func (f *fakeClient) HeartbeatLease(_ context.Context, issueID, leaseToken string, leaseGeneration int64, ttlSeconds int) (string, error) {
 	f.lastIssueID = issueID
 	f.lastLeaseToken = leaseToken
 	f.lastTTL = ttlSeconds

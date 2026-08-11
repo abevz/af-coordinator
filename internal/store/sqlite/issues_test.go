@@ -736,7 +736,7 @@ func TestLeaseGenerationAdvancesOnlyOnFreshClaim(t *testing.T) {
 	if first.LeaseGeneration != 1 {
 		t.Fatalf("first generation = %d, want 1", first.LeaseGeneration)
 	}
-	if _, err := HeartbeatLease(context.Background(), db, issue.ID, first.LeaseToken, 3600); err != nil {
+	if _, err := HeartbeatLease(context.Background(), db, issue.ID, first.LeaseToken, first.LeaseGeneration, 3600, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
 	_, activeLease, err := GetIssue(context.Background(), db, issue.ID)
@@ -754,7 +754,7 @@ func TestLeaseGenerationAdvancesOnlyOnFreshClaim(t *testing.T) {
 			t.Fatalf("same-holder claim error = %v, want lease_held", err)
 		}
 	}
-	if err := ReleaseLease(context.Background(), db, issue.ID, first.LeaseToken); err != nil {
+	if err := ReleaseLease(context.Background(), db, issue.ID, first.LeaseToken, first.LeaseGeneration, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
 	second, err := ClaimIssue(context.Background(), db, issue.ID, "agent-2", 3600)
@@ -1080,7 +1080,7 @@ func TestHeartbeatLease(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	newExpires, err := HeartbeatLease(context.Background(), db, issue.ID, claim.LeaseToken, 7200)
+	newExpires, err := HeartbeatLease(context.Background(), db, issue.ID, claim.LeaseToken, claim.LeaseGeneration, 7200, time.Now().UTC())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1113,12 +1113,12 @@ func TestHeartbeatLeaseWrongToken(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = ClaimIssue(context.Background(), db, issue.ID, "agent-1", 3600)
+	claim, err := ClaimIssue(context.Background(), db, issue.ID, "agent-1", 3600)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	_, err = HeartbeatLease(context.Background(), db, issue.ID, "wrong-token", 7200)
+	_, err = HeartbeatLease(context.Background(), db, issue.ID, "wrong-token", claim.LeaseGeneration, 7200, time.Now().UTC())
 	if err == nil {
 		t.Fatal("expected error for wrong lease token")
 	}
@@ -1143,7 +1143,7 @@ func TestReleaseLease(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = ReleaseLease(context.Background(), db, issue.ID, claim.LeaseToken)
+	err = ReleaseLease(context.Background(), db, issue.ID, claim.LeaseToken, claim.LeaseGeneration, time.Now().UTC())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1193,14 +1193,393 @@ func TestReleaseLeaseWrongToken(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = ClaimIssue(context.Background(), db, issue.ID, "agent-1", 3600)
+	claim, err := ClaimIssue(context.Background(), db, issue.ID, "agent-1", 3600)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err = ReleaseLease(context.Background(), db, issue.ID, "wrong-token")
+	err = ReleaseLease(context.Background(), db, issue.ID, "wrong-token", claim.LeaseGeneration, time.Now().UTC())
 	if err == nil {
 		t.Fatal("expected error for wrong lease token")
+	}
+}
+
+func TestHeartbeatLeaseWrongGenerationFailsCAS(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Heartbeat gen mismatch"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	claim, err := ClaimIssue(context.Background(), db, issue.ID, "agent-1", 3600)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Correct token but a stale generation must not renew the lease.
+	_, err = HeartbeatLease(context.Background(), db, issue.ID, claim.LeaseToken, claim.LeaseGeneration+1, 7200, time.Now().UTC())
+	if err == nil {
+		t.Fatal("expected error for wrong lease generation")
+	}
+	var apiErr core.APIError
+	if !errors.As(err, &apiErr) || apiErr.Code != core.ErrLeaseExpired {
+		t.Fatalf("heartbeat error = %v, want lease_expired", err)
+	}
+
+	var storedExpires string
+	if err := db.QueryRow(`SELECT expires_at FROM leases WHERE issue_id = ?`, issue.ID).Scan(&storedExpires); err != nil {
+		t.Fatal(err)
+	}
+	if storedExpires != claim.ExpiresAt {
+		t.Fatalf("stale heartbeat changed lease expiry: got %s, want %s", storedExpires, claim.ExpiresAt)
+	}
+}
+
+func TestHeartbeatLeaseExpiredFailsWithoutMutation(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Heartbeat expired"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	claim, err := ClaimIssue(context.Background(), db, issue.ID, "agent-1", 3600)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Force expiry; the CAS predicate must reject the renewal even though the
+	// token and generation are the current ones.
+	forcedExpires := time.Now().UTC().Add(-time.Minute).Format(time.RFC3339)
+	if _, err := db.Exec(`UPDATE leases SET expires_at = ? WHERE issue_id = ?`, forcedExpires, issue.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = HeartbeatLease(context.Background(), db, issue.ID, claim.LeaseToken, claim.LeaseGeneration, 7200, time.Now().UTC())
+	if err == nil {
+		t.Fatal("expected lease_expired error for expired lease")
+	}
+	var apiErr core.APIError
+	if !errors.As(err, &apiErr) || apiErr.Code != core.ErrLeaseExpired {
+		t.Fatalf("heartbeat error = %v, want lease_expired", err)
+	}
+
+	var storedExpires string
+	if err := db.QueryRow(`SELECT expires_at FROM leases WHERE issue_id = ?`, issue.ID).Scan(&storedExpires); err != nil {
+		t.Fatal(err)
+	}
+	if storedExpires != forcedExpires {
+		t.Fatalf("heartbeat resurrected expired lease: expires_at = %s, want %s", storedExpires, forcedExpires)
+	}
+}
+
+func TestHeartbeatRenewalWinsBeforeReclaim(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Heartbeat wins"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	first, err := ClaimIssue(context.Background(), db, issue.ID, "agent-1", 3600)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Ordering 1 of the forced heartbeat/reclaim interleaving: the renewal
+	// commits first, so the reclaim attempt must lose.
+	newExpires, err := HeartbeatLease(context.Background(), db, issue.ID, first.LeaseToken, first.LeaseGeneration, 7200, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = ClaimIssue(context.Background(), db, issue.ID, "agent-2", 3600)
+	if err == nil {
+		t.Fatal("reclaim succeeded after a committed renewal")
+	}
+	var apiErr core.APIError
+	if !errors.As(err, &apiErr) || apiErr.Code != core.ErrLeaseHeld {
+		t.Fatalf("reclaim error = %v, want lease_held", err)
+	}
+
+	// The failed reclaim must not have touched the renewed lease deadline.
+	var storedExpires string
+	if err := db.QueryRow(`SELECT expires_at FROM leases WHERE issue_id = ?`, issue.ID).Scan(&storedExpires); err != nil {
+		t.Fatal(err)
+	}
+	if storedExpires != newExpires {
+		t.Fatalf("failed reclaim changed lease expiry: got %s, want %s", storedExpires, newExpires)
+	}
+}
+
+func TestStaleHeartbeatFailsAfterReclaim(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Reclaim wins"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	first, err := ClaimIssue(context.Background(), db, issue.ID, "agent-1", 3600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	forcedExpires := time.Now().UTC().Add(-time.Minute).Format(time.RFC3339)
+	if _, err := db.Exec(`UPDATE leases SET expires_at = ? WHERE issue_id = ?`, forcedExpires, issue.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	// Ordering 2 of the forced heartbeat/reclaim interleaving: the reclaim
+	// commits first (expired lease replaced), so the old holder's heartbeat
+	// must fail and must not touch the replacement.
+	second, err := ClaimIssue(context.Background(), db, issue.ID, "agent-2", 3600)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = HeartbeatLease(context.Background(), db, issue.ID, first.LeaseToken, first.LeaseGeneration, 7200, time.Now().UTC())
+	if err == nil {
+		t.Fatal("stale heartbeat succeeded after reclaim")
+	}
+	var apiErr core.APIError
+	if !errors.As(err, &apiErr) || apiErr.Code != core.ErrLeaseExpired {
+		t.Fatalf("stale heartbeat error = %v, want lease_expired", err)
+	}
+
+	// The replacement expiry must never change.
+	var storedExpires string
+	if err := db.QueryRow(`SELECT expires_at FROM leases WHERE issue_id = ?`, issue.ID).Scan(&storedExpires); err != nil {
+		t.Fatal(err)
+	}
+	if storedExpires != second.ExpiresAt {
+		t.Fatalf("stale heartbeat changed replacement expiry: got %s, want %s", storedExpires, second.ExpiresAt)
+	}
+
+	got, lease, err := GetIssue(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != "in_progress" {
+		t.Fatalf("status = %q, want in_progress", got.Status)
+	}
+	if lease == nil || lease.LeaseGeneration != second.LeaseGeneration {
+		t.Fatalf("replacement lease = %+v, want generation %d", lease, second.LeaseGeneration)
+	}
+}
+
+func TestReleaseLeaseWrongGenerationFailsCAS(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Release gen mismatch"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	claim, err := ClaimIssue(context.Background(), db, issue.ID, "agent-1", 3600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, _, err := GetIssue(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	eventsBefore, err := ListEvents(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Correct token but a stale generation must not release the lease.
+	err = ReleaseLease(context.Background(), db, issue.ID, claim.LeaseToken, claim.LeaseGeneration+1, time.Now().UTC())
+	if err == nil {
+		t.Fatal("expected error for wrong lease generation")
+	}
+	var apiErr core.APIError
+	if !errors.As(err, &apiErr) || apiErr.Code != core.ErrLeaseExpired {
+		t.Fatalf("release error = %v, want lease_expired", err)
+	}
+
+	var leaseCount int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM leases WHERE issue_id = ?`, issue.ID).Scan(&leaseCount); err != nil {
+		t.Fatal(err)
+	}
+	if leaseCount != 1 {
+		t.Fatalf("stale release removed the lease: count = %d, want 1", leaseCount)
+	}
+
+	after, _, err := GetIssue(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Status != before.Status || after.Version != before.Version {
+		t.Fatalf("stale release mutated issue: status %q->%q, version %d->%d", before.Status, after.Status, before.Version, after.Version)
+	}
+
+	eventsAfter, err := ListEvents(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(eventsAfter) != len(eventsBefore) {
+		t.Fatalf("stale release appended events: %d -> %d", len(eventsBefore), len(eventsAfter))
+	}
+}
+
+func TestReleaseLeaseExpiredFailsWithoutStateChanges(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Expired release"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	claim, err := ClaimIssue(context.Background(), db, issue.ID, "agent-1", 3600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, _, err := GetIssue(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	eventsBefore, err := ListEvents(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	forcedExpires := time.Now().UTC().Add(-time.Minute).Format(time.RFC3339)
+	if _, err := db.Exec(`UPDATE leases SET expires_at = ? WHERE issue_id = ?`, forcedExpires, issue.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	// Release of an expired lease must fail with lease_expired and leave
+	// issue/event/lease state untouched.
+	err = ReleaseLease(context.Background(), db, issue.ID, claim.LeaseToken, claim.LeaseGeneration, time.Now().UTC())
+	if err == nil {
+		t.Fatal("expected lease_expired error for expired lease")
+	}
+	var apiErr core.APIError
+	if !errors.As(err, &apiErr) || apiErr.Code != core.ErrLeaseExpired {
+		t.Fatalf("release error = %v, want lease_expired", err)
+	}
+
+	after, _, err := GetIssue(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Status != before.Status || after.Version != before.Version || after.ClaimedAt != before.ClaimedAt {
+		t.Fatalf("expired release mutated issue: status %q->%q, version %d->%d", before.Status, after.Status, before.Version, after.Version)
+	}
+
+	eventsAfter, err := ListEvents(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(eventsAfter) != len(eventsBefore) {
+		t.Fatalf("expired release appended events: %d -> %d", len(eventsBefore), len(eventsAfter))
+	}
+
+	var storedExpires string
+	if err := db.QueryRow(`SELECT expires_at FROM leases WHERE issue_id = ?`, issue.ID).Scan(&storedExpires); err != nil {
+		t.Fatal(err)
+	}
+	if storedExpires != forcedExpires {
+		t.Fatalf("expired release removed or changed the lease: expires_at = %s, want %s", storedExpires, forcedExpires)
+	}
+}
+
+func TestReleaseLeaseSingleStatusVersionTransition(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	_, err := CreateProject(context.Background(), db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Single release transition"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	claim, err := ClaimIssue(context.Background(), db, issue.ID, "agent-1", 3600)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = ReleaseLease(context.Background(), db, issue.ID, claim.LeaseToken, claim.LeaseGeneration, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, lease, err := GetIssue(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != "open" {
+		t.Fatalf("status = %q, want open", got.Status)
+	}
+	if lease != nil {
+		t.Fatalf("lease = %+v, want nil", lease)
+	}
+	if got.Version != claim.Version+1 {
+		t.Fatalf("version = %d, want %d (exactly one transition)", got.Version, claim.Version+1)
+	}
+
+	events, err := ListEvents(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	released := 0
+	for _, event := range events {
+		if event.EventType != "issue_released" {
+			continue
+		}
+		released++
+		var payload map[string]any
+		if err := json.Unmarshal([]byte(event.PayloadJSON), &payload); err != nil {
+			t.Fatal(err)
+		}
+		if payload["attempt_id"] != claim.AttemptID {
+			t.Fatalf("release event attempt_id = %v, want %s", payload["attempt_id"], claim.AttemptID)
+		}
+	}
+	if released != 1 {
+		t.Fatalf("issue_released events = %d, want 1", released)
 	}
 }
 
@@ -2427,7 +2806,7 @@ func TestReleaseLeaseAppendsEvent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = ReleaseLease(context.Background(), db, issue.ID, claim.LeaseToken)
+	err = ReleaseLease(context.Background(), db, issue.ID, claim.LeaseToken, claim.LeaseGeneration, time.Now().UTC())
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -232,14 +232,21 @@ type ClaimResponse struct {
 }
 
 // HeartbeatRequest is the JSON body for POST /v1/issues/{issue_id}/heartbeat.
+// LeaseGeneration is the fencing value from the claim that created this lease;
+// the daemon only renews the lease when token, generation, and expiry all match.
 type HeartbeatRequest struct {
-	LeaseToken string `json:"lease_token"`
-	TTLSeconds int    `json:"ttl_seconds"`
+	LeaseToken      string `json:"lease_token"`
+	LeaseGeneration int64  `json:"lease_generation"`
+	TTLSeconds      int    `json:"ttl_seconds"`
 }
 
 // ReleaseRequest is the JSON body for POST /v1/issues/{issue_id}/release.
+// LeaseGeneration is the fencing value from the claim that created this lease;
+// the daemon only releases the current unexpired lease when token and
+// generation match.
 type ReleaseRequest struct {
-	LeaseToken string `json:"lease_token"`
+	LeaseToken      string `json:"lease_token"`
+	LeaseGeneration int64  `json:"lease_generation"`
 }
 
 // HandoffRequest is the JSON body for POST /v1/issues/{issue_id}/handoff.

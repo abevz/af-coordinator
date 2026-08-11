@@ -342,9 +342,10 @@ func (c *Client) ClaimIssueWithSessionAndMode(ctx context.Context, issueID, hold
 	return result, nil
 }
 
-// HeartbeatLease sends a POST /v1/issues/{issueID}/heartbeat request.
-func (c *Client) HeartbeatLease(ctx context.Context, issueID, leaseToken string, ttlSeconds int) (string, error) {
-	body := core.HeartbeatRequest{LeaseToken: leaseToken, TTLSeconds: ttlSeconds}
+// HeartbeatLease sends a POST /v1/issues/{issueID}/heartbeat request with the
+// lease generation from the claim that created the lease.
+func (c *Client) HeartbeatLease(ctx context.Context, issueID, leaseToken string, leaseGeneration int64, ttlSeconds int) (string, error) {
+	body := core.HeartbeatRequest{LeaseToken: leaseToken, LeaseGeneration: leaseGeneration, TTLSeconds: ttlSeconds}
 	var result struct {
 		ExpiresAt string `json:"expires_at"`
 	}
@@ -354,9 +355,10 @@ func (c *Client) HeartbeatLease(ctx context.Context, issueID, leaseToken string,
 	return result.ExpiresAt, nil
 }
 
-// ReleaseLease sends a POST /v1/issues/{issueID}/release request.
-func (c *Client) ReleaseLease(ctx context.Context, issueID, leaseToken string) error {
-	body := core.ReleaseRequest{LeaseToken: leaseToken}
+// ReleaseLease sends a POST /v1/issues/{issueID}/release request with the
+// lease generation from the claim that created the lease.
+func (c *Client) ReleaseLease(ctx context.Context, issueID, leaseToken string, leaseGeneration int64) error {
+	body := core.ReleaseRequest{LeaseToken: leaseToken, LeaseGeneration: leaseGeneration}
 	return c.doJSON(ctx, http.MethodPost, "/v1/issues/"+issueID+"/release", body, nil)
 }
 
