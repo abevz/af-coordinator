@@ -78,10 +78,13 @@ func TestIssueRunHelpFlagShortCircuits(t *testing.T) {
 // since claim/heartbeat/exec/close all happen inside a single compiled
 // binary invocation -- there's no lighter-weight in-process seam for it.
 type mockCoordinator struct {
-	mu           sync.Mutex
-	claimVersion int
-	closeReqs    []map[string]any
-	handoffReqs  []map[string]any
+	mu                sync.Mutex
+	claimVersion      int
+	closeReqs         []map[string]any
+	handoffReqs       []map[string]any
+	heartbeatCount    int
+	heartbeatFailures int  // transient (non-envelope) failures before success
+	heartbeatExpired  bool // respond with a lease_expired envelope
 }
 
 // mockLeaseGeneration is the generation this mock hands out on claim. The
@@ -117,6 +120,32 @@ func (m *mockCoordinator) handler() http.Handler {
 		})
 	})
 	mux.HandleFunc("POST /v1/issues/{id}/heartbeat", func(w http.ResponseWriter, r *http.Request) {
+		m.mu.Lock()
+		m.heartbeatCount++
+		failNext := m.heartbeatFailures > 0
+		if failNext {
+			m.heartbeatFailures--
+		}
+		expired := m.heartbeatExpired
+		m.mu.Unlock()
+
+		if expired {
+			// Mirror the daemon's 410 lease_expired envelope so the client
+			// surfaces *client.ClientError{Code: lease_expired}.
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusGone)
+			json.NewEncoder(w).Encode(map[string]any{
+				"error": map[string]any{"code": "lease_expired", "message": "lease not found or expired"},
+			})
+			return
+		}
+		if failNext {
+			// A non-envelope 500 exercises the client's plain transport-error
+			// path (doJSON cannot decode an API envelope), which the run loop
+			// must treat as a transient failure and retry within the window.
+			http.Error(w, "simulated transport failure", http.StatusInternalServerError)
+			return
+		}
 		json.NewEncoder(w).Encode(map[string]any{"expires_at": "2099-01-01T00:00:00Z"})
 	})
 	mux.HandleFunc("POST /v1/issues/{id}/close", func(w http.ResponseWriter, r *http.Request) {
@@ -269,5 +298,127 @@ exit 0`
 
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("issue run failed: %v\nstdout: %s\nstderr: %s", err, stdout.String(), stderr.String())
+	}
+}
+
+// TestIssueRunStopsChildOnLeaseLoss is the AFC-SDD-0157 regression: when the
+// heartbeat is rejected with lease_expired (forced replacement), the child
+// must receive termination, no close or handoff request may be sent, and the
+// CLI must exit non-zero with an ownership-lost error. Before this change the
+// child kept running and the run closed after it finished.
+func TestIssueRunStopsChildOnLeaseLoss(t *testing.T) {
+	binPath := buildAfctlForRunTest(t)
+	mock := &mockCoordinator{claimVersion: 9, heartbeatExpired: true}
+	sockPath := startMockCoordinator(t, mock)
+
+	marker := filepath.Join(t.TempDir(), "term-marker")
+	// The child trap writes the marker on SIGTERM. A trailing command after
+	// sleep keeps the shell from exec-replacing itself, so the trap actually
+	// runs when afctl terminates the child.
+	child := `trap 'echo terminated > "$TERM_MARKER"; exit 0' TERM
+sleep 10
+echo after-sleep`
+	cmd := exec.Command(binPath, "issue", "run", "afc-4", "--actor", "tester", "--ttl", "15", "--", "sh", "-c", child)
+	cmd.Env = append(os.Environ(), "AF_COORDINATOR_SOCKET="+sockPath, "TERM_MARKER="+marker)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+	exitErr, ok := err.(*exec.ExitError)
+	if !ok {
+		t.Fatalf("expected an *exec.ExitError, got %v (stdout=%s stderr=%s)", err, stdout.String(), stderr.String())
+	}
+	if exitErr.ExitCode() != 4 {
+		t.Fatalf("exit code = %d, want 4 (lease_expired); stderr: %s", exitErr.ExitCode(), stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "lease ownership lost") {
+		t.Errorf("stderr = %q, want it to report lease ownership lost", stderr.String())
+	}
+
+	markerData, rerr := os.ReadFile(marker)
+	if rerr != nil {
+		t.Fatalf("child termination marker not written: %v", rerr)
+	}
+	if string(markerData) != "terminated\n" {
+		t.Errorf("marker = %q, want %q", string(markerData), "terminated\n")
+	}
+
+	mock.mu.Lock()
+	defer mock.mu.Unlock()
+	if len(mock.closeReqs) != 0 {
+		t.Fatalf("expected no close requests after ownership loss, got %d", len(mock.closeReqs))
+	}
+	if len(mock.handoffReqs) != 0 {
+		t.Fatalf("expected no handoff requests after ownership loss, got %d", len(mock.handoffReqs))
+	}
+}
+
+// TestIssueRunRetriesTransientHeartbeatFailure guards the bounded-retry
+// contract: a single retryable transport error before the deadline must not
+// kill a still-owned job. The run retries within the known lease window, the
+// child completes, and the issue is closed normally.
+func TestIssueRunRetriesTransientHeartbeatFailure(t *testing.T) {
+	binPath := buildAfctlForRunTest(t)
+	mock := &mockCoordinator{claimVersion: 2, heartbeatFailures: 1}
+	sockPath := startMockCoordinator(t, mock)
+
+	cmd := exec.Command(binPath, "issue", "run", "afc-5", "--actor", "tester", "--ttl", "15", "--", "sh", "-c", "sleep 10")
+	cmd.Env = append(os.Environ(), "AF_COORDINATOR_SOCKET="+sockPath)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("issue run failed after a transient heartbeat error: %v\nstdout: %s\nstderr: %s", err, stdout.String(), stderr.String())
+	}
+
+	mock.mu.Lock()
+	defer mock.mu.Unlock()
+	if len(mock.closeReqs) != 1 {
+		t.Fatalf("expected exactly one close request, got %d", len(mock.closeReqs))
+	}
+	if len(mock.handoffReqs) != 0 {
+		t.Fatalf("expected no handoff requests, got %d", len(mock.handoffReqs))
+	}
+	if mock.heartbeatCount < 2 {
+		t.Fatalf("expected the transient failure to be retried, heartbeatCount = %d", mock.heartbeatCount)
+	}
+	if strings.Contains(stderr.String(), "lease ownership lost") {
+		t.Errorf("stderr = %q, must not report ownership loss for a retried transient failure", stderr.String())
+	}
+}
+
+// TestIssueRunCleanShutdownWithHeartbeats covers the clean-shutdown contract:
+// with healthy heartbeats the run completes, the issue is closed, and no
+// ownership-loss path fires.
+func TestIssueRunCleanShutdownWithHeartbeats(t *testing.T) {
+	binPath := buildAfctlForRunTest(t)
+	mock := &mockCoordinator{claimVersion: 4}
+	sockPath := startMockCoordinator(t, mock)
+
+	cmd := exec.Command(binPath, "issue", "run", "afc-6", "--actor", "tester", "--ttl", "15", "--", "sh", "-c", "sleep 10")
+	cmd.Env = append(os.Environ(), "AF_COORDINATOR_SOCKET="+sockPath)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("issue run failed: %v\nstdout: %s\nstderr: %s", err, stdout.String(), stderr.String())
+	}
+
+	mock.mu.Lock()
+	defer mock.mu.Unlock()
+	if len(mock.closeReqs) != 1 {
+		t.Fatalf("expected exactly one close request, got %d", len(mock.closeReqs))
+	}
+	if len(mock.handoffReqs) != 0 {
+		t.Fatalf("expected no handoff requests on clean shutdown, got %d", len(mock.handoffReqs))
+	}
+	if mock.heartbeatCount < 1 {
+		t.Fatalf("expected at least one successful heartbeat before shutdown, got %d", mock.heartbeatCount)
+	}
+	if strings.Contains(stderr.String(), "lease ownership lost") {
+		t.Errorf("stderr = %q, must not report ownership loss on a clean shutdown", stderr.String())
 	}
 }
