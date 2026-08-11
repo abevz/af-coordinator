@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"sync"
 	"syscall"
 	"time"
 
@@ -15,12 +16,15 @@ import (
 )
 
 const issueRunUsage = "Usage: afctl issue run <issue-id> [--actor <name>] [--ttl <seconds>] [--close-resolution done|cancelled] [--branch <name>] [--pr-url <url>] [--commit-sha <sha>] [--note <text>] [--invocation-mode interactive|scheduled|unknown] -- <command> [args...]\n" + lifecycleHint +
-	"\nOwns claim -> heartbeat -> close/handoff around a single subprocess, so the lease token never leaves this process's memory: it cannot be lost the way a multi-step script can lose it before persisting it. On exit 0, closes with --close-resolution (default done). On any other exit, or on Ctrl-C, hands the lease off with an auto-generated HANDOFF: note instead of closing."
+	"\nOwns claim -> heartbeat -> close/handoff around a single subprocess, so the lease token never leaves this process's memory: it cannot be lost the way a multi-step script can lose it before persisting it. On exit 0, closes with --close-resolution (default done). On any other exit, or on Ctrl-C, hands the lease off with an auto-generated HANDOFF: note instead of closing. On confirmed lease ownership loss (heartbeat rejected with lease_expired, or the lease window closing without proof), the child is terminated and the CLI exits non-zero with lease_expired without sending a close request."
 
 // runIssueRun claims issueID, execs the given command with the lease
 // exported as environment variables, heartbeats in the background for the
 // duration of the run, and closes or hands off the issue based on how the
-// command exited. See issueRunUsage for the full contract.
+// command exited. If the background heartbeat proves lease ownership was
+// lost, the child is terminated and no close or handoff is sent: the run
+// returns a distinct lease_expired error instead. See issueRunUsage for the
+// full contract.
 func runIssueRun(ctx context.Context, c *client.Client, args []string) error {
 	if hasHelpFlag(args) {
 		fmt.Println(issueRunUsage)
@@ -128,24 +132,39 @@ func runIssueRun(ctx context.Context, c *client.Client, args []string) error {
 	if heartbeatInterval < 5*time.Second {
 		heartbeatInterval = 5 * time.Second
 	}
-	hbCtx, hbCancel := context.WithCancel(context.Background())
+
+	// knownExpiry is the last deadline the daemon gave us, from the claim or
+	// a successful heartbeat. Transient heartbeat failures may be retried only
+	// while now < knownExpiry; once that window closes without proof,
+	// ownership is treated as lost and the child is stopped.
+	knownExpiry, err := time.Parse(time.RFC3339, claim.ExpiresAt)
+	if err != nil {
+		knownExpiry = time.Now().Add(time.Duration(ttl) * time.Second)
+	}
+
+	// childCtx lets the heartbeat goroutine cancel the child the moment
+	// ownership is lost; exec.CommandContext turns that cancel into SIGTERM
+	// followed by a bounded WaitDelay kill.
+	childCtx, childCancel := context.WithCancel(ctx)
+	defer childCancel()
+
+	// lostCh carries the confirmed ownership-loss error to the run loop. It is
+	// buffered so the heartbeat goroutine never blocks on delivery; the run
+	// loop drains it once more after joining the goroutine so a loss that
+	// raced with child completion still wins over close/handoff.
+	lostCh := make(chan *client.ClientError, 1)
+
+	hbCtx, hbCancel := context.WithCancel(ctx)
 	defer hbCancel()
+
+	var hbWG sync.WaitGroup
+	hbWG.Add(1)
 	go func() {
-		ticker := time.NewTicker(heartbeatInterval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-hbCtx.Done():
-				return
-			case <-ticker.C:
-				if _, err := c.HeartbeatLease(context.Background(), issueID, claim.LeaseToken, claim.LeaseGeneration, ttl); err != nil {
-					fmt.Fprintf(os.Stderr, "issue run: heartbeat failed: %v\n", err)
-				}
-			}
-		}
+		defer hbWG.Done()
+		runHeartbeat(hbCtx, c, issueID, claim.LeaseToken, claim.LeaseGeneration, ttl, heartbeatInterval, knownExpiry, childCancel, lostCh)
 	}()
 
-	cmd := exec.CommandContext(ctx, cmdArgs[0], cmdArgs[1:]...)
+	cmd := exec.CommandContext(childCtx, cmdArgs[0], cmdArgs[1:]...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -163,8 +182,37 @@ func runIssueRun(ctx context.Context, c *client.Client, args []string) error {
 	}
 	cmd.WaitDelay = 5 * time.Second
 
-	runErr := cmd.Run()
+	runErrCh := make(chan error, 1)
+	go func() {
+		runErrCh <- cmd.Run()
+	}()
+
+	var runErr error
+	var lossErr *client.ClientError
+	select {
+	case runErr = <-runErrCh:
+	case lossErr = <-lostCh:
+		// Ownership loss already cancelled the child; wait for it to finish
+		// terminating so no orphan process is left behind.
+		runErr = <-runErrCh
+	}
+
+	// Stop the heartbeat and wait for it to return so no heartbeat goroutine
+	// survives command exit.
 	hbCancel()
+	hbWG.Wait()
+
+	// Final race-free check: the heartbeat goroutine has stopped, so if it
+	// detected ownership loss it already queued the error before returning. A
+	// loss that raced with a clean child exit still wins over close/handoff.
+	select {
+	case lossErr = <-lostCh:
+	default:
+	}
+
+	if lossErr != nil {
+		return lossErr
+	}
 
 	background := context.Background()
 
@@ -206,4 +254,72 @@ func runIssueRun(ctx context.Context, c *client.Client, args []string) error {
 	fmt.Fprintf(os.Stderr, "issue run: command failed, lease handed off with note: %s\n", handoffNote)
 	os.Exit(exitCode)
 	return nil // unreachable
+}
+
+// runHeartbeat heartbeats the lease until ownership is lost, the known lease
+// window closes without proof of ownership, or ctx is cancelled. On confirmed
+// loss it terminates the child (stopChild) and reports a distinct
+// ownership-loss error on lostCh before returning, so the run loop can join it
+// and never close after ownership moved.
+func runHeartbeat(ctx context.Context, c *client.Client, issueID, leaseToken string, leaseGeneration int64, ttlSeconds int, interval time.Duration, knownExpiry time.Time, stopChild func(), lostCh chan<- *client.ClientError) {
+	const initialRetryDelay = time.Second
+	const maxRetryDelay = 5 * time.Second
+
+	reportLoss := func(detail string) {
+		stopChild()
+		lostCh <- &client.ClientError{Code: core.ErrLeaseExpired, Message: "lease ownership lost: " + detail}
+	}
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	retryDelay := initialRetryDelay
+	attempt := func() bool {
+		for {
+			if ctx.Err() != nil {
+				return false
+			}
+			newExpiry, err := c.HeartbeatLease(ctx, issueID, leaseToken, leaseGeneration, ttlSeconds)
+			if err == nil {
+				if parsed, perr := time.Parse(time.RFC3339, newExpiry); perr == nil {
+					knownExpiry = parsed
+				}
+				retryDelay = initialRetryDelay
+				return true
+			}
+			if ctx.Err() != nil {
+				return false
+			}
+			var clientErr *client.ClientError
+			if errors.As(err, &clientErr) && clientErr.Code == core.ErrLeaseExpired {
+				reportLoss(fmt.Sprintf("heartbeat rejected: %s", clientErr.Message))
+				return false
+			}
+			// A transient failure (transport or daemon hiccup) is retried with
+			// backoff only while the known lease window is still open; once the
+			// deadline passes without proof, ownership is gone.
+			if !time.Now().Before(knownExpiry) {
+				reportLoss(fmt.Sprintf("heartbeat could not prove ownership before lease expiry: %v", err))
+				return false
+			}
+			fmt.Fprintf(os.Stderr, "issue run: heartbeat failed, retrying within lease window: %v\n", err)
+			select {
+			case <-ctx.Done():
+				return false
+			case <-time.After(retryDelay):
+			}
+			retryDelay = min(retryDelay*2, maxRetryDelay)
+		}
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if !attempt() {
+				return
+			}
+		}
+	}
 }
