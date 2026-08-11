@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"github.com/abevz/af-coordinator/internal/build"
@@ -19,11 +20,11 @@ import (
 )
 
 func RunDaemon(ctx context.Context, logger *slog.Logger, cfg config.Config, st store.CoordinatorStore) error {
-	if err := os.MkdirAll(filepath.Dir(cfg.SocketPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(cfg.SocketPath), 0o700); err != nil {
 		return fmt.Errorf("create socket directory: %w", err)
 	}
 
-	if err := os.MkdirAll(filepath.Dir(cfg.DBPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(cfg.DBPath), 0o700); err != nil {
 		return fmt.Errorf("create db directory: %w", err)
 	}
 
@@ -156,6 +157,14 @@ func removeStaleSocket(path string) error {
 	if err == nil {
 		if info.Mode()&os.ModeSocket == 0 {
 			return fmt.Errorf("path exists and is not a socket: %s", path)
+		}
+		conn, dialErr := net.DialTimeout("unix", path, 250*time.Millisecond)
+		if dialErr == nil {
+			_ = conn.Close()
+			return fmt.Errorf("a daemon is already listening on socket: %s", path)
+		}
+		if !errors.Is(dialErr, syscall.ECONNREFUSED) && !errors.Is(dialErr, syscall.ENOENT) {
+			return fmt.Errorf("refuse to remove unresponsive socket %s: %w", path, dialErr)
 		}
 
 		if err := os.Remove(path); err != nil {

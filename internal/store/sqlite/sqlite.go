@@ -6,32 +6,103 @@ import (
 	"database/sql"
 	"fmt"
 	"io/fs"
+	"net/url"
+	"os"
+	"path/filepath"
 	"sort"
 	"time"
 
 	_ "modernc.org/sqlite"
 )
 
-// Open opens (or creates) a SQLite database at path and sets required pragmas.
+const sqliteBusyTimeoutMillis = 5000
+
+// Open opens (or creates) a SQLite database with one physical connection.
+// The daemon's single sql.DB is therefore its serialized mutation boundary.
+// Correctness-affecting PRAGMAs live in the DSN so the driver applies them to
+// every physical connection, including any future pool-size increase.
 func Open(dbPath string) (*sql.DB, error) {
-	db, err := sql.Open("sqlite", dbPath)
+	dsn, err := connectionDSN(dbPath)
+	if err != nil {
+		return nil, err
+	}
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
 
-	// Set required runtime pragmas.
-	for _, p := range []string{
-		"PRAGMA journal_mode=WAL",
-		"PRAGMA foreign_keys=ON",
-		"PRAGMA busy_timeout=5000",
-	} {
-		if _, err := db.Exec(p); err != nil {
-			_ = db.Close()
-			return nil, fmt.Errorf("set pragma %q: %w", p, err)
-		}
+	if err := db.Ping(); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("connect sqlite: %w", err)
+	}
+	if err := verifyConnectionSettings(context.Background(), db); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	if err := restrictSQLiteFileModes(dbPath); err != nil {
+		_ = db.Close()
+		return nil, err
 	}
 
 	return db, nil
+}
+
+func restrictSQLiteFileModes(dbPath string) error {
+	for _, path := range []string{dbPath, dbPath + "-wal", dbPath + "-shm"} {
+		if err := os.Chmod(path, 0o600); err != nil {
+			if os.IsNotExist(err) && path != dbPath {
+				continue
+			}
+			return fmt.Errorf("chmod sqlite runtime file %s: %w", path, err)
+		}
+	}
+	return nil
+}
+
+func connectionDSN(dbPath string) (string, error) {
+	if dbPath == "" {
+		return "", fmt.Errorf("sqlite database path is required")
+	}
+	if dbPath == ":memory:" {
+		return "", fmt.Errorf("sqlite WAL contract requires a file-backed database")
+	}
+	absPath, err := filepath.Abs(dbPath)
+	if err != nil {
+		return "", fmt.Errorf("resolve sqlite path: %w", err)
+	}
+	u := url.URL{Scheme: "file", Path: absPath}
+	query := u.Query()
+	query.Add("_pragma", "journal_mode(WAL)")
+	query.Add("_pragma", "foreign_keys(ON)")
+	query.Add("_pragma", fmt.Sprintf("busy_timeout(%d)", sqliteBusyTimeoutMillis))
+	query.Add("_pragma", "synchronous(NORMAL)")
+	query.Set("_txlock", "immediate")
+	u.RawQuery = query.Encode()
+	return u.String(), nil
+}
+
+func verifyConnectionSettings(ctx context.Context, db *sql.DB) error {
+	var journalMode string
+	var foreignKeys, busyTimeout, synchronous int
+	if err := db.QueryRowContext(ctx, `PRAGMA journal_mode`).Scan(&journalMode); err != nil {
+		return fmt.Errorf("read journal_mode: %w", err)
+	}
+	if err := db.QueryRowContext(ctx, `PRAGMA foreign_keys`).Scan(&foreignKeys); err != nil {
+		return fmt.Errorf("read foreign_keys: %w", err)
+	}
+	if err := db.QueryRowContext(ctx, `PRAGMA busy_timeout`).Scan(&busyTimeout); err != nil {
+		return fmt.Errorf("read busy_timeout: %w", err)
+	}
+	if err := db.QueryRowContext(ctx, `PRAGMA synchronous`).Scan(&synchronous); err != nil {
+		return fmt.Errorf("read synchronous: %w", err)
+	}
+	if journalMode != "wal" || foreignKeys != 1 || busyTimeout != sqliteBusyTimeoutMillis || synchronous != 1 {
+		return fmt.Errorf("unexpected sqlite settings: journal_mode=%s foreign_keys=%d busy_timeout=%d synchronous=%d",
+			journalMode, foreignKeys, busyTimeout, synchronous)
+	}
+	return nil
 }
 
 // Migrate applies embedded SQL migration files that have not yet been applied.
