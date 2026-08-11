@@ -13,6 +13,7 @@ import (
 
 	"github.com/abevz/af-coordinator/internal/config"
 	"github.com/abevz/af-coordinator/internal/core"
+	"github.com/abevz/af-coordinator/internal/testsocket"
 )
 
 type mockExec struct {
@@ -219,7 +220,12 @@ func TestEvaluateBackupDarwinLaunchAgent(t *testing.T) {
 }
 
 func TestSystemdUserEnv(t *testing.T) {
-	runtimeDir := t.TempDir()
+	// runtimeDir simulates XDG_RUNTIME_DIR, and busPath must stay exactly
+	// runtimeDir+"/bus" for the assertions below. t.TempDir() embeds the full
+	// test name and can push that join over the sun_path limit under a
+	// sandboxed TMPDIR (afc-104, afc-105, afc-117), so use testsocket.Dir's
+	// short root instead.
+	runtimeDir := testsocket.Dir(t)
 	busPath := filepath.Join(runtimeDir, "bus")
 	listener, err := netListenUnix(busPath)
 	if err != nil {

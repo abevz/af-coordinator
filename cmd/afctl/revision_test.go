@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/abevz/af-coordinator/internal/testsocket"
 )
 
 func TestRevisionSkew(t *testing.T) {
@@ -62,7 +64,7 @@ func TestRevisionSkew(t *testing.T) {
 
 	for i, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			sockPath := filepath.Join(tmpDir, fmt.Sprintf("s%d.sock", i))
+			sockPath := testsocket.PathNamed(t, fmt.Sprintf("s%d", i))
 			os.Remove(sockPath)
 
 			l, err := net.Listen("unix", sockPath)
