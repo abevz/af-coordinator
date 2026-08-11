@@ -263,6 +263,7 @@ Commands with `--json` succeed or fail with typed exit codes so the caller can r
 | 4 | `lease_expired` | Re-claim before continuing |
 | 5 | `not_found` | Check issue ID |
 | 6 | `dependency_cycle` | Fix dependency graph |
+| 7 | `issue_not_ready` | Reread dependencies; pick ready work |
 
 ## Scope rules
 

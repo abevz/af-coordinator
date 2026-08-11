@@ -474,7 +474,7 @@ func ClaimIssueWithMode(ctx context.Context, db *sql.DB, issueID, holder string,
 		return core.ClaimResponse{}, fmt.Errorf("check claim eligibility: %w", err)
 	}
 	if eligible != 1 {
-		return core.ClaimResponse{}, core.NewAPIError(core.ErrConflict,
+		return core.ClaimResponse{}, core.NewAPIError(core.ErrIssueNotReady,
 			"issue is not ready: unfinished blocks dependency")
 	}
 

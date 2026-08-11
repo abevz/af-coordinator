@@ -66,6 +66,7 @@ Errors use one envelope:
 | 404  | `not_found`        | unknown project/repo/worktree/artifact/issue       |
 | 409  | `version_conflict` | `expected_version` does not match current version  |
 | 409  | `lease_held`       | another holder has an unexpired lease              |
+| 409  | `issue_not_ready`  | status/type/dependencies make the issue ineligible  |
 | 409  | `already_linked`   | artifact is already linked to the issue            |
 | 409  | `short_id_taken`   | an issue with this short_id already exists         |
 | 410  | `lease_expired`    | supplied `lease_token` is expired or unknown       |
@@ -74,6 +75,7 @@ Errors use one envelope:
 
 Clients handle `version_conflict` by rereading and retrying;
 `lease_held` by backing off or picking other ready work;
+`issue_not_ready` by rereading dependencies and picking ready work;
 `lease_expired` by re-claiming.
 
 ## Health
@@ -290,7 +292,8 @@ This is the compact route-to-implementation inventory for the current daemon.
   unexpired lease exists, including when the caller repeats the same holder
   string; holder attribution never authorizes token recovery. Claim moves an
   eligible issue `open -> in_progress`, rejects epics with `validation_failed`,
-  and rejects an issue with an unfinished `blocks` dependency as `conflict`.
+  and rejects an issue with an unfinished `blocks` dependency as
+  `issue_not_ready`.
   Ready-list output is advisory; claim repeats the shared eligibility predicate
   inside its transaction and is the authoritative decision.
 - `POST /v1/issues/{issue_id}/heartbeat` — body: `lease_token`,
