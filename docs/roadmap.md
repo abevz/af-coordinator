@@ -4,83 +4,60 @@ Direction for af-coordinator beyond v1. The operational source of truth for
 this work is the coordinator itself (project `afc`); this document records
 the intent and the reasoning so the issues stay short.
 
-## Current direction: harden the trust boundary, then prove the workflow
+## Current direction: coordination safety before expansion
 
-The project is already useful as a local execution ledger. The next work should
-make that claim safer and easier to evaluate before adding a network transport
-or tracker synchronization.
+The project is useful as a local execution ledger, but the 2026-08-11 audit
+found inconsistent fencing, daemon/SQLite serialization, and retry semantics.
+Packet `docs/specs/015-coordination-safety/` is the active roadmap target;
+implementation epic `afc-102` owns live progress.
 
 Delivery order:
 
 ```text
-close packet 010 documentation
-    -> privileged operator boundary
-    -> public release baseline + reproducible demo
-    -> optional LAN worker access (decision gate)
-    -> optional external tracker adapters (later gate)
+lease generation + atomic ownership predicates
+    -> daemon/dependency serialization + fail-closed runner
+    -> deterministic six-race proof
+    -> idempotent retry + crash/restart/restore proof
+    -> minimum safety telemetry + agent decision protocol
 ```
 
-### Live backlog assessment (2026-07-22)
+SQLite remains the canonical store. The target is one trustworthy local daemon,
+not a replicated service.
 
-Live status, claims, and closure remain in project `afc`. This table records the
-product decision behind the current open issues; it does not replace their live
-state.
+### Live backlog assessment (2026-08-11)
 
-| Issue | Decision | Reason |
-|---|---|---|
-| `afc-61` | **Do next** | Operator close/reopen bypass normal lease ownership. The privilege boundary must be explicit before autonomous runners or any TCP listener are trusted. |
-| `afc-58` | **Keep, after `afc-61`** | A one-step cancel is useful operator ergonomics, but it must use the same authenticated/audited operator path rather than introduce a second override model. |
-| `afc-60` | **Keep as a warning** | Duplicate work is a core coordination failure. Identical titles are only a heuristic, so the default should warn and `--allow-duplicate` should remain available. |
-| `afc-57` | **Defer** | `edit` as an alias for `update` is discoverability polish, not a correctness or adoption blocker. Prefer improving help and examples first. |
-| `afc-59` | **Do not schedule in its current form** | Metadata editing and lease lifecycle are separate actions. `release` and atomic `handoff` are clearer than hiding release inside `issue update`. |
+Live status, claims, and closure remain in project `afc`. Packet 015 records the
+problem/evidence/scope/acceptance for `afc-103` through `afc-116`; this table
+records only product ordering.
 
-There are no deferred `afc` issues in the live queue at this snapshot; the two
-defer/do-not-schedule decisions above are roadmap recommendations until their
-live issue statuses are changed deliberately.
+| Work | Decision | Reason |
+| --- | --- | --- |
+| `afc-103`-`afc-109` | **Stage 1 / P1** | Establish the ownership, ready/dependency, daemon writer, and launcher correctness boundary. |
+| `afc-110` | **Stage 2 / P1 gate** | Prove all six required races on production-like multi-connection SQLite. |
+| `afc-111`-`afc-114` | **Stage 3 / P1 gate** | Resolve ambiguous mutation outcomes and prove crash/restart/WAL/migration/restore behavior. |
+| `afc-115`-`afc-116` | **Stage 4 / P2** | Make the hardened service operable and unambiguous for unattended agents. |
+| `afc-70`, `afc-89`, `afc-90`, `afc-97` | **Keep after safety** | Valid later ergonomics/integration/audit features, rewritten and dependency-gated. |
+| `afc-98`, `afc-99` | **Deferred decision gates** | Remote transport/proxy work needs completed local safety plus a new accepted threat-model packet. |
 
-### Public release baseline
+### Decision gate: remote worker access
 
-The public-preview repository still needs a small, evidence-oriented baseline:
-
-- a normal pull-request CI workflow, not only tag-driven release automation;
-- an explicit open-source license;
-- `SECURITY.md` and contributor guidance;
-- `.gitignore` coverage for SQLite runtime files, local secrets, coverage, and
-  scratch exports;
-- one reproducible concurrent-claim demo and honest release notes.
-
-These are launch prerequisites, not product features. They should be specified
-as the next SDD packet after packet 010 is formally closed.
-
-### Decision gate: secure LAN worker access
-
-The concrete future scenario is a coordinator and SQLite database on the
-operator laptop, with workers running either locally or on Proxmox VMs/LXCs in
-the same home network. This does **not** require distributed storage.
-
-Do not start this track until the operator boundary and public baseline above
-are complete. If selected, specify an optional TCP transport over the same API
-handlers with:
-
-- the Unix socket retained as the default local transport;
-- bind-to-specific-interface configuration, disabled by default;
-- TLS or a documented private-network security envelope;
-- per-worker credentials and server-derived identity;
-- worker/operator authorization and lease ownership checks;
-- request limits, timeouts, audit events, rotation, and idempotency semantics.
+Do not expose the coordinator off-host until `afc-102` is complete and maturity
+levels 3-5 are re-assessed. If remote access is still needed, create a new SDD
+packet that chooses one transport/proxy topology and defines server-derived
+identity, least privilege, revocation, request limits, timeouts, audit, and
+idempotency. The Unix socket remains the default and no listener is enabled
+implicitly.
 
 ### Later gate: external tracker adapters
 
-GitHub Issues must not become mandatory because many coordinated projects do
-not live on GitHub. The durable boundary is:
+The durable boundary remains:
 
 > `af-coordinator` owns execution state. External trackers are optional
 > planning and reporting surfaces.
 
-If real demand appears, start with a provider-neutral external-reference model
-and one narrow GitHub adapter. Avoid full bidirectional field synchronization;
-import explicitly selected work and publish terminal evidence such as PR and
-commit links.
+After safety, specify a provider-neutral external-reference/mapping contract and
+one narrow GitHub adapter. Import explicitly selected work; publish terminal
+evidence; do not implement bidirectional shared authority.
 
 ## Completed target: execution telemetry and analytics hardening (`afc-47`)
 
