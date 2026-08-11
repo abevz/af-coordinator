@@ -179,6 +179,12 @@ ready on the next query.
 
 **Dependencies.** `afc-101`.
 
+**Status.** Implemented in `afc-107`: add-dependency resolves endpoints,
+enforces the cross-project endpoint policy, traverses `blocks`, inserts the
+edge, and appends the event in one serialized-writer transaction; traversal
+errors are returned. Same-change regression tests and verification evidence
+are recorded in `review.md`.
+
 ## AFC-SDD-0156 / afc-108 — One daemon writer and SQLite contract
 
 **Problem.** Startup unlinks any existing socket without probing it, so a second

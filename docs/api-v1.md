@@ -320,7 +320,8 @@ This is the compact route-to-implementation inventory for the current daemon.
   narrows to one relation (omit to remove all); `404 not_found` if absent
 - `GET  /v1/issues/{issue_id}/links` — list linked artifacts
 - `POST /v1/issues/{issue_id}/dependencies` — add dependency
-  (`depends_on`, `kind`); rejects `blocks` cycles with `dependency_cycle`.
+  (`depends_on`, `kind`); rejects `blocks` cycles with `dependency_cycle` and
+  any edge whose endpoints belong to different projects with `validation_failed`.
   Supported `kind` values: `blocks` (default), `parent`, `related`, `discovered-from`
 - `DELETE /v1/issues/{issue_id}/dependencies/{depends_on}?kind=` — remove
 - `GET  /v1/issues/{issue_id}/events` — activity timeline ordered by

@@ -133,25 +133,7 @@ func CreateIssue(ctx context.Context, db *sql.DB, projectKey string, req core.Cr
 
 // ResolveIssueID resolves an issue by either its UUID id or short_id, returning the UUID id.
 func ResolveIssueID(ctx context.Context, db *sql.DB, idOrShortID string) (string, error) {
-	// Try by primary key first.
-	var id string
-	err := db.QueryRowContext(ctx, `SELECT id FROM issues WHERE id = ?`, idOrShortID).Scan(&id)
-	if err == nil {
-		return id, nil
-	}
-	if err != sql.ErrNoRows {
-		return "", fmt.Errorf("resolve issue by id: %w", err)
-	}
-
-	// Fall back to short_id.
-	err = db.QueryRowContext(ctx, `SELECT id FROM issues WHERE short_id = ?`, idOrShortID).Scan(&id)
-	if err == sql.ErrNoRows {
-		return "", core.NewAPIError(core.ErrNotFound, "issue not found: "+idOrShortID)
-	}
-	if err != nil {
-		return "", fmt.Errorf("resolve issue by short_id: %w", err)
-	}
-	return id, nil
+	return resolveIssueIDWith(ctx, db, idOrShortID)
 }
 
 // GetIssue retrieves an issue by ID (UUID), along with its optional active lease.
@@ -1430,40 +1412,69 @@ func insertEvent(ctx context.Context, tx *sql.Tx, issueID, actor, eventType stri
 	return nil
 }
 
-// AddDependency adds a dependency between two issues. For 'blocks' kind, it performs cycle detection.
-func AddDependency(ctx context.Context, db *sql.DB, issueID string, req core.AddDependencyRequest) error {
-	// Verify both issues exist and resolve DependsOn
-	if _, _, err := GetIssue(ctx, db, issueID); err != nil {
-		return err
-	}
-	dependsOnID, err := ResolveIssueID(ctx, db, req.DependsOn)
-	if err != nil {
-		return err
-	}
-	if _, _, err := GetIssue(ctx, db, dependsOnID); err != nil {
-		return err
-	}
-	req.DependsOn = dependsOnID
+// dependencyQueryer is satisfied by both *sql.DB and *sql.Tx so dependency
+// validation can run against the serialized-writer transaction.
+type dependencyQueryer interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
 
+// AddDependency adds a dependency between two issues. Endpoint resolution, the
+// cross-project endpoint policy, 'blocks' cycle detection, the edge insert, and
+// the dependency_added event all run in one transaction on the serialized
+// writer, so concurrent opposite edges cannot each validate against an
+// incomplete graph.
+func AddDependency(ctx context.Context, db *sql.DB, issueID string, req core.AddDependencyRequest) error {
+	return addDependency(ctx, db, issueID, req, wouldCreateCycle)
+}
+
+// addDependency is AddDependency with an injectable cycle check so tests can
+// force traversal failures without touching the production code path.
+func addDependency(ctx context.Context, db *sql.DB, issueID string, req core.AddDependencyRequest, cycleCheck func(context.Context, dependencyQueryer, string, string) (bool, error)) error {
 	kind := req.Kind
 	if kind == "" {
 		kind = "blocks"
 	}
-
-	if kind == "blocks" {
-		if wouldCreateCycle(ctx, db, issueID, req.DependsOn) {
-			return core.NewAPIError(core.ErrDependencyCycle,
-				"adding this dependency would create a cycle")
-		}
-	}
-
-	now := time.Now().UTC().Format(time.RFC3339)
 
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+
+	// Resolve both endpoints and verify they exist inside the transaction.
+	dependsOnID, err := resolveIssueIDWith(ctx, tx, req.DependsOn)
+	if err != nil {
+		return err
+	}
+	sourceProjectID, err := projectIDForIssue(ctx, tx, issueID)
+	if err != nil {
+		return err
+	}
+	targetProjectID, err := projectIDForIssue(ctx, tx, dependsOnID)
+	if err != nil {
+		return err
+	}
+	// Cross-project policy: a dependency edge must stay inside one project.
+	if sourceProjectID != targetProjectID {
+		return core.NewAPIError(core.ErrValidationFailed,
+			"dependency endpoints must belong to the same project")
+	}
+	req.DependsOn = dependsOnID
+
+	if kind == "blocks" {
+		cycle, err := cycleCheck(ctx, tx, issueID, req.DependsOn)
+		if err != nil {
+			// Traversal errors are real failures, never "no cycle".
+			return fmt.Errorf("traverse dependency graph: %w", err)
+		}
+		if cycle {
+			return core.NewAPIError(core.ErrDependencyCycle,
+				"adding this dependency would create a cycle")
+		}
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
 
 	_, err = tx.ExecContext(ctx,
 		`INSERT INTO dependencies (issue_id, depends_on_issue_id, kind, created_at)
@@ -1495,6 +1506,43 @@ func AddDependency(ctx context.Context, db *sql.DB, issueID string, req core.Add
 	}
 
 	return nil
+}
+
+// resolveIssueIDWith resolves an issue by UUID or short_id against a queryer
+// (either the pooled *sql.DB or an in-flight transaction).
+func resolveIssueIDWith(ctx context.Context, q dependencyQueryer, idOrShortID string) (string, error) {
+	// Try by primary key first.
+	var id string
+	err := q.QueryRowContext(ctx, `SELECT id FROM issues WHERE id = ?`, idOrShortID).Scan(&id)
+	if err == nil {
+		return id, nil
+	}
+	if err != sql.ErrNoRows {
+		return "", fmt.Errorf("resolve issue by id: %w", err)
+	}
+
+	// Fall back to short_id.
+	err = q.QueryRowContext(ctx, `SELECT id FROM issues WHERE short_id = ?`, idOrShortID).Scan(&id)
+	if err == sql.ErrNoRows {
+		return "", core.NewAPIError(core.ErrNotFound, "issue not found: "+idOrShortID)
+	}
+	if err != nil {
+		return "", fmt.Errorf("resolve issue by short_id: %w", err)
+	}
+	return id, nil
+}
+
+// projectIDForIssue returns the project_id for an issue, verifying it exists.
+func projectIDForIssue(ctx context.Context, q dependencyQueryer, issueID string) (string, error) {
+	var projectID string
+	err := q.QueryRowContext(ctx, `SELECT project_id FROM issues WHERE id = ?`, issueID).Scan(&projectID)
+	if err == sql.ErrNoRows {
+		return "", core.NewAPIError(core.ErrNotFound, "issue not found: "+issueID)
+	}
+	if err != nil {
+		return "", fmt.Errorf("resolve issue project: %w", err)
+	}
+	return projectID, nil
 }
 
 // RemoveDependency removes a dependency record.
@@ -1551,38 +1599,45 @@ func RemoveDependency(ctx context.Context, db *sql.DB, issueID, dependsOn, kind,
 	return nil
 }
 
-// wouldCreateCycle checks if adding a 'blocks' dependency from fromIssueID to toIssueID would create a cycle.
-// It does a BFS from toIssueID following 'blocks' edges to see if we reach fromIssueID.
-func wouldCreateCycle(ctx context.Context, db *sql.DB, fromIssueID, toIssueID string) bool {
+// wouldCreateCycle reports whether adding a 'blocks' dependency from
+// fromIssueID to toIssueID would create a cycle. It BFS-follows 'blocks' edges
+// from toIssueID and returns true when it reaches fromIssueID. Traversal errors
+// are returned to the caller, never interpreted as "no cycle".
+func wouldCreateCycle(ctx context.Context, q dependencyQueryer, fromIssueID, toIssueID string) (bool, error) {
 	visited := map[string]bool{}
 	queue := []string{toIssueID}
 	for len(queue) > 0 {
 		current := queue[0]
 		queue = queue[1:]
 		if current == fromIssueID {
-			return true // cycle!
+			return true, nil // cycle!
 		}
 		if visited[current] {
 			continue
 		}
 		visited[current] = true
-		rows, err := db.QueryContext(ctx,
+		rows, err := q.QueryContext(ctx,
 			`SELECT depends_on_issue_id FROM dependencies WHERE issue_id = ? AND kind = 'blocks'`, current)
 		if err != nil {
-			continue
+			return false, err
 		}
 		for rows.Next() {
 			var dep string
 			if err := rows.Scan(&dep); err != nil {
-				continue
+				rows.Close()
+				return false, err
 			}
 			if !visited[dep] {
 				queue = append(queue, dep)
 			}
 		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return false, err
+		}
 		rows.Close()
 	}
-	return false
+	return false, nil
 }
 
 // LinkArtifact links an artifact to an issue by inserting into issue_artifacts.
