@@ -812,8 +812,8 @@ func TestClaimIssueRejectsBlockedTaskAndSameHolderTokenRecovery(t *testing.T) {
 			t.Fatal(err)
 		}
 		resp.Body.Close()
-		if envelope.Error.Code != string(core.ErrConflict) {
-			t.Fatalf("error code = %q, want conflict", envelope.Error.Code)
+		if envelope.Error.Code != string(core.ErrIssueNotReady) {
+			t.Fatalf("error code = %q, want issue_not_ready", envelope.Error.Code)
 		}
 	})
 

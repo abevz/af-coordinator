@@ -229,6 +229,8 @@ func mapExitCode(code string) int {
 		return 4
 	case core.ErrConflict:
 		return 2
+	case core.ErrIssueNotReady:
+		return 7
 	case core.ErrDependencyCycle:
 		return 6
 	default:

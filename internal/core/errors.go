@@ -10,6 +10,7 @@ const (
 	ErrForbidden        = "forbidden"
 	ErrLeaseHeld        = "lease_held"
 	ErrLeaseExpired     = "lease_expired"
+	ErrIssueNotReady    = "issue_not_ready"
 	ErrDependencyCycle  = "dependency_cycle"
 	ErrAlreadyLinked    = "already_linked"
 	ErrAlreadyTagged    = "already_tagged"

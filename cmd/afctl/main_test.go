@@ -18,6 +18,7 @@ func TestMapExitCodeErr(t *testing.T) {
 		{"lease held", &client.ClientError{Code: "lease_held", Message: "x"}, 3},
 		{"lease expired", &client.ClientError{Code: "lease_expired", Message: "x"}, 4},
 		{"version conflict", &client.ClientError{Code: "version_conflict", Message: "x"}, 2},
+		{"issue not ready", &client.ClientError{Code: "issue_not_ready", Message: "x"}, 7},
 		{"dependency cycle", &client.ClientError{Code: "dependency_cycle", Message: "x"}, 6},
 		{"validation failed", &client.ClientError{Code: "validation_failed", Message: "x"}, 1},
 		{"unknown error", fmt.Errorf("some transport error"), 1},

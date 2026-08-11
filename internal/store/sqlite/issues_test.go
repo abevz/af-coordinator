@@ -921,8 +921,8 @@ func TestClaimIssueRejectsUnfinishedBlocksDependency(t *testing.T) {
 	}
 	_, err = ClaimIssue(context.Background(), db, target.ID, "worker", 3600)
 	var apiErr core.APIError
-	if !errors.As(err, &apiErr) || apiErr.Code != core.ErrConflict {
-		t.Fatalf("blocked claim error = %v, want conflict", err)
+	if !errors.As(err, &apiErr) || apiErr.Code != core.ErrIssueNotReady {
+		t.Fatalf("blocked claim error = %v, want issue_not_ready", err)
 	}
 	got, lease, err := GetIssue(context.Background(), db, target.ID)
 	if err != nil {

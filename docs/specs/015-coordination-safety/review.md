@@ -37,7 +37,7 @@ pending merge:
 - ready listing and claim use one executable-state predicate for status, issue
   type, and unfinished `blocks` dependencies;
 - claim re-evaluates that predicate inside its transaction and returns typed
-  `conflict` without changing issue, lease, version, or event state when a
+  `issue_not_ready` without changing issue, lease, version, or event state when a
   blocker remains unfinished;
 - an active lease always returns `lease_held`; claim never reads or returns its
   token based on the public holder string, and a rejected same-holder retry
