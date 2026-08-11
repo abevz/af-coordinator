@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/abevz/af-coordinator/internal/testsocket"
 )
 
 func TestDatabaseLockExcludesSecondProcess(t *testing.T) {
@@ -114,7 +116,7 @@ func TestDatabaseLockUsesCanonicalPathAndSurvivesRelease(t *testing.T) {
 }
 
 func TestRemoveStaleSocketProbesBeforeUnlink(t *testing.T) {
-	socketPath := filepath.Join(t.TempDir(), "coordinator.sock")
+	socketPath := testsocket.PathNamed(t, "coordinator")
 	listener, err := net.Listen("unix", socketPath)
 	if err != nil {
 		t.Fatal(err)

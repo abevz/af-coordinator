@@ -7,17 +7,16 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/abevz/af-coordinator/internal/core"
 	"github.com/abevz/af-coordinator/internal/report"
+	"github.com/abevz/af-coordinator/internal/testsocket"
 )
 
 func TestClientCoverage(t *testing.T) {
-	dir := t.TempDir()
-	sockPath := filepath.Join(dir, "test.sock")
+	sockPath := testsocket.Path(t)
 
 	l, err := net.Listen("unix", sockPath)
 	if err != nil {

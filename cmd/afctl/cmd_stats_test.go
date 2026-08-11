@@ -8,13 +8,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/abevz/af-coordinator/internal/client"
 	"github.com/abevz/af-coordinator/internal/report"
+	"github.com/abevz/af-coordinator/internal/testsocket"
 )
 
 func TestParseStatsArgs(t *testing.T) {
@@ -91,7 +91,7 @@ func TestWriteStatsIncludesMetricsAndDataQuality(t *testing.T) {
 }
 
 func TestRunStatsJSON(t *testing.T) {
-	socketPath := filepath.Join(t.TempDir(), "stats.sock")
+	socketPath := testsocket.PathNamed(t, "stats")
 	listener, err := net.Listen("unix", socketPath)
 	if err != nil {
 		t.Fatal(err)
