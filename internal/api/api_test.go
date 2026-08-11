@@ -909,8 +909,9 @@ func TestHandoffLeaseRecordsNoteAndReleasesAtomically(t *testing.T) {
 	}
 
 	body, err := json.Marshal(core.HandoffRequest{
-		LeaseToken: claim.LeaseToken,
-		Note:       "HANDOFF: validate the API response",
+		LeaseToken:      claim.LeaseToken,
+		LeaseGeneration: claim.LeaseGeneration,
+		Note:            "HANDOFF: validate the API response",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1766,8 +1767,8 @@ func TestCloseIssue(t *testing.T) {
 	}
 	leaseToken := "test-close-token"
 	_, err = db.Exec(
-		`INSERT INTO leases (issue_id, holder, lease_token, expires_at, created_at, updated_at)
-		 VALUES (?, 'test', ?, ?, ?, ?)`,
+		`INSERT INTO leases (issue_id, holder, lease_token, lease_generation, expires_at, created_at, updated_at)
+		 VALUES (?, 'test', ?, 1, ?, ?, ?)`,
 		issueID, leaseToken, time.Now().UTC().Add(time.Minute).Format(time.RFC3339), now, now,
 	)
 	if err != nil {
@@ -1778,7 +1779,7 @@ func TestCloseIssue(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	body := `{"resolution":"done","branch":"codex/afc-27","pr_url":"https://github.com/abevz/af-coordinator/pull/27","commit_sha":"ba6d011","expected_version":2,"lease_token":"test-close-token","actor":"test"}`
+	body := `{"resolution":"done","branch":"codex/afc-27","pr_url":"https://github.com/abevz/af-coordinator/pull/27","commit_sha":"ba6d011","expected_version":2,"lease_token":"test-close-token","lease_generation":1,"actor":"test"}`
 	req, err := http.NewRequest("POST", server.URL+"/v1/issues/"+issueID+"/close", strings.NewReader(body))
 	if err != nil {
 		t.Fatal(err)

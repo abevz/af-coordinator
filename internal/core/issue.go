@@ -250,11 +250,14 @@ type ReleaseRequest struct {
 }
 
 // HandoffRequest is the JSON body for POST /v1/issues/{issue_id}/handoff.
-// The server derives the note author from the active lease holder.
+// The server derives the note author from the active lease holder. The
+// presented lease_generation must match the current unexpired lease, so a
+// stale holder after a reclaim cannot hand the replacement's work off.
 type HandoffRequest struct {
-	LeaseToken     string `json:"lease_token"`
-	Note           string `json:"note"`
-	InvocationMode string `json:"invocation_mode,omitempty"`
+	LeaseToken      string `json:"lease_token"`
+	LeaseGeneration int64  `json:"lease_generation"`
+	Note            string `json:"note"`
+	InvocationMode  string `json:"invocation_mode,omitempty"`
 }
 
 // HandoffResponse is returned after atomically recording a HANDOFF note and
@@ -275,6 +278,7 @@ type UpdateIssueRequest struct {
 	Status             string `json:"status,omitempty"`
 	ExpectedVersion    int    `json:"expected_version"`
 	LeaseToken         string `json:"lease_token,omitempty"`
+	LeaseGeneration    int64  `json:"lease_generation"`
 	ReleaseLease       bool   `json:"release_lease,omitempty"`
 	Actor              string `json:"actor,omitempty"`
 }
@@ -287,6 +291,7 @@ type CloseIssueRequest struct {
 	CommitSHA       string `json:"commit_sha,omitempty"`
 	ExpectedVersion int    `json:"expected_version"`
 	LeaseToken      string `json:"lease_token"`
+	LeaseGeneration int64  `json:"lease_generation"`
 	Actor           string `json:"actor,omitempty"`
 	Note            string `json:"note,omitempty"`
 	InvocationMode  string `json:"invocation_mode,omitempty"`
