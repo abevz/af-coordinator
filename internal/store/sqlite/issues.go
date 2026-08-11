@@ -716,8 +716,8 @@ func HandoffLease(ctx context.Context, db *sql.DB, issueID string, req core.Hand
 	var leaseGeneration int64
 	err = tx.QueryRowContext(ctx,
 		`SELECT holder, attempt_id, lease_generation FROM leases
-		 WHERE issue_id = ? AND lease_token = ? AND expires_at > ?`,
-		issueID, req.LeaseToken, now,
+		 WHERE issue_id = ? AND lease_token = ? AND lease_generation = ? AND expires_at > ?`,
+		issueID, req.LeaseToken, req.LeaseGeneration, now,
 	).Scan(&holder, &attemptID, &leaseGeneration)
 	if err == sql.ErrNoRows {
 		return core.HandoffResponse{}, core.NewAPIError(core.ErrLeaseExpired, "active lease not found")
@@ -843,10 +843,16 @@ func UpdateIssue(ctx context.Context, db *sql.DB, issueID string, req core.Updat
 			fmt.Sprintf("expected version %d, current version is %d", req.ExpectedVersion, issue.Version))
 	}
 
-	// Lease check: if issue has an active lease, require lease_token to match.
+	// Lease check: if issue has an active lease, require lease_token and the
+	// claim's fencing generation to match, so a stale holder after a reclaim
+	// cannot mutate the issue.
 	if lease != nil && lease.LeaseToken != req.LeaseToken {
 		return core.Issue{}, core.NewAPIError(core.ErrLeaseExpired,
 			"issue is leased and lease_token does not match")
+	}
+	if lease != nil && lease.LeaseGeneration != req.LeaseGeneration {
+		return core.Issue{}, core.NewAPIError(core.ErrLeaseExpired,
+			"issue is leased and lease_generation does not match")
 	}
 
 	// Generic update is for metadata and non-terminal routing only. Closing and
@@ -921,9 +927,12 @@ func UpdateIssue(ctx context.Context, db *sql.DB, issueID string, req core.Updat
 	sets = append(sets, "version = version + 1")
 	sets = append(sets, "updated_at = ?")
 	args = append(args, now)
-	args = append(args, issueID)
+	// Re-verify the version inside the transaction so a competing mutation
+	// between the read above and this write yields one typed conflict instead
+	// of a lost update.
+	args = append(args, issueID, issue.Version)
 
-	query := "UPDATE issues SET " + strings.Join(sets, ", ") + " WHERE id = ?"
+	query := "UPDATE issues SET " + strings.Join(sets, ", ") + " WHERE id = ? AND version = ?"
 	result, err := tx.ExecContext(ctx, query, args...)
 	if err != nil {
 		return core.Issue{}, fmt.Errorf("update issue: %w", err)
@@ -933,7 +942,8 @@ func UpdateIssue(ctx context.Context, db *sql.DB, issueID string, req core.Updat
 		return core.Issue{}, fmt.Errorf("rows affected: %w", err)
 	}
 	if rows == 0 {
-		return core.Issue{}, core.NewAPIError(core.ErrNotFound, "issue not found: "+issueID)
+		return core.Issue{}, core.NewAPIError(core.ErrConflict,
+			"issue changed while updating")
 	}
 
 	// Append event. Include "release" in the changed field list when applicable.
@@ -1084,6 +1094,10 @@ func CloseIssue(ctx context.Context, db *sql.DB, issueID string, req core.CloseI
 	if leaseToken != req.LeaseToken {
 		return core.CloseIssueResult{}, core.NewAPIError(core.ErrLeaseExpired,
 			"lease_token does not match the active lease")
+	}
+	if leaseGeneration != req.LeaseGeneration {
+		return core.CloseIssueResult{}, core.NewAPIError(core.ErrLeaseExpired,
+			"lease_generation does not match the active lease")
 	}
 
 	result, err := updateTerminalIssue(ctx, tx, issue, req.Resolution, now)

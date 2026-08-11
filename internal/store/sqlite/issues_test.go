@@ -2052,6 +2052,7 @@ func TestCloseIssue(t *testing.T) {
 		CommitSHA:       "ba6d011",
 		ExpectedVersion: issue.Version,
 		LeaseToken:      claim.LeaseToken,
+		LeaseGeneration: claim.LeaseGeneration,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -2147,6 +2148,7 @@ func TestCloseIssueCancelled(t *testing.T) {
 		Resolution:      "cancelled",
 		ExpectedVersion: issue.Version,
 		LeaseToken:      claim.LeaseToken,
+		LeaseGeneration: claim.LeaseGeneration,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -2289,6 +2291,76 @@ func TestCloseIssueRequiresActiveMatchingLeaseAndNonTerminalIssue(t *testing.T) 
 				t.Fatalf("CloseIssue() error = %v, want %s", err, test.wantCode)
 			}
 		})
+	}
+}
+
+func TestStaleGenerationCloseFailsAfterReclaim(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	if _, err := CreateProject(context.Background(), db, "test", "Test", ""); err != nil {
+		t.Fatal(err)
+	}
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{
+		ScopeKind: "project",
+		Title:     "Reclaim close",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := ClaimIssue(context.Background(), db, issue.ID, "agent-1", 3600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	forcedExpires := time.Now().UTC().Add(-time.Minute).Format(time.RFC3339)
+	if _, err := db.Exec(`UPDATE leases SET expires_at = ? WHERE issue_id = ?`, forcedExpires, issue.ID); err != nil {
+		t.Fatal(err)
+	}
+	second, err := ClaimIssue(context.Background(), db, issue.ID, "agent-2", 3600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, _, err := GetIssue(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The replacement holds the current token, but the presented generation is
+	// the stale pre-reclaim value; the generation CAS must reject the close
+	// before any note, event, or status change.
+	_, err = CloseIssue(context.Background(), db, issue.ID, core.CloseIssueRequest{
+		Resolution:      "done",
+		ExpectedVersion: updated.Version,
+		LeaseToken:      second.LeaseToken,
+		LeaseGeneration: first.LeaseGeneration,
+		Actor:           "agent-1",
+	})
+	if err == nil {
+		t.Fatal("stale generation close succeeded after reclaim")
+	}
+	var apiErr core.APIError
+	if !errors.As(err, &apiErr) || apiErr.Code != core.ErrLeaseExpired {
+		t.Fatalf("stale generation close error = %v, want lease_expired", err)
+	}
+
+	got, lease, err := GetIssue(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != "in_progress" {
+		t.Fatalf("stale generation close changed status to %q", got.Status)
+	}
+	if lease == nil || lease.LeaseGeneration != second.LeaseGeneration {
+		t.Fatalf("replacement lease = %+v, want generation %d", lease, second.LeaseGeneration)
+	}
+	events, err := ListEvents(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, event := range events {
+		if event.EventType == "issue_closed" {
+			t.Fatalf("stale generation close wrote an issue_closed event: %+v", event)
+		}
 	}
 }
 
@@ -2686,6 +2758,7 @@ func TestCloseIssueIncludesIssueExternalKeyInPayloadAndResult(t *testing.T) {
 		Resolution:      "done",
 		ExpectedVersion: issue.Version,
 		LeaseToken:      claim.LeaseToken,
+		LeaseGeneration: claim.LeaseGeneration,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -2848,8 +2921,9 @@ func TestHandoffLeaseRecordsNoteBeforeHandoffRelease(t *testing.T) {
 	}
 
 	resp, err := HandoffLease(context.Background(), db, issue.ID, core.HandoffRequest{
-		LeaseToken: claim.LeaseToken,
-		Note:       "HANDOFF: implementation is ready for review",
+		LeaseToken:      claim.LeaseToken,
+		LeaseGeneration: claim.LeaseGeneration,
+		Note:            "HANDOFF: implementation is ready for review",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -2941,15 +3015,34 @@ func TestHandoffLeaseRejectsInvalidOrExpiredLeaseWithoutPartialState(t *testing.
 		},
 		{
 			name: "wrong token",
-			request: func(core.ClaimResponse) core.HandoffRequest {
-				return core.HandoffRequest{LeaseToken: "wrong-token", Note: "HANDOFF: next steps"}
+			request: func(claim core.ClaimResponse) core.HandoffRequest {
+				return core.HandoffRequest{
+					LeaseToken:      "wrong-token",
+					LeaseGeneration: claim.LeaseGeneration,
+					Note:            "HANDOFF: next steps",
+				}
+			},
+			wantCode: core.ErrLeaseExpired,
+		},
+		{
+			name: "wrong generation",
+			request: func(claim core.ClaimResponse) core.HandoffRequest {
+				return core.HandoffRequest{
+					LeaseToken:      claim.LeaseToken,
+					LeaseGeneration: claim.LeaseGeneration + 1,
+					Note:            "HANDOFF: next steps",
+				}
 			},
 			wantCode: core.ErrLeaseExpired,
 		},
 		{
 			name: "expired token",
 			request: func(claim core.ClaimResponse) core.HandoffRequest {
-				return core.HandoffRequest{LeaseToken: claim.LeaseToken, Note: "HANDOFF: next steps"}
+				return core.HandoffRequest{
+					LeaseToken:      claim.LeaseToken,
+					LeaseGeneration: claim.LeaseGeneration,
+					Note:            "HANDOFF: next steps",
+				}
 			},
 			expire:   true,
 			wantCode: core.ErrLeaseExpired,
@@ -3010,6 +3103,68 @@ func TestHandoffLeaseRejectsInvalidOrExpiredLeaseWithoutPartialState(t *testing.
 	}
 }
 
+func TestStaleGenerationHandoffFailsAfterReclaim(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	if _, err := CreateProject(context.Background(), db, "test", "Test", ""); err != nil {
+		t.Fatal(err)
+	}
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{
+		ScopeKind: "project",
+		Title:     "Reclaim handoff",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := ClaimIssue(context.Background(), db, issue.ID, "agent-1", 3600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	forcedExpires := time.Now().UTC().Add(-time.Minute).Format(time.RFC3339)
+	if _, err := db.Exec(`UPDATE leases SET expires_at = ? WHERE issue_id = ?`, forcedExpires, issue.ID); err != nil {
+		t.Fatal(err)
+	}
+	second, err := ClaimIssue(context.Background(), db, issue.ID, "agent-2", 3600)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The replacement holds the current token, but the presented generation is
+	// the stale pre-reclaim value; the generation CAS must reject the handoff
+	// before any note or event is written.
+	_, err = HandoffLease(context.Background(), db, issue.ID, core.HandoffRequest{
+		LeaseToken:      second.LeaseToken,
+		LeaseGeneration: first.LeaseGeneration,
+		Note:            "HANDOFF: stale handoff",
+	})
+	if err == nil {
+		t.Fatal("stale generation handoff succeeded after reclaim")
+	}
+	var apiErr core.APIError
+	if !errors.As(err, &apiErr) || apiErr.Code != core.ErrLeaseExpired {
+		t.Fatalf("stale generation handoff error = %v, want lease_expired", err)
+	}
+
+	got, lease, err := GetIssue(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != "in_progress" {
+		t.Fatalf("stale generation handoff changed status to %q", got.Status)
+	}
+	if lease == nil || lease.LeaseGeneration != second.LeaseGeneration {
+		t.Fatalf("replacement lease = %+v, want generation %d", lease, second.LeaseGeneration)
+	}
+	notes, err := ListNotes(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(notes) != 0 {
+		t.Fatalf("stale generation handoff wrote notes: %+v", notes)
+	}
+}
+
 func TestHandoffLeaseRollsBackWhenNoteOrReleaseWriteFails(t *testing.T) {
 	t.Parallel()
 
@@ -3048,8 +3203,9 @@ func TestHandoffLeaseRollsBackWhenNoteOrReleaseWriteFails(t *testing.T) {
 			}
 
 			if _, err := HandoffLease(context.Background(), db, issue.ID, core.HandoffRequest{
-				LeaseToken: claim.LeaseToken,
-				Note:       "HANDOFF: retry after repair",
+				LeaseToken:      claim.LeaseToken,
+				LeaseGeneration: claim.LeaseGeneration,
+				Note:            "HANDOFF: retry after repair",
 			}); err == nil {
 				t.Fatal("expected handoff failure")
 			}
@@ -3492,6 +3648,65 @@ func TestUpdateIssueLeaseTokenRequired(t *testing.T) {
 	}
 	if apiErr.Code != core.ErrLeaseExpired {
 		t.Errorf("expected code %q, got %q", core.ErrLeaseExpired, apiErr.Code)
+	}
+}
+
+func TestStaleGenerationUpdateFailsAfterReclaim(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	if _, err := CreateProject(context.Background(), db, "test", "Test", ""); err != nil {
+		t.Fatal(err)
+	}
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{
+		ScopeKind: "project",
+		Title:     "Reclaim update",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := ClaimIssue(context.Background(), db, issue.ID, "agent-1", 3600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	forcedExpires := time.Now().UTC().Add(-time.Minute).Format(time.RFC3339)
+	if _, err := db.Exec(`UPDATE leases SET expires_at = ? WHERE issue_id = ?`, forcedExpires, issue.ID); err != nil {
+		t.Fatal(err)
+	}
+	second, err := ClaimIssue(context.Background(), db, issue.ID, "agent-2", 3600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, _, err := GetIssue(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The replacement holds the current token, but its generation is the stale
+	// pre-reclaim value; the generation CAS must reject the write.
+	_, err = UpdateIssue(context.Background(), db, issue.ID, core.UpdateIssueRequest{
+		Title:           "stale owner write",
+		ExpectedVersion: updated.Version,
+		LeaseToken:      second.LeaseToken,
+		LeaseGeneration: first.LeaseGeneration,
+	})
+	if err == nil {
+		t.Fatal("stale generation update succeeded after reclaim")
+	}
+	var apiErr core.APIError
+	if !errors.As(err, &apiErr) || apiErr.Code != core.ErrLeaseExpired {
+		t.Fatalf("stale generation update error = %v, want lease_expired", err)
+	}
+
+	got, lease, err := GetIssue(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Title != "Reclaim update" || got.Status != "in_progress" {
+		t.Fatalf("stale generation update changed the issue: %+v", got)
+	}
+	if lease == nil || lease.LeaseGeneration != second.LeaseGeneration {
+		t.Fatalf("replacement lease = %+v, want generation %d", lease, second.LeaseGeneration)
 	}
 }
 
