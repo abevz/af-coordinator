@@ -2451,16 +2451,18 @@ func TestReleaseLease(t *testing.T) {
 		t.Fatal(err)
 	}
 	var claimResp struct {
-		LeaseToken string `json:"lease_token"`
-		ExpiresAt  string `json:"expires_at"`
+		LeaseToken      string `json:"lease_token"`
+		LeaseGeneration int64  `json:"lease_generation"`
+		ExpiresAt       string `json:"expires_at"`
 	}
 	claimResp = decodeJSON[struct {
-		LeaseToken string `json:"lease_token"`
-		ExpiresAt  string `json:"expires_at"`
+		LeaseToken      string `json:"lease_token"`
+		LeaseGeneration int64  `json:"lease_generation"`
+		ExpiresAt       string `json:"expires_at"`
 	}](t, resp)
 
 	// Release the lease
-	releaseBody := `{"lease_token":"` + claimResp.LeaseToken + `"}`
+	releaseBody := fmt.Sprintf(`{"lease_token":%q,"lease_generation":%d}`, claimResp.LeaseToken, claimResp.LeaseGeneration)
 	req, _ = http.NewRequest("POST", server.URL+"/v1/issues/"+issueID+"/release", strings.NewReader(releaseBody))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err = http.DefaultClient.Do(req)
@@ -2508,16 +2510,18 @@ func TestHeartbeatLease(t *testing.T) {
 		t.Fatal(err)
 	}
 	var claimResp struct {
-		LeaseToken string `json:"lease_token"`
-		ExpiresAt  string `json:"expires_at"`
+		LeaseToken      string `json:"lease_token"`
+		LeaseGeneration int64  `json:"lease_generation"`
+		ExpiresAt       string `json:"expires_at"`
 	}
 	claimResp = decodeJSON[struct {
-		LeaseToken string `json:"lease_token"`
-		ExpiresAt  string `json:"expires_at"`
+		LeaseToken      string `json:"lease_token"`
+		LeaseGeneration int64  `json:"lease_generation"`
+		ExpiresAt       string `json:"expires_at"`
 	}](t, resp)
 
 	// Heartbeat
-	hbBody := `{"lease_token":"` + claimResp.LeaseToken + `","ttl_seconds":3600}`
+	hbBody := fmt.Sprintf(`{"lease_token":%q,"lease_generation":%d,"ttl_seconds":3600}`, claimResp.LeaseToken, claimResp.LeaseGeneration)
 	req, _ = http.NewRequest("POST", server.URL+"/v1/issues/"+issueID+"/heartbeat", strings.NewReader(hbBody))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err = http.DefaultClient.Do(req)

@@ -546,7 +546,7 @@ func runIssueClaim(ctx context.Context, c *client.Client, args []string) error {
 	return nil
 }
 
-const issueHeartbeatUsage = "Usage: afctl issue heartbeat <issue-id> --lease-token <token> [--ttl <seconds>]\n" + lifecycleHint
+const issueHeartbeatUsage = "Usage: afctl issue heartbeat <issue-id> --lease-token <token> --lease-generation <generation> [--ttl <seconds>]\n" + lifecycleHint
 
 func runIssueHeartbeat(ctx context.Context, c *client.Client, args []string) error {
 	if hasHelpFlag(args) {
@@ -559,6 +559,7 @@ func runIssueHeartbeat(ctx context.Context, c *client.Client, args []string) err
 
 	issueID := args[0]
 	leaseToken := ""
+	var leaseGeneration int64
 	ttl := 3600
 
 	for i := 1; i < len(args); i++ {
@@ -566,6 +567,11 @@ func runIssueHeartbeat(ctx context.Context, c *client.Client, args []string) err
 		case "--lease-token":
 			if i+1 < len(args) {
 				leaseToken = args[i+1]
+				i++
+			}
+		case "--lease-generation":
+			if i+1 < len(args) {
+				fmt.Sscanf(args[i+1], "%d", &leaseGeneration)
 				i++
 			}
 		case "--ttl":
@@ -579,8 +585,11 @@ func runIssueHeartbeat(ctx context.Context, c *client.Client, args []string) err
 	if leaseToken == "" {
 		return usageErr(issueHeartbeatUsage, "--lease-token is required")
 	}
+	if leaseGeneration <= 0 {
+		return usageErr(issueHeartbeatUsage, "--lease-generation is required")
+	}
 
-	expiresAt, err := c.HeartbeatLease(ctx, issueID, leaseToken, ttl)
+	expiresAt, err := c.HeartbeatLease(ctx, issueID, leaseToken, leaseGeneration, ttl)
 	if err != nil {
 		fail(err)
 	}
@@ -592,7 +601,7 @@ func runIssueHeartbeat(ctx context.Context, c *client.Client, args []string) err
 	return nil
 }
 
-const issueReleaseUsage = "Usage: afctl issue release <issue-id> --lease-token <token>\n" + lifecycleHint
+const issueReleaseUsage = "Usage: afctl issue release <issue-id> --lease-token <token> --lease-generation <generation>\n" + lifecycleHint
 
 func runIssueRelease(ctx context.Context, c *client.Client, args []string) error {
 	if hasHelpFlag(args) {
@@ -605,6 +614,7 @@ func runIssueRelease(ctx context.Context, c *client.Client, args []string) error
 
 	issueID := args[0]
 	leaseToken := ""
+	var leaseGeneration int64
 
 	for i := 1; i < len(args); i++ {
 		switch args[i] {
@@ -613,14 +623,22 @@ func runIssueRelease(ctx context.Context, c *client.Client, args []string) error
 				leaseToken = args[i+1]
 				i++
 			}
+		case "--lease-generation":
+			if i+1 < len(args) {
+				fmt.Sscanf(args[i+1], "%d", &leaseGeneration)
+				i++
+			}
 		}
 	}
 
 	if leaseToken == "" {
 		return usageErr(issueReleaseUsage, "--lease-token is required")
 	}
+	if leaseGeneration <= 0 {
+		return usageErr(issueReleaseUsage, "--lease-generation is required")
+	}
 
-	if err := c.ReleaseLease(ctx, issueID, leaseToken); err != nil {
+	if err := c.ReleaseLease(ctx, issueID, leaseToken, leaseGeneration); err != nil {
 		fail(err)
 	}
 	if jsonOutput {

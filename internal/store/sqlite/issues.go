@@ -560,96 +560,119 @@ func ClaimIssueWithMode(ctx context.Context, db *sql.DB, issueID, holder string,
 	return core.ClaimResponse{LeaseToken: leaseToken, LeaseGeneration: leaseGeneration, ExpiresAt: expiresAt, AttemptID: attemptID, Version: version + 1}, nil
 }
 
-// HeartbeatLease extends the TTL on an existing lease.
-func HeartbeatLease(ctx context.Context, db *sql.DB, issueID, leaseToken string, ttlSeconds int) (string, error) {
-	// Look up the lease.
-	var holder, expiresAt string
-	err := db.QueryRowContext(ctx,
-		`SELECT holder, expires_at FROM leases WHERE issue_id = ? AND lease_token = ?`,
-		issueID, leaseToken,
-	).Scan(&holder, &expiresAt)
-	if err == sql.ErrNoRows {
-		return "", core.NewAPIError(core.ErrLeaseExpired, "lease not found or expired")
-	}
+// HeartbeatLease renews the current unexpired lease identified by issue_id,
+// lease_token, and lease_generation. The renewal is a compare-and-swap: the
+// UPDATE carries the full lease predicate (token, generation, unexpired) and
+// must affect exactly one row, so a stale heartbeat can never resurrect a
+// replaced or expired lease. now is the daemon-supplied UTC wall-clock
+// boundary; the returned value is the stored new deadline.
+func HeartbeatLease(ctx context.Context, db *sql.DB, issueID, leaseToken string, leaseGeneration int64, ttlSeconds int, now time.Time) (string, error) {
+	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
-		return "", fmt.Errorf("select lease: %w", err)
+		return "", fmt.Errorf("begin tx: %w", err)
 	}
+	defer func() { _ = tx.Rollback() }()
 
-	// Check the lease hasn't expired.
-	expiresTime, err := time.Parse(time.RFC3339, expiresAt)
-	if err != nil {
-		return "", fmt.Errorf("parse expires_at: %w", err)
-	}
-	if time.Now().UTC().After(expiresTime) {
-		return "", core.NewAPIError(core.ErrLeaseExpired, "lease has expired")
-	}
+	nowStr := now.UTC().Format(time.RFC3339)
+	newExpiresAt := now.UTC().Add(time.Duration(ttlSeconds) * time.Second).Format(time.RFC3339)
 
-	// Extend the lease.
-	now := time.Now().UTC()
-	newExpiresAt := now.Add(time.Duration(ttlSeconds) * time.Second).Format(time.RFC3339)
-
-	_, err = db.ExecContext(ctx,
-		`UPDATE leases SET expires_at = ?, updated_at = ? WHERE issue_id = ? AND lease_token = ?`,
-		newExpiresAt, now.Format(time.RFC3339), issueID, leaseToken,
+	result, err := tx.ExecContext(ctx,
+		`UPDATE leases SET expires_at = ?, updated_at = ?
+		 WHERE issue_id = ? AND lease_token = ? AND lease_generation = ? AND expires_at > ?`,
+		newExpiresAt, nowStr, issueID, leaseToken, leaseGeneration, nowStr,
 	)
 	if err != nil {
 		return "", fmt.Errorf("update lease: %w", err)
 	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return "", fmt.Errorf("heartbeat rows affected: %w", err)
+	}
+	if rows != 1 {
+		return "", leaseOwnershipError(ctx, tx, issueID, leaseToken, leaseGeneration)
+	}
 
+	if err := tx.Commit(); err != nil {
+		return "", fmt.Errorf("commit tx: %w", err)
+	}
 	return newExpiresAt, nil
 }
 
-// ReleaseLease releases a lease and returns the issue to 'open' (unless blocked).
-func ReleaseLease(ctx context.Context, db *sql.DB, issueID, leaseToken string) error {
+// ReleaseLease releases the current unexpired lease and returns the issue to
+// 'open' (unless blocked). The conditional delete plus affected-row checks
+// make release a compare-and-swap: an expired, missing, or replaced lease
+// cannot be released and cannot change issue/event state. The status/version
+// transition, lease removal, and issue_released event commit atomically. now
+// is the daemon-supplied UTC wall-clock boundary.
+func ReleaseLease(ctx context.Context, db *sql.DB, issueID, leaseToken string, leaseGeneration int64, now time.Time) error {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	// Find the lease.
+	nowStr := now.UTC().Format(time.RFC3339)
+
+	// Read the current attempt under the full lease predicate so the release
+	// event references the holder/attempt/generation that the conditional
+	// delete below actually removes.
 	var holder, attemptID string
-	var leaseGeneration int64
+	var storedGeneration int64
 	err = tx.QueryRowContext(ctx,
-		`SELECT holder, attempt_id, lease_generation FROM leases WHERE issue_id = ? AND lease_token = ?`,
-		issueID, leaseToken,
-	).Scan(&holder, &attemptID, &leaseGeneration)
+		`SELECT holder, attempt_id, lease_generation FROM leases
+		 WHERE issue_id = ? AND lease_token = ? AND lease_generation = ? AND expires_at > ?`,
+		issueID, leaseToken, leaseGeneration, nowStr,
+	).Scan(&holder, &attemptID, &storedGeneration)
 	if err == sql.ErrNoRows {
-		return core.NewAPIError(core.ErrLeaseExpired, "lease not found")
+		return leaseOwnershipError(ctx, tx, issueID, leaseToken, leaseGeneration)
 	}
 	if err != nil {
-		return fmt.Errorf("select lease: %w", err)
+		return fmt.Errorf("select active lease: %w", err)
 	}
 
-	// Delete the lease.
-	_, err = tx.ExecContext(ctx,
-		`DELETE FROM leases WHERE issue_id = ? AND lease_token = ?`,
-		issueID, leaseToken,
+	// Conditional delete re-verifies ownership at write time; the affected-row
+	// count closes any gap between the read above and this write.
+	result, err := tx.ExecContext(ctx,
+		`DELETE FROM leases WHERE issue_id = ? AND lease_token = ? AND lease_generation = ? AND expires_at > ?`,
+		issueID, leaseToken, leaseGeneration, nowStr,
 	)
 	if err != nil {
 		return fmt.Errorf("delete lease: %w", err)
 	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("release rows affected: %w", err)
+	}
+	if rows != 1 {
+		return core.NewAPIError(core.ErrLeaseExpired, "active lease not found")
+	}
 
 	// Update issue status: in_progress -> open (unless blocked).
-	now := time.Now().UTC().Format(time.RFC3339)
-	_, err = tx.ExecContext(ctx,
+	issueResult, err := tx.ExecContext(ctx,
 		`UPDATE issues SET
 		     status = CASE WHEN status = 'blocked' THEN 'blocked' ELSE 'open' END,
 		     claimed_at = NULL,
 		     version = version + 1,
 		     updated_at = ?
 		 WHERE id = ?`,
-		now, issueID,
+		nowStr, issueID,
 	)
 	if err != nil {
 		return fmt.Errorf("update issue: %w", err)
 	}
+	issueRows, err := issueResult.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("release issue rows affected: %w", err)
+	}
+	if issueRows != 1 {
+		return fmt.Errorf("update issue: expected 1 row affected, got %d", issueRows)
+	}
 
 	if err := insertEvent(ctx, tx, issueID, holder, "issue_released", map[string]any{
 		"attempt_id":       attemptID,
-		"lease_generation": leaseGeneration,
+		"lease_generation": storedGeneration,
 		"end_reason":       "released",
-	}, now); err != nil {
+	}, nowStr); err != nil {
 		return err
 	}
 
@@ -658,6 +681,30 @@ func ReleaseLease(ctx context.Context, db *sql.DB, issueID, leaseToken string) e
 	}
 
 	return nil
+}
+
+// leaseOwnershipError maps a failed lease CAS to a typed ownership-loss error.
+// The diagnostic read runs on the same transaction as the failed write so the
+// diagnosis matches the write's snapshot. Heartbeat and release only authorize
+// the current unexpired lease, so any other state means the presented
+// ownership is no longer valid.
+func leaseOwnershipError(ctx context.Context, tx *sql.Tx, issueID, leaseToken string, leaseGeneration int64) error {
+	var storedGeneration int64
+	var expiresAt string
+	err := tx.QueryRowContext(ctx,
+		`SELECT lease_generation, expires_at FROM leases WHERE issue_id = ? AND lease_token = ?`,
+		issueID, leaseToken,
+	).Scan(&storedGeneration, &expiresAt)
+	if err == sql.ErrNoRows {
+		return core.NewAPIError(core.ErrLeaseExpired, "lease not found or expired")
+	}
+	if err != nil {
+		return fmt.Errorf("diagnostic lease read: %w", err)
+	}
+	if storedGeneration != leaseGeneration {
+		return core.NewAPIError(core.ErrLeaseExpired, "lease ownership lost: generation mismatch")
+	}
+	return core.NewAPIError(core.ErrLeaseExpired, "lease has expired")
 }
 
 // HandoffLease records a required HANDOFF note and releases its active lease

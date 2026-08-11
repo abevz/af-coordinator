@@ -226,11 +226,15 @@ func handleHeartbeatLease(st store.CoordinatorStore, logger *slog.Logger) http.H
 			writeError(w, http.StatusBadRequest, core.ErrValidationFailed, "lease_token is required")
 			return
 		}
+		if req.LeaseGeneration <= 0 {
+			writeError(w, http.StatusBadRequest, core.ErrValidationFailed, "lease_generation is required")
+			return
+		}
 		if req.TTLSeconds <= 0 {
 			req.TTLSeconds = 3600
 		}
 
-		newExpiresAt, err := st.HeartbeatLease(r.Context(), issueID, req.LeaseToken, req.TTLSeconds)
+		newExpiresAt, err := st.HeartbeatLease(r.Context(), issueID, req.LeaseToken, req.LeaseGeneration, req.TTLSeconds, time.Now().UTC())
 		if err != nil {
 			if apiErr, ok := errAsAPIError(err); ok {
 				switch apiErr.Code {
@@ -268,8 +272,12 @@ func handleReleaseLease(st store.CoordinatorStore, logger *slog.Logger) http.Han
 			writeError(w, http.StatusBadRequest, core.ErrValidationFailed, "lease_token is required")
 			return
 		}
+		if req.LeaseGeneration <= 0 {
+			writeError(w, http.StatusBadRequest, core.ErrValidationFailed, "lease_generation is required")
+			return
+		}
 
-		err := st.ReleaseLease(r.Context(), issueID, req.LeaseToken)
+		err := st.ReleaseLease(r.Context(), issueID, req.LeaseToken, req.LeaseGeneration, time.Now().UTC())
 		if err != nil {
 			if apiErr, ok := errAsAPIError(err); ok {
 				switch apiErr.Code {

@@ -138,7 +138,7 @@ func runIssueRun(ctx context.Context, c *client.Client, args []string) error {
 			case <-hbCtx.Done():
 				return
 			case <-ticker.C:
-				if _, err := c.HeartbeatLease(context.Background(), issueID, claim.LeaseToken, ttl); err != nil {
+				if _, err := c.HeartbeatLease(context.Background(), issueID, claim.LeaseToken, claim.LeaseGeneration, ttl); err != nil {
 					fmt.Fprintf(os.Stderr, "issue run: heartbeat failed: %v\n", err)
 				}
 			}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"io"
+	"time"
 
 	"github.com/abevz/af-coordinator/internal/core"
 	coordinatorexport "github.com/abevz/af-coordinator/internal/export"
@@ -119,12 +120,12 @@ func (s *Store) ClaimIssueWithMode(ctx context.Context, issueID, holder string, 
 	return ClaimIssueWithMode(ctx, s.db, issueID, holder, ttlSeconds, sessionID, invocationMode)
 }
 
-func (s *Store) HeartbeatLease(ctx context.Context, issueID, leaseToken string, ttlSeconds int) (string, error) {
-	return HeartbeatLease(ctx, s.db, issueID, leaseToken, ttlSeconds)
+func (s *Store) HeartbeatLease(ctx context.Context, issueID, leaseToken string, leaseGeneration int64, ttlSeconds int, now time.Time) (string, error) {
+	return HeartbeatLease(ctx, s.db, issueID, leaseToken, leaseGeneration, ttlSeconds, now)
 }
 
-func (s *Store) ReleaseLease(ctx context.Context, issueID, leaseToken string) error {
-	return ReleaseLease(ctx, s.db, issueID, leaseToken)
+func (s *Store) ReleaseLease(ctx context.Context, issueID, leaseToken string, leaseGeneration int64, now time.Time) error {
+	return ReleaseLease(ctx, s.db, issueID, leaseToken, leaseGeneration, now)
 }
 
 func (s *Store) HandoffLease(ctx context.Context, issueID string, req core.HandoffRequest) (core.HandoffResponse, error) {
