@@ -297,6 +297,7 @@ This keeps operational coordination aligned with the spec canon.
 Claiming an issue must create a lease:
 
 - `lease_token`
+- `lease_generation`
 - `holder`
 - `expires_at`
 
@@ -310,6 +311,12 @@ Every successful claim also receives a daemon-generated, non-secret
 event stream preserves claim, release, handoff, close, and lazy-expiry outcomes. An
 optional non-secret `session_id` is caller correlation data, separate from the
 holder identity and lease token.
+
+`lease_generation` is monotonically increasing per issue. It advances exactly
+once for each fresh claim, is returned with the secret token, and is copied to
+lifecycle events. Reattach and heartbeat keep the existing generation. The
+generation is safe to log and lets downstream publishers reject output from an
+older attempt without exposing the token.
 
 While an unexpired lease exists, only its holder may mutate the issue.
 

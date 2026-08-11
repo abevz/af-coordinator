@@ -142,11 +142,12 @@ type Dependency struct {
 
 // IssueLease represents the current lease on an issue (included in responses).
 type IssueLease struct {
-	Holder     string `json:"holder"`
-	LeaseToken string `json:"-"`
-	ExpiresAt  string `json:"expires_at"`
-	AttemptID  string `json:"attempt_id"`
-	SessionID  string `json:"session_id,omitempty"`
+	Holder          string `json:"holder"`
+	LeaseToken      string `json:"-"`
+	LeaseGeneration int64  `json:"lease_generation"`
+	ExpiresAt       string `json:"expires_at"`
+	AttemptID       string `json:"attempt_id"`
+	SessionID       string `json:"session_id,omitempty"`
 }
 
 // CreateIssueRequest is the JSON body for POST /v1/issues.
@@ -218,9 +219,10 @@ type ClaimRequest struct {
 
 // ClaimResponse is returned on successful claim.
 type ClaimResponse struct {
-	LeaseToken string `json:"lease_token"`
-	ExpiresAt  string `json:"expires_at"`
-	AttemptID  string `json:"attempt_id"`
+	LeaseToken      string `json:"lease_token"`
+	LeaseGeneration int64  `json:"lease_generation"`
+	ExpiresAt       string `json:"expires_at"`
+	AttemptID       string `json:"attempt_id"`
 	// Version is the issue's version immediately after this claim. Claiming
 	// increments the issue version as a side effect, so this is the value to
 	// pass as --expected-version on the close/handoff that ends this attempt

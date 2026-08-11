@@ -133,7 +133,8 @@ curl -s -X PATCH --unix-socket $AFC_SOCK \
 
 ### Claim an issue
 Claiming transitions the issue to `in_progress`, returns a secret `lease_token`,
-a safe `attempt_id` for correlating lifecycle events, and `version`.
+a safe `attempt_id` for correlating lifecycle events, an issue-local monotonic
+`lease_generation`, and `version`.
 `session_id` is optional non-secret caller correlation metadata.
 ```bash
 curl -s -X POST --unix-socket $AFC_SOCK \
@@ -146,7 +147,8 @@ curl -s -X POST --unix-socket $AFC_SOCK \
   http://localhost/v1/issues/afc-15/claim | jq
 ```
 
-*Extract the token from the response, e.g., `export TOKEN="uuid-from-response"`.
+*Extract the token and generation from the response, e.g.,
+`export TOKEN="uuid-from-response"` and `export LEASE_GENERATION=1`.
 Claiming increments the issue's version as a side effect — use the `version`
 from this response, not one read earlier, as `expected_version` on the
 eventual close/handoff.*

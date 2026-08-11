@@ -182,6 +182,7 @@ create table issues (
   priority integer not null default 3,
   assignee text not null default '',
   version integer not null default 1,
+  lease_generation integer not null default 0 check (lease_generation >= 0),
   claimed_at text,
   closed_at text,
   created_at text not null,
@@ -246,9 +247,11 @@ create table dependencies (
 
 An expired lease (`expires_at` in the past) is treated as absent everywhere.
 Heartbeats update `expires_at` and `updated_at` only; they do not create
-events. `attempt_id` is a daemon-generated, non-secret identity for the
-current lease episode. `session_id` is optional caller-supplied, non-secret
-correlation metadata; it never replaces the lease holder or token.
+events. `lease_generation` is an issue-local monotonic fencing value: every
+fresh claim increments it, while heartbeat and proven reattach do not.
+`attempt_id` is a daemon-generated, non-secret identity for the current lease
+episode. `session_id` is optional caller-supplied, non-secret correlation
+metadata; it never replaces the lease holder or token.
 
 ```sql
 create table leases (
@@ -258,6 +261,7 @@ create table leases (
   expires_at text not null,
   attempt_id text not null,
   session_id text not null default '',
+  lease_generation integer not null check (lease_generation >= 0),
   created_at text not null,
   updated_at text not null
 );
@@ -266,6 +270,10 @@ create table leases (
 Migration `0006_lease_attempts.sql` assigns `legacy-<issue_id>` attempt IDs to
 leases that existed before attempt telemetry, so later release or close events
 remain attributable without fabricating a token.
+
+Migration `0008_lease_generation.sql` assigns generation `1` to an active
+pre-upgrade lease and its issue. Issues without an active lease remain at `0`,
+so their first fresh claim receives generation `1`.
 
 ### notes
 

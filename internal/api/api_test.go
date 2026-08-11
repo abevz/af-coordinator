@@ -687,6 +687,9 @@ func TestGetIssueLeaseTokenLeak(t *testing.T) {
 	if attemptID, ok := leaseObj["attempt_id"].(string); !ok || attemptID == "" {
 		t.Errorf("expected non-empty attempt_id, got %v", leaseObj["attempt_id"])
 	}
+	if generation, ok := leaseObj["lease_generation"].(float64); !ok || generation != 1 {
+		t.Errorf("expected lease_generation 1, got %v", leaseObj["lease_generation"])
+	}
 }
 
 func TestGetIssueNotFound(t *testing.T) {
@@ -739,14 +742,16 @@ func TestClaimIssue(t *testing.T) {
 	}
 
 	var claimResp struct {
-		LeaseToken string `json:"lease_token"`
-		ExpiresAt  string `json:"expires_at"`
-		AttemptID  string `json:"attempt_id"`
+		LeaseToken      string `json:"lease_token"`
+		LeaseGeneration int64  `json:"lease_generation"`
+		ExpiresAt       string `json:"expires_at"`
+		AttemptID       string `json:"attempt_id"`
 	}
 	claimResp = decodeJSON[struct {
-		LeaseToken string `json:"lease_token"`
-		ExpiresAt  string `json:"expires_at"`
-		AttemptID  string `json:"attempt_id"`
+		LeaseToken      string `json:"lease_token"`
+		LeaseGeneration int64  `json:"lease_generation"`
+		ExpiresAt       string `json:"expires_at"`
+		AttemptID       string `json:"attempt_id"`
 	}](t, resp)
 
 	if claimResp.LeaseToken == "" {
@@ -757,6 +762,9 @@ func TestClaimIssue(t *testing.T) {
 	}
 	if claimResp.AttemptID == "" {
 		t.Error("expected non-empty attempt_id")
+	}
+	if claimResp.LeaseGeneration != 1 {
+		t.Errorf("expected lease_generation 1, got %d", claimResp.LeaseGeneration)
 	}
 	var sessionID string
 	if err := db.QueryRow(`SELECT session_id FROM leases WHERE issue_id = ?`, issueID).Scan(&sessionID); err != nil {

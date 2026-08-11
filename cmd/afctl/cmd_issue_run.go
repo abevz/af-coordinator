@@ -151,6 +151,7 @@ func runIssueRun(ctx context.Context, c *client.Client, args []string) error {
 	cmd.Stderr = os.Stderr
 	cmd.Env = append(os.Environ(),
 		"AF_LEASE_TOKEN="+claim.LeaseToken,
+		fmt.Sprintf("AF_LEASE_GENERATION=%d", claim.LeaseGeneration),
 		"AF_ATTEMPT_ID="+claim.AttemptID,
 		"AF_ISSUE_ID="+issueID,
 		fmt.Sprintf("AF_EXPECTED_VERSION=%d", claim.Version),
