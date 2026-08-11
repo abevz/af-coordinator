@@ -3,8 +3,13 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"errors"
+	"fmt"
 	"io/fs"
 	"os"
+	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 	"testing/fstest"
 
@@ -12,6 +17,93 @@ import (
 	"github.com/abevz/af-coordinator/migrations"
 	_ "modernc.org/sqlite"
 )
+
+func TestOpenAppliesConnectionContractToEveryHandle(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "coordinator.db")
+	const handles = 3
+	dbs := make([]*sql.DB, 0, handles)
+	for index := 0; index < handles; index++ {
+		db, err := Open(dbPath)
+		if err != nil {
+			t.Fatalf("Open handle %d: %v", index, err)
+		}
+		dbs = append(dbs, db)
+		t.Cleanup(func() { _ = db.Close() })
+		if db.Stats().MaxOpenConnections != 1 {
+			t.Fatalf("handle %d max open connections = %d, want 1", index, db.Stats().MaxOpenConnections)
+		}
+		if err := verifyConnectionSettings(context.Background(), db); err != nil {
+			t.Fatalf("handle %d settings: %v", index, err)
+		}
+	}
+	if err := Migrate(context.Background(), dbs[0], migrations.FS); err != nil {
+		t.Fatal(err)
+	}
+	for index, db := range dbs {
+		_, err := db.Exec(`INSERT INTO issue_tags (issue_id, tag, created_at) VALUES ('missing-issue', 'test/tag', '2026-07-13T20:00:00Z')`)
+		if err == nil || !strings.Contains(err.Error(), "FOREIGN KEY constraint failed") {
+			t.Fatalf("handle %d foreign key error = %v", index, err)
+		}
+	}
+	info, err := os.Stat(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("database mode = %o, want 600", info.Mode().Perm())
+	}
+}
+
+func TestOpenSerializesConcurrentClaimers(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "coordinator.db")
+	db, err := Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := Migrate(context.Background(), db, migrations.FS); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := CreateProject(context.Background(), db, "test", "Test", ""); err != nil {
+		t.Fatal(err)
+	}
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "One winner"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const claimants = 8
+	start := make(chan struct{})
+	results := make(chan error, claimants)
+	var wg sync.WaitGroup
+	for index := 0; index < claimants; index++ {
+		wg.Add(1)
+		go func(index int) {
+			defer wg.Done()
+			<-start
+			_, err := ClaimIssue(context.Background(), db, issue.ID, fmt.Sprintf("worker-%d", index), 60)
+			results <- err
+		}(index)
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+
+	winners := 0
+	for err := range results {
+		if err == nil {
+			winners++
+			continue
+		}
+		var apiErr core.APIError
+		if !errors.As(err, &apiErr) || apiErr.Code != core.ErrLeaseHeld {
+			t.Fatalf("loser error = %v, want lease_held", err)
+		}
+	}
+	if winners != 1 {
+		t.Fatalf("claim winners = %d, want 1", winners)
+	}
+}
 
 // newTestDB creates a temp-file-backed SQLite database with the schema applied.
 func newTestDB(t *testing.T) *sql.DB {

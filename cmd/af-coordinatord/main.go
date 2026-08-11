@@ -16,6 +16,10 @@ import (
 )
 
 func main() {
+	// Restrict newly created DB/WAL/SHM/lock files. The Unix socket is
+	// deliberately widened to 0660 after listen according to the local trust
+	// contract.
+	syscall.Umask(0o077)
 	cfg := config.Default()
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
@@ -23,10 +27,16 @@ func main() {
 	}))
 
 	// Ensure database directory exists before opening.
-	if err := os.MkdirAll(filepath.Dir(cfg.DBPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(cfg.DBPath), 0o700); err != nil {
 		logger.Error("failed to create database directory", "error", err)
 		os.Exit(1)
 	}
+	dbLock, err := api.AcquireDatabaseLock(cfg.DBPath)
+	if err != nil {
+		logger.Error("failed to acquire database ownership", "error", err)
+		os.Exit(1)
+	}
+	defer dbLock.Close()
 
 	// Open database and run migrations.
 	db, err := sqlite.Open(cfg.DBPath)

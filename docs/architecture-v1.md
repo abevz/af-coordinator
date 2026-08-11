@@ -50,9 +50,22 @@ Settings expected for v1:
 
 Connection model:
 
-- one dedicated write connection; all mutations serialize through it
-- a small pool of read-only connections for queries
+- the daemon holds an exclusive advisory lock on the canonical database path
+- one physical SQLite connection serializes reads and mutations in v1
+- connection-local settings are encoded in the DSN and verified at startup
 - this matches SQLite's single-writer reality instead of fighting it
+
+Startup and runtime ownership:
+
+- the persistent `<database>.lock` file is mode `0600`; the daemon holds its
+  `flock` from before database migration until after listener/database shutdown
+- a second daemon for the same canonical database path exits before touching
+  its socket, while an existing socket is probed before stale removal
+- newly created runtime directories are mode `0700`; DB, WAL, SHM, and lock
+  files are restricted by a `0077` process umask, and the DB/lock are also
+  normalized to `0600`; the local group socket remains `0660` by design
+- this is a cooperative single-UID correctness boundary, not protection from a
+  hostile process that can open the database files directly
 
 Driver decision:
 

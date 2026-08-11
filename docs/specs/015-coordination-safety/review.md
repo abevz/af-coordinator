@@ -56,6 +56,41 @@ Durable retry of an ambiguously completed claim remains intentionally pending
 the operation-id ledger in `afc-111`; until then, clients must reconcile rather
 than attempting holder-only token recovery.
 
+## AFC-SDD-0156 / afc-108 implementation review
+
+The single-daemon writer and SQLite connection-contract slice is implemented:
+
+- startup takes a non-blocking `flock` on `<canonical-db-path>.lock` before
+  opening or migrating SQLite and holds it until listener and database shutdown;
+- socket cleanup probes an existing Unix listener, refuses to unlink a live
+  daemon, and removes only a confirmed unreachable socket while DB ownership is
+  held;
+- production SQLite uses one physical connection with immediate transactions;
+  WAL, foreign keys, a 5000 ms busy timeout, and `synchronous=NORMAL` are encoded
+  in the DSN and verified at startup;
+- the process umask, newly created runtime directories, database, and lock file
+  use restrictive modes; the group-accessible Unix socket remains `0660` per the
+  documented cooperative local trust model;
+- focused tests cover canonical-path alias exclusion, lock release/reacquire,
+  live/stale socket behavior, settings and foreign-key enforcement on three
+  independently opened handles, and eight concurrent claimers producing one
+  winner.
+
+Verification in the sibling worktree:
+
+- `git diff --check` — pass;
+- `make build` — pass;
+- `go test ./... -count=1` — pass;
+- `go test -race ./... -count=1` — pass;
+- black-box two-daemon test — the second process for the same DB exited without
+  disturbing the first listener; after `SIGKILL`, a replacement acquired the
+  released lock, removed the stale socket, and served `/v1/health`;
+- black-box modes — database and lock `0600`, Unix socket `0660`.
+
+This lock prevents cooperative daemon duplication. It deliberately does not
+prevent hostile same-UID code from opening SQLite directly. Full eight-case
+crash injection, integrity policy, and backup/restore proof remain `afc-114`.
+
 ## Planning outcome
 
 - Preserved the 2026-08-11 evidence-based technical audit in `audit.md`.
@@ -72,9 +107,11 @@ than attempting holder-only token recovery.
 
 ## What has not shipped
 
-Until the implementation branch above is merged and installed, released
-coordinator behavior remains unchanged. The race classifications in `audit.md`
-remain current until their corresponding leaves land and are verified.
+Packet 015 remains incomplete. Lease-bound mutation fencing, durable
+idempotency, the complete race/crash matrices, integrity and backup recovery,
+and operational observability remain assigned to their later leaves. The race
+classifications in `audit.md` remain current until each corresponding leaf is
+implemented and verified.
 
 ## Implementation review gate
 
