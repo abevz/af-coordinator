@@ -35,7 +35,8 @@ it as the default actor/holder/author when the request does not pass one.
 `claim_issue` accepts optional non-secret `session_id` correlation metadata
 and returns the daemon-generated `attempt_id` and `version` with the secret
 lease token plus the non-secret, issue-local `lease_generation`. A fresh claim
-increments the generation; heartbeat and proven reattach do not. Claiming
+increments the generation; heartbeat does not. Repeating a public holder name
+never recovers an active token; the call returns `lease_held`. Claiming
 increments the issue's version as a side effect, so
 callers must use this returned `version` — not one read earlier via
 `get_issue` — as `expected_version` on the eventual close/handoff.

@@ -775,6 +775,81 @@ func TestClaimIssue(t *testing.T) {
 	}
 }
 
+func TestClaimIssueRejectsBlockedTaskAndSameHolderTokenRecovery(t *testing.T) {
+	t.Run("unfinished blocker", func(t *testing.T) {
+		server, db := newTestServer(t)
+		if _, err := sqlite.CreateProject(context.Background(), db, "claim-ready", "Claim Ready", ""); err != nil {
+			t.Fatal(err)
+		}
+		blocker, err := sqlite.CreateIssue(context.Background(), db, "claim-ready", core.CreateIssueRequest{ScopeKind: "project", Title: "Blocker"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		target, err := sqlite.CreateIssue(context.Background(), db, "claim-ready", core.CreateIssueRequest{ScopeKind: "project", Title: "Target"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := sqlite.AddDependency(context.Background(), db, target.ID, core.AddDependencyRequest{
+			DependsOn: blocker.ID, Kind: "blocks", Actor: "planner",
+		}); err != nil {
+			t.Fatal(err)
+		}
+
+		resp, err := http.Post(server.URL+"/v1/issues/"+target.ID+"/claim", "application/json",
+			strings.NewReader(`{"holder":"worker","ttl_seconds":3600}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resp.StatusCode != http.StatusConflict {
+			t.Fatalf("status = %d, want 409", resp.StatusCode)
+		}
+		var envelope struct {
+			Error struct {
+				Code string `json:"code"`
+			} `json:"error"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if envelope.Error.Code != string(core.ErrConflict) {
+			t.Fatalf("error code = %q, want conflict", envelope.Error.Code)
+		}
+	})
+
+	t.Run("same holder", func(t *testing.T) {
+		server, db := newTestServer(t)
+		if _, err := sqlite.CreateProject(context.Background(), db, "claim-auth", "Claim Auth", ""); err != nil {
+			t.Fatal(err)
+		}
+		issue, err := sqlite.CreateIssue(context.Background(), db, "claim-auth", core.CreateIssueRequest{ScopeKind: "project", Title: "Secret lease"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		first, err := sqlite.ClaimIssue(context.Background(), db, issue.ID, "worker", 3600)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		resp, err := http.Post(server.URL+"/v1/issues/"+issue.ID+"/claim", "application/json",
+			strings.NewReader(`{"holder":"worker","ttl_seconds":7200}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resp.StatusCode != http.StatusConflict || !strings.Contains(string(body), `"code":"lease_held"`) {
+			t.Fatalf("status/body = %d %s, want lease_held", resp.StatusCode, body)
+		}
+		if strings.Contains(string(body), first.LeaseToken) {
+			t.Fatalf("same-holder conflict leaked lease token: %s", body)
+		}
+	})
+}
+
 func TestHandoffLeaseRecordsNoteAndReleasesAtomically(t *testing.T) {
 	server, db := newTestServer(t)
 

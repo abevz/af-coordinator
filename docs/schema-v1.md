@@ -248,7 +248,7 @@ create table dependencies (
 An expired lease (`expires_at` in the past) is treated as absent everywhere.
 Heartbeats update `expires_at` and `updated_at` only; they do not create
 events. `lease_generation` is an issue-local monotonic fencing value: every
-fresh claim increments it, while heartbeat and proven reattach do not.
+fresh claim increments it, while heartbeat does not.
 `attempt_id` is a daemon-generated, non-secret identity for the current lease
 episode. `session_id` is optional caller-supplied, non-secret correlation
 metadata; it never replaces the lease holder or token.

@@ -279,18 +279,20 @@ This is the compact route-to-implementation inventory for the current daemon.
 - `POST /v1/issues/{issue_id}/claim` — body: `holder`, `ttl_seconds`, and
   optional non-secret `session_id`; returns `lease_token`, `expires_at`,
   daemon-generated `attempt_id`, issue-local `lease_generation`, and `version`.
-  Every fresh claim increments `lease_generation`; heartbeat and proven
-  reattach do not. Claiming increments the
+  Every fresh claim increments `lease_generation`; heartbeat does not.
+  Claiming increments the
   issue's version as a side effect, so this returned `version` — not one
   read earlier via `GET /v1/issues/{issue_id}` — is what a caller must use
   as `expected_version` on the close/handoff that ends this attempt. The
   attempt ID correlates lifecycle events; lifecycle events and issue reads
   expose the non-secret generation, while the lease token remains secret and
-  never appears in events or issue reads. Claim fails `lease_held` if an
-  unexpired lease exists, moves the issue `open -> in_progress`, and rejects
-  epics with `validation_failed`. A same-holder reattach to an already-active
-  lease returns the existing lease's `version` and `lease_generation` unchanged
-  (reattaching does not itself bump either) with `reattached: true`.
+  never appears in events or issue reads. Claim fails `lease_held` if any
+  unexpired lease exists, including when the caller repeats the same holder
+  string; holder attribution never authorizes token recovery. Claim moves an
+  eligible issue `open -> in_progress`, rejects epics with `validation_failed`,
+  and rejects an issue with an unfinished `blocks` dependency as `conflict`.
+  Ready-list output is advisory; claim repeats the shared eligibility predicate
+  inside its transaction and is the authoritative decision.
 - `POST /v1/issues/{issue_id}/heartbeat` — body: `lease_token`,
   `ttl_seconds`; extends `expires_at`; appends no event
 - `POST /v1/issues/{issue_id}/release` — body: `lease_token`; deletes the

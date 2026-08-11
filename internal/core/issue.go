@@ -229,10 +229,6 @@ type ClaimResponse struct {
 	// — not a version read earlier from `issue get`, which is stale the
 	// instant a claim succeeds.
 	Version int `json:"version"`
-	// Reattached is true when the same holder reattached to an existing active
-	// lease rather than opening a fresh claim. The LeaseToken and AttemptID
-	// are those of the original claim.
-	Reattached bool `json:"reattached,omitempty"`
 }
 
 // HeartbeatRequest is the JSON body for POST /v1/issues/{issue_id}/heartbeat.

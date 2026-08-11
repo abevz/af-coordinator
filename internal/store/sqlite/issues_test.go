@@ -739,12 +739,20 @@ func TestLeaseGenerationAdvancesOnlyOnFreshClaim(t *testing.T) {
 	if _, err := HeartbeatLease(context.Background(), db, issue.ID, first.LeaseToken, 3600); err != nil {
 		t.Fatal(err)
 	}
-	reattached, err := ClaimIssueWithSession(context.Background(), db, issue.ID, "agent-1", 3600, "session-2")
+	_, activeLease, err := GetIssue(context.Background(), db, issue.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reattached.Reattached || reattached.LeaseGeneration != first.LeaseGeneration {
-		t.Fatalf("reattach = %+v, want generation %d unchanged", reattached, first.LeaseGeneration)
+	if activeLease == nil || activeLease.LeaseGeneration != first.LeaseGeneration {
+		t.Fatalf("heartbeat changed lease generation: %+v", activeLease)
+	}
+	if _, err := ClaimIssueWithSession(context.Background(), db, issue.ID, "agent-1", 3600, "session-2"); err == nil {
+		t.Fatal("same-holder claim returned an active lease token")
+	} else {
+		var apiErr core.APIError
+		if !errors.As(err, &apiErr) || apiErr.Code != core.ErrLeaseHeld {
+			t.Fatalf("same-holder claim error = %v, want lease_held", err)
+		}
 	}
 	if err := ReleaseLease(context.Background(), db, issue.ID, first.LeaseToken); err != nil {
 		t.Fatal(err)
@@ -763,7 +771,7 @@ func TestLeaseGenerationAdvancesOnlyOnFreshClaim(t *testing.T) {
 	}
 	var claimGenerations []float64
 	for _, event := range events {
-		if event.EventType != "issue_claimed" && event.EventType != "lease_reattached" && event.EventType != "issue_released" {
+		if event.EventType != "issue_claimed" && event.EventType != "issue_released" {
 			continue
 		}
 		if strings.Contains(event.PayloadJSON, first.LeaseToken) || strings.Contains(event.PayloadJSON, second.LeaseToken) {
@@ -880,6 +888,63 @@ func TestClaimIssueAlreadyClaimed(t *testing.T) {
 	}
 	if apiErr.Code != core.ErrLeaseHeld {
 		t.Errorf("expected code %q, got %q", core.ErrLeaseHeld, apiErr.Code)
+	}
+}
+
+func TestClaimIssueRejectsUnfinishedBlocksDependency(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+	if _, err := CreateProject(context.Background(), db, "claim-ready", "Claim Ready", ""); err != nil {
+		t.Fatal(err)
+	}
+	blocker, err := CreateIssue(context.Background(), db, "claim-ready", core.CreateIssueRequest{
+		ScopeKind: "project", Title: "Blocker",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err := CreateIssue(context.Background(), db, "claim-ready", core.CreateIssueRequest{
+		ScopeKind: "project", Title: "Blocked target",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := AddDependency(context.Background(), db, target.ID, core.AddDependencyRequest{
+		DependsOn: blocker.ID, Kind: "blocks", Actor: "planner",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	eventsBefore, err := ListEvents(context.Background(), db, target.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = ClaimIssue(context.Background(), db, target.ID, "worker", 3600)
+	var apiErr core.APIError
+	if !errors.As(err, &apiErr) || apiErr.Code != core.ErrConflict {
+		t.Fatalf("blocked claim error = %v, want conflict", err)
+	}
+	got, lease, err := GetIssue(context.Background(), db, target.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	eventsAfter, err := ListEvents(context.Background(), db, target.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != "open" || got.Version != target.Version || lease != nil || len(eventsAfter) != len(eventsBefore) {
+		t.Fatalf("blocked claim changed state: issue=%+v lease=%+v events=%d->%d", got, lease, len(eventsBefore), len(eventsAfter))
+	}
+
+	if _, err := db.Exec(`UPDATE issues SET status = 'done' WHERE id = ?`, blocker.ID); err != nil {
+		t.Fatal(err)
+	}
+	claim, err := ClaimIssue(context.Background(), db, target.ID, "worker", 3600)
+	if err != nil {
+		t.Fatalf("claim after blocker completion: %v", err)
+	}
+	if claim.LeaseToken == "" {
+		t.Fatal("claim after blocker completion returned no token")
 	}
 }
 
@@ -4037,180 +4102,60 @@ func TestUnlinkArtifact(t *testing.T) {
 	}
 }
 
-// TestClaimIssueSameHolderReattach verifies that the same agent can reattach to
-// its own active lease, while a competing agent is still rejected.
-func TestClaimIssueSameHolderReattach(t *testing.T) {
+// TestClaimIssueSameHolderCannotRecoverToken proves holder attribution is not
+// authorization. Repeating the public holder string must not return or renew
+// the current owner's secret capability.
+func TestClaimIssueSameHolderCannotRecoverToken(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	if _, err := CreateProject(context.Background(), db, "reattach-proj", "Reattach Project", ""); err != nil {
+	if _, err := CreateProject(context.Background(), db, "claim-auth", "Claim Authorization", ""); err != nil {
 		t.Fatal(err)
 	}
-	issue, err := CreateIssue(context.Background(), db, "reattach-proj", core.CreateIssueRequest{
+	issue, err := CreateIssue(context.Background(), db, "claim-auth", core.CreateIssueRequest{
 		ScopeKind: "project",
-		Title:     "Reattach test issue",
+		Title:     "Holder is not authentication",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	// Step 1: initial claim by agent-1.
-	firstResp, err := ClaimIssueWithSession(context.Background(), db, issue.ID, "agent-1", 3600, "session-a")
+	first, err := ClaimIssueWithSession(context.Background(), db, issue.ID, "agent-1", 3600, "session-a")
 	if err != nil {
-		t.Fatalf("initial_claim: unexpected error: %v", err)
-	}
-
-	tests := []struct {
-		name          string
-		holder        string
-		wantReattach  bool
-		wantToken     string // empty means "don't check specific token"
-		wantAttemptID string // empty means "don't check specific attempt_id"
-		wantErr       string // non-empty means expect an error containing this code
-	}{
-		{
-			name:          "initial_claim",
-			holder:        "agent-1",
-			wantReattach:  false,
-			wantToken:     firstResp.LeaseToken,
-			wantAttemptID: firstResp.AttemptID,
-			// This sub-test is pre-validated above; we use the data in later tests.
-		},
-		{
-			name:          "same_holder_reattach",
-			holder:        "agent-1",
-			wantReattach:  true,
-			wantToken:     firstResp.LeaseToken,
-			wantAttemptID: firstResp.AttemptID,
-		},
-		{
-			name:    "competing_holder_rejected",
-			holder:  "agent-2",
-			wantErr: string(core.ErrLeaseHeld),
-		},
-	}
-
-	for _, tc := range tests {
-		tc := tc
-		t.Run(tc.name, func(t *testing.T) {
-			if tc.name == "initial_claim" {
-				// Already validated above; just assert the returned values.
-				if firstResp.Reattached {
-					t.Error("initial_claim: expected Reattached=false")
-				}
-				if firstResp.LeaseToken == "" {
-					t.Error("initial_claim: expected non-empty LeaseToken")
-				}
-				return
-			}
-
-			resp, err := ClaimIssueWithSession(context.Background(), db, issue.ID, tc.holder, 3600, "session-b")
-			if tc.wantErr != "" {
-				if err == nil {
-					t.Fatalf("expected error %q, got nil", tc.wantErr)
-				}
-				var apiErr core.APIError
-				if !errors.As(err, &apiErr) {
-					t.Fatalf("expected APIError, got %T: %v", err, err)
-				}
-				if string(apiErr.Code) != tc.wantErr {
-					t.Errorf("expected code %q, got %q", tc.wantErr, apiErr.Code)
-				}
-				return
-			}
-
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if resp.Reattached != tc.wantReattach {
-				t.Errorf("Reattached = %v, want %v", resp.Reattached, tc.wantReattach)
-			}
-			if tc.wantToken != "" && resp.LeaseToken != tc.wantToken {
-				t.Errorf("LeaseToken = %q, want %q", resp.LeaseToken, tc.wantToken)
-			}
-			if tc.wantAttemptID != "" && resp.AttemptID != tc.wantAttemptID {
-				t.Errorf("AttemptID = %q, want %q", resp.AttemptID, tc.wantAttemptID)
-			}
-			if tc.name == "same_holder_reattach" && resp.Version != firstResp.Version {
-				t.Errorf("reattach must not change version: got %d, want %d (from initial claim)", resp.Version, firstResp.Version)
-			}
-		})
-	}
-}
-
-// TestClaimIssueSameHolderReattachEmitsEvent checks that reattaching emits a
-// lease_reattached event in the issue event stream.
-func TestClaimIssueSameHolderReattachEmitsEvent(t *testing.T) {
-	t.Parallel()
-	db := newTestDB(t)
-
-	if _, err := CreateProject(context.Background(), db, "reattach-events", "Reattach Events", ""); err != nil {
 		t.Fatal(err)
 	}
-	issue, err := CreateIssue(context.Background(), db, "reattach-events", core.CreateIssueRequest{
-		ScopeKind: "project",
-		Title:     "Event reattach issue",
-	})
+	before, leaseBefore, err := GetIssue(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if leaseBefore == nil {
+		t.Fatal("expected active lease")
+	}
+	eventsBefore, err := ListEvents(context.Background(), db, issue.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	// Initial claim.
-	firstResp, err := ClaimIssueWithSession(context.Background(), db, issue.ID, "agent-1", 3600, "session-x")
-	if err != nil {
-		t.Fatalf("initial claim: %v", err)
-	}
-
-	// Reattach by same holder.
-	reattachResp, err := ClaimIssueWithSession(context.Background(), db, issue.ID, "agent-1", 7200, "session-x2")
-	if err != nil {
-		t.Fatalf("reattach: %v", err)
-	}
-	if !reattachResp.Reattached {
-		t.Error("expected Reattached=true on second claim by same holder")
-	}
-	if reattachResp.LeaseToken != firstResp.LeaseToken {
-		t.Errorf("expected same lease token after reattach: got %q, want %q", reattachResp.LeaseToken, firstResp.LeaseToken)
-	}
-	if reattachResp.AttemptID != firstResp.AttemptID {
-		t.Errorf("expected same attempt_id after reattach: got %q, want %q", reattachResp.AttemptID, firstResp.AttemptID)
-	}
-	if reattachResp.LeaseGeneration != firstResp.LeaseGeneration {
-		t.Errorf("reattach generation = %d, want %d", reattachResp.LeaseGeneration, firstResp.LeaseGeneration)
-	}
-
-	// Verify the event stream contains a lease_reattached event.
-	events, err := ListEvents(context.Background(), db, issue.ID)
-	if err != nil {
-		t.Fatalf("list events: %v", err)
-	}
-
-	var reattachEvent *core.Event
-	for i := range events {
-		if events[i].EventType == "lease_reattached" {
-			reattachEvent = &events[i]
-			break
+	for _, holder := range []string{"agent-1", "agent-2"} {
+		_, err := ClaimIssueWithSession(context.Background(), db, issue.ID, holder, 7200, "session-retry")
+		var apiErr core.APIError
+		if !errors.As(err, &apiErr) || apiErr.Code != core.ErrLeaseHeld {
+			t.Fatalf("claim by %q error = %v, want lease_held", holder, err)
 		}
 	}
-	if reattachEvent == nil {
-		t.Fatal("expected a lease_reattached event in the event stream, found none")
-	}
 
-	// Verify the payload contains expected fields.
-	var payload map[string]any
-	if err := json.Unmarshal([]byte(reattachEvent.PayloadJSON), &payload); err != nil {
-		t.Fatalf("unmarshal event payload: %v", err)
+	after, leaseAfter, err := GetIssue(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if payload["attempt_id"] != firstResp.AttemptID {
-		t.Errorf("event attempt_id = %q, want %q", payload["attempt_id"], firstResp.AttemptID)
+	eventsAfter, err := ListEvents(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if payload["lease_generation"] != float64(firstResp.LeaseGeneration) {
-		t.Errorf("event lease_generation = %v, want %d", payload["lease_generation"], firstResp.LeaseGeneration)
+	if before.Version != after.Version || len(eventsBefore) != len(eventsAfter) {
+		t.Fatalf("rejected claim changed issue/events: version %d -> %d, events %d -> %d", before.Version, after.Version, len(eventsBefore), len(eventsAfter))
 	}
-	if _, ok := payload["expires_at"]; !ok {
-		t.Error("event payload missing expires_at")
-	}
-	if _, ok := payload["ttl_seconds"]; !ok {
-		t.Error("event payload missing ttl_seconds")
+	if leaseAfter == nil || leaseAfter.AttemptID != first.AttemptID || leaseAfter.LeaseGeneration != first.LeaseGeneration || leaseAfter.ExpiresAt != leaseBefore.ExpiresAt {
+		t.Fatalf("rejected claim changed active lease: before=%+v after=%+v", leaseBefore, leaseAfter)
 	}
 }

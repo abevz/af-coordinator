@@ -6,7 +6,7 @@ Status values describe implementation, not specification completeness.
 | --- | --- | --- | --- |
 | R-01 authoritative restart state | `afc-114` | Current Architecture; Crash/Recovery Analysis | planned |
 | R-02 one mutation authority | `afc-108` | Authoritative state; Write ownership; SQLite correctness | planned |
-| R-03 atomic ready-qualified claim | `afc-106`, `afc-110` | Claim semantics; Race 1; Dependencies | planned |
+| R-03 atomic ready-qualified claim | `afc-106`, `afc-110` | Claim semantics; Race 1; Dependencies | implemented by `afc-106`; final multi-connection matrix pending `afc-110` |
 | R-04 lease identity and fencing | `afc-103`, `afc-104`, `afc-105`, `afc-106` | Claim semantics; Races 2-4 | planned |
 | R-05 heartbeat and release | `afc-104`, `afc-113` | Lease/TTL; Heartbeat; Race 2 | planned |
 | R-06 update/handoff/close | `afc-105`, `afc-113` | Handoff; Close; Races 3-5 | planned |

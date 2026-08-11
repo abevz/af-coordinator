@@ -44,6 +44,11 @@ Every agent session follows this cycle:
 
    Default TTL is 3600s. Use `--ttl 900` for shorter leases.
 
+   `holder`/`actor` is attribution, not authentication. Repeating `claim` with
+   the same name while a lease is active returns `lease_held`; it never returns
+   or renews the existing token. Persist the original token immediately. If it
+   is lost, wait for TTL expiry or ask an operator to use `operator-release`.
+
    Every claim, note, and close records an `invocation_mode` on its audit
    event alongside the actor (`issue_claimed`, `note_added`, `issue_closed`,
    `issue_operator_closed`). The caller declares it with `--invocation-mode`:

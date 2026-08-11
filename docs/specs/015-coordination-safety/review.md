@@ -11,8 +11,7 @@ The lease-generation slice is implemented on
 
 - migration `0008_lease_generation.sql` adds an issue-local counter and the
   matching active-lease generation, backfilling active legacy leases to `1`;
-- fresh claims increment generation once, while heartbeat and current
-  same-holder reattach preserve it;
+- fresh claims increment generation once, while heartbeat preserves it;
 - claim responses, secret-safe issue reads, CLI text/JSON, `issue run` through
   `AF_LEASE_GENERATION`, and lease lifecycle events expose the same non-secret
   generation without recording the lease token;
@@ -29,6 +28,33 @@ Verification in the sibling worktree:
 
 The generation is not yet required on heartbeat/update/handoff/close requests;
 those atomic fencing predicates remain owned by `afc-104` and `afc-105`.
+
+## AFC-SDD-0154 / afc-106 implementation review
+
+The ready-qualified claim slice is implemented on `fix/afc-106-ready-claim`
+pending merge:
+
+- ready listing and claim use one executable-state predicate for status, issue
+  type, and unfinished `blocks` dependencies;
+- claim re-evaluates that predicate inside its transaction and returns typed
+  `conflict` without changing issue, lease, version, or event state when a
+  blocker remains unfinished;
+- an active lease always returns `lease_held`; claim never reads or returns its
+  token based on the public holder string, and a rejected same-holder retry
+  cannot renew expiry or append a `lease_reattached` event;
+- the existing concurrent distinct-holder regression still produces one fresh
+  claim, one usable token, and one `issue_claimed` event.
+
+Verification in the sibling worktree:
+
+- `git diff --check` — pass;
+- `make build` — pass;
+- `go test ./... -count=1` — pass;
+- `go test -race ./... -count=1` — pass.
+
+Durable retry of an ambiguously completed claim remains intentionally pending
+the operation-id ledger in `afc-111`; until then, clients must reconcile rather
+than attempting holder-only token recovery.
 
 ## Planning outcome
 
