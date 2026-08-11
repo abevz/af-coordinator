@@ -103,6 +103,36 @@ This lock prevents cooperative daemon duplication. It deliberately does not
 prevent hostile same-UID code from opening SQLite directly. Full eight-case
 crash injection, integrity policy, and backup/restore proof remain `afc-114`.
 
+## AFC-SDD-0155 / afc-107 implementation review
+
+The dependency-serialization slice is implemented in this change:
+
+- `AddDependency` now begins its transaction first and resolves both endpoints,
+  verifies the cross-project endpoint policy, traverses `blocks` edges, inserts
+  the edge, and appends `dependency_added` against that single serialized-writer
+  transaction. The previous pre-transaction cycle check could validate
+  concurrent opposite edges against an incomplete graph and commit a cycle;
+- `wouldCreateCycle` now takes a queryer satisfied by both `*sql.DB` and
+  `*sql.Tx`, returns `(bool, error)`, and propagates query/scan errors instead
+  of reporting "no cycle";
+- the defined cross-project endpoint policy rejects any dependency edge whose
+  endpoints belong to different projects with a typed `validation_failed`, and
+  the API handler maps it to HTTP 400;
+- regression tests cover simultaneous opposite edges (at most one committed
+  edge and one `dependency_cycle`), an injected traversal failure that aborts
+  without an edge/event, cross-project rejection, and ready-after-blocker-close
+  through `ListReadyIssues`.
+
+Verification in the sibling worktree:
+
+- `git diff --check` — pass;
+- `make build` — pass;
+- `go test ./... -count=1` — pass;
+- `go test -race ./... -count=1` — pass.
+
+General graph analytics, cached ready state, parent/related/discovered-from
+semantics changes, and UI remain out of scope per AFC-SDD-0155.
+
 ## Planning outcome
 
 - Preserved the 2026-08-11 evidence-based technical audit in `audit.md`.

@@ -635,6 +635,46 @@ func TestGetIssueIncludesExplicitDependencyIdentifiers(t *testing.T) {
 	}
 }
 
+func TestAddDependencyCrossProjectReturnsValidationFailed(t *testing.T) {
+	server, db := newTestServer(t)
+
+	if _, err := sqlite.CreateProject(context.Background(), db, "p1", "Project 1", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sqlite.CreateProject(context.Background(), db, "p2", "Project 2", ""); err != nil {
+		t.Fatal(err)
+	}
+	source, err := sqlite.CreateIssue(context.Background(), db, "p1", core.CreateIssueRequest{ScopeKind: "project", Title: "Source"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err := sqlite.CreateIssue(context.Background(), db, "p2", core.CreateIssueRequest{ScopeKind: "project", Title: "Target"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	body := fmt.Sprintf(`{"depends_on":%q,"kind":"blocks","actor":"tester"}`, target.ID)
+	resp, err := http.Post(server.URL+"/v1/issues/"+source.ID+"/dependencies", "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("cross-project add dependency status = %d, want 400", resp.StatusCode)
+	}
+	var result struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Error.Code != core.ErrValidationFailed {
+		t.Fatalf("cross-project add dependency code = %q, want %q", result.Error.Code, core.ErrValidationFailed)
+	}
+}
+
 func TestGetIssueLeaseTokenLeak(t *testing.T) {
 	server, db := newTestServer(t)
 

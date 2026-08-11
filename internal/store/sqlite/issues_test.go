@@ -3828,6 +3828,220 @@ func TestDependencyCycleDetection(t *testing.T) {
 	}
 }
 
+// TestConcurrentOppositeEdgesCommitAtMostOne races A depends on B against
+// B depends on A on the serialized writer. Each edge is individually acyclic,
+// but together they form a cycle; exactly one transaction may commit while the
+// loser validates against the committed edge and fails with dependency_cycle.
+func TestConcurrentOppositeEdgesCommitAtMostOne(t *testing.T) {
+	db := newTestDB(t)
+	db.SetMaxOpenConns(1)
+	if _, err := CreateProject(context.Background(), db, "test", "Test", ""); err != nil {
+		t.Fatal(err)
+	}
+	a, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "A"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "B"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	start := make(chan struct{})
+	errs := make(chan error, 2)
+	var wg sync.WaitGroup
+	for _, edge := range []struct{ issue, dependsOn string }{
+		{a.ID, b.ID},
+		{b.ID, a.ID},
+	} {
+		wg.Add(1)
+		go func(issue, dependsOn string) {
+			defer wg.Done()
+			<-start
+			errs <- AddDependency(context.Background(), db, issue, core.AddDependencyRequest{DependsOn: dependsOn, Kind: "blocks", Actor: "racer"})
+		}(edge.issue, edge.dependsOn)
+	}
+	close(start)
+	wg.Wait()
+	close(errs)
+
+	committed := 0
+	cycles := 0
+	for err := range errs {
+		if err == nil {
+			committed++
+			continue
+		}
+		var apiErr core.APIError
+		if !errors.As(err, &apiErr) || apiErr.Code != core.ErrDependencyCycle {
+			t.Fatalf("concurrent opposite-edge error = %v, want dependency_cycle", err)
+		}
+		cycles++
+	}
+	if committed != 1 || cycles != 1 {
+		t.Fatalf("concurrent opposite edges: committed=%d cycles=%d, want 1 and 1", committed, cycles)
+	}
+
+	var edges int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM dependencies`).Scan(&edges); err != nil {
+		t.Fatal(err)
+	}
+	if edges != 1 {
+		t.Fatalf("committed dependency edges = %d, want 1", edges)
+	}
+	var added int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM events WHERE event_type = 'dependency_added'`).Scan(&added); err != nil {
+		t.Fatal(err)
+	}
+	if added != 1 {
+		t.Fatalf("dependency_added events = %d, want 1", added)
+	}
+}
+
+// TestAddDependencyTraversalFailureAborts proves an injected traversal error is
+// returned (never treated as "no cycle") and leaves no edge or event behind.
+func TestAddDependencyTraversalFailureAborts(t *testing.T) {
+	db := newTestDB(t)
+	if _, err := CreateProject(context.Background(), db, "test", "Test", ""); err != nil {
+		t.Fatal(err)
+	}
+	a, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "A"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "B"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	injected := errors.New("injected traversal failure")
+	err = addDependency(context.Background(), db, a.ID, core.AddDependencyRequest{DependsOn: b.ID, Kind: "blocks", Actor: "tester"},
+		func(context.Context, dependencyQueryer, string, string) (bool, error) {
+			return false, injected
+		})
+	if !errors.Is(err, injected) {
+		t.Fatalf("traversal failure error = %v, want injected failure", err)
+	}
+
+	var edges int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM dependencies`).Scan(&edges); err != nil {
+		t.Fatal(err)
+	}
+	if edges != 0 {
+		t.Fatalf("dependency edges after failed traversal = %d, want 0", edges)
+	}
+	var added int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM events WHERE event_type = 'dependency_added'`).Scan(&added); err != nil {
+		t.Fatal(err)
+	}
+	if added != 0 {
+		t.Fatalf("dependency_added events after failed traversal = %d, want 0", added)
+	}
+}
+
+// TestAddDependencyRejectsCrossProjectEndpoints defines the cross-project
+// endpoint policy: a dependency edge must stay inside one project, and a
+// violation is rejected with validation_failed before any edge or event.
+func TestAddDependencyRejectsCrossProjectEndpoints(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+	if _, err := CreateProject(context.Background(), db, "p1", "Project 1", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := CreateProject(context.Background(), db, "p2", "Project 2", ""); err != nil {
+		t.Fatal(err)
+	}
+	a, err := CreateIssue(context.Background(), db, "p1", core.CreateIssueRequest{ScopeKind: "project", Title: "A"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := CreateIssue(context.Background(), db, "p2", core.CreateIssueRequest{ScopeKind: "project", Title: "B"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = AddDependency(context.Background(), db, a.ID, core.AddDependencyRequest{DependsOn: b.ID, Kind: "blocks", Actor: "tester"})
+	if err == nil {
+		t.Fatal("expected cross-project dependency to be rejected")
+	}
+	var apiErr core.APIError
+	if !errors.As(err, &apiErr) || apiErr.Code != core.ErrValidationFailed {
+		t.Fatalf("cross-project error = %v, want validation_failed", err)
+	}
+
+	var edges int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM dependencies`).Scan(&edges); err != nil {
+		t.Fatal(err)
+	}
+	if edges != 0 {
+		t.Fatalf("dependency edges after cross-project rejection = %d, want 0", edges)
+	}
+	var added int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM events WHERE event_type = 'dependency_added'`).Scan(&added); err != nil {
+		t.Fatal(err)
+	}
+	if added != 0 {
+		t.Fatalf("dependency_added events after cross-project rejection = %d, want 0", added)
+	}
+}
+
+// TestDependantBecomesReadyAfterBlockerClosed proves ready stays computed, not
+// cached: closing the final blocker makes the dependant visible on the next
+// ListReadyIssues query.
+func TestDependantBecomesReadyAfterBlockerClosed(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+	p, err := CreateProject(context.Background(), db, "test", "Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	blocker, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Blocker"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{ScopeKind: "project", Title: "Target"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := AddDependency(context.Background(), db, target.ID, core.AddDependencyRequest{DependsOn: blocker.ID, Kind: "blocks", Actor: "planner"}); err != nil {
+		t.Fatal(err)
+	}
+
+	ready, err := ListReadyIssues(context.Background(), db, p.ID, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, issue := range ready {
+		if issue.ID == target.ID {
+			t.Fatal("target must not be ready while its blocker is unfinished")
+		}
+	}
+
+	if _, err := OperatorCloseIssue(context.Background(), db, blocker.ID, core.OperatorCloseIssueRequest{
+		Resolution:      "done",
+		Actor:           "operator",
+		Reason:          "completed",
+		ExpectedVersion: blocker.Version,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	ready, err = ListReadyIssues(context.Background(), db, p.ID, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, issue := range ready {
+		if issue.ID == target.ID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("target must be ready after its blocker is closed")
+	}
+}
+
 func TestCreateIssueDefaultType(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)

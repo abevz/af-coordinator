@@ -679,6 +679,9 @@ func handleAddDependency(st store.CoordinatorStore, logger *slog.Logger) http.Ha
 				case core.ErrConflict:
 					writeError(w, http.StatusConflict, core.ErrConflict, apiErr.Message)
 					return
+				case core.ErrValidationFailed:
+					writeError(w, http.StatusBadRequest, core.ErrValidationFailed, apiErr.Message)
+					return
 				}
 			}
 			logger.Error("failed to add dependency", "issue_id", issueID, "depends_on", req.DependsOn, "error", err)
