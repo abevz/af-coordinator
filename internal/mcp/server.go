@@ -28,7 +28,7 @@ type CoordinatorClient interface {
 	ClaimIssue(ctx context.Context, issueID, holder string, ttlSeconds int) (core.ClaimResponse, error)
 	ClaimIssueWithSession(ctx context.Context, issueID, holder string, ttlSeconds int, sessionID string) (core.ClaimResponse, error)
 	HeartbeatLease(ctx context.Context, issueID, leaseToken string, leaseGeneration int64, ttlSeconds int) (string, error)
-	HandoffLease(ctx context.Context, issueID, leaseToken, note string) (core.HandoffResponse, error)
+	HandoffLease(ctx context.Context, issueID, leaseToken string, leaseGeneration int64, note string) (core.HandoffResponse, error)
 	CreateNote(ctx context.Context, issueID, author, body string) (core.Note, error)
 	ListNotes(ctx context.Context, issueID string) ([]core.Note, error)
 	ListEvents(ctx context.Context, issueID string) ([]core.Event, error)
@@ -263,9 +263,10 @@ func (s *Server) callTool(ctx context.Context, params toolCallParams) (any, erro
 		return map[string]any{"expires_at": expiresAt}, nil
 	case "handoff_issue":
 		var args struct {
-			IssueID    string `json:"issue_id"`
-			LeaseToken string `json:"lease_token"`
-			Note       string `json:"note"`
+			IssueID         string `json:"issue_id"`
+			LeaseToken      string `json:"lease_token"`
+			LeaseGeneration int64  `json:"lease_generation"`
+			Note            string `json:"note"`
 		}
 		if err := unmarshalArgs(params.Arguments, &args); err != nil {
 			return nil, err
@@ -273,10 +274,13 @@ func (s *Server) callTool(ctx context.Context, params toolCallParams) (any, erro
 		if args.IssueID == "" || args.LeaseToken == "" {
 			return nil, fmt.Errorf("issue_id and lease_token are required")
 		}
+		if args.LeaseGeneration <= 0 {
+			return nil, fmt.Errorf("lease_generation is required")
+		}
 		if err := core.ValidateHandoffRequest(core.HandoffRequest{Note: args.Note}); err != nil {
 			return nil, err
 		}
-		return s.client.HandoffLease(ctx, args.IssueID, args.LeaseToken, args.Note)
+		return s.client.HandoffLease(ctx, args.IssueID, args.LeaseToken, args.LeaseGeneration, args.Note)
 	case "add_note":
 		var args struct {
 			IssueID string `json:"issue_id"`

@@ -251,12 +251,12 @@ func TestIssueHandoffValidatesRequiredHandoffNote(t *testing.T) {
 		},
 		{
 			name:    "missing note",
-			args:    []string{"handoff", "afc-52", "--lease-token", "token"},
+			args:    []string{"handoff", "afc-52", "--lease-token", "token", "--lease-generation", "1"},
 			wantErr: "note is required",
 		},
 		{
 			name:    "malformed note",
-			args:    []string{"handoff", "afc-52", "--lease-token", "token", "--note", "continue later"},
+			args:    []string{"handoff", "afc-52", "--lease-token", "token", "--lease-generation", "1", "--note", "continue later"},
 			wantErr: "note must begin with HANDOFF:",
 		},
 		{
@@ -783,5 +783,53 @@ func TestAutoResolveVersionStillSurfacesConcurrentConflict(t *testing.T) {
 	}
 	if got := mapExitCodeErr(err); got != 2 {
 		t.Fatalf("mapExitCodeErr = %d, want 2 (version_conflict)", got)
+	}
+}
+
+// TestIssueCloseAndHandoffRequireLeaseGeneration is the afc-118 regression.
+//
+// afc-105 made the daemon fence close, handoff and update on the lease
+// generation but did not give the CLI a way to send it, so the documented
+// ready -> claim -> heartbeat -> close cycle could not complete: a real close
+// returned "lease_expired: lease_generation does not match the active lease".
+// Nothing caught it because the store-level tests call CloseIssue directly
+// with the field already filled in, and the CLI tests only exercised argument
+// validation. These assert the flag is demanded before any request is sent.
+func TestIssueCloseAndHandoffRequireLeaseGeneration(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		args    []string
+		wantErr string
+	}{
+		{
+			name: "close without generation",
+			args: []string{"close", "afc-52", "--resolution", "done", "--expected-version", "2",
+				"--lease-token", "token", "--note", "done"},
+			wantErr: "--lease-generation is required",
+		},
+		{
+			name:    "handoff without generation",
+			args:    []string{"handoff", "afc-52", "--lease-token", "token", "--note", "HANDOFF: next steps"},
+			wantErr: "--lease-generation is required",
+		},
+		{
+			name: "update with a token but no generation",
+			args: []string{"update", "afc-52", "--status", "blocked", "--expected-version", "2",
+				"--lease-token", "token"},
+			wantErr: "--lease-generation is required with --lease-token",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			err := runIssue(context.Background(), nil, tt.args)
+			if err == nil {
+				t.Fatalf("expected a usage error naming --lease-generation, got nil")
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("error = %q, want it to contain %q", err.Error(), tt.wantErr)
+			}
+		})
 	}
 }

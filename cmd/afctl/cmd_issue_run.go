@@ -176,6 +176,7 @@ func runIssueRun(ctx context.Context, c *client.Client, args []string) error {
 			CommitSHA:       commitSHA,
 			ExpectedVersion: claim.Version,
 			LeaseToken:      claim.LeaseToken,
+			LeaseGeneration: claim.LeaseGeneration,
 			Actor:           holder,
 			Note:            note,
 			InvocationMode:  invocationMode,
@@ -200,7 +201,7 @@ func runIssueRun(ctx context.Context, c *client.Client, args []string) error {
 	if ctx.Err() != nil {
 		handoffNote = "HANDOFF: issue run cancelled"
 	}
-	if _, err := c.HandoffLeaseWithMode(background, issueID, claim.LeaseToken, handoffNote, invocationMode); err != nil {
+	if _, err := c.HandoffLeaseWithMode(background, issueID, claim.LeaseToken, claim.LeaseGeneration, handoffNote, invocationMode); err != nil {
 		return fmt.Errorf("command failed (%v) and handoff also failed: %w", runErr, err)
 	}
 	fmt.Fprintf(os.Stderr, "issue run: command failed, lease handed off with note: %s\n", handoffNote)

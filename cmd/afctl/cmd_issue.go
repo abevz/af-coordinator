@@ -649,7 +649,7 @@ func runIssueRelease(ctx context.Context, c *client.Client, args []string) error
 	return nil
 }
 
-const issueHandoffUsage = "Usage: afctl issue handoff <issue-id> --lease-token <token> --note \"HANDOFF: next steps\" [--invocation-mode interactive|scheduled|unknown]\n" + lifecycleHint
+const issueHandoffUsage = "Usage: afctl issue handoff <issue-id> --lease-token <token> --lease-generation <generation> --note \"HANDOFF: next steps\" [--invocation-mode interactive|scheduled|unknown]\n" + lifecycleHint
 
 func runIssueHandoff(ctx context.Context, c *client.Client, args []string) error {
 	if hasHelpFlag(args) {
@@ -662,10 +662,16 @@ func runIssueHandoff(ctx context.Context, c *client.Client, args []string) error
 
 	issueID := args[0]
 	leaseToken := ""
+	var leaseGeneration int64
 	note := ""
 	invocationMode := ""
 	for i := 1; i < len(args); i++ {
 		switch args[i] {
+		case "--lease-generation":
+			if i+1 < len(args) {
+				fmt.Sscanf(args[i+1], "%d", &leaseGeneration)
+				i++
+			}
 		case "--lease-token":
 			if i+1 < len(args) {
 				leaseToken = args[i+1]
@@ -688,6 +694,9 @@ func runIssueHandoff(ctx context.Context, c *client.Client, args []string) error
 	if leaseToken == "" {
 		return usageErr(issueHandoffUsage, "--lease-token is required")
 	}
+	if leaseGeneration <= 0 {
+		return usageErr(issueHandoffUsage, "--lease-generation is required")
+	}
 	if err := core.ValidateHandoffRequest(core.HandoffRequest{Note: note}); err != nil {
 		return usageErr(issueHandoffUsage, err.Error())
 	}
@@ -700,7 +709,7 @@ func runIssueHandoff(ctx context.Context, c *client.Client, args []string) error
 		invocationMode = normalized
 	}
 
-	resp, err := c.HandoffLeaseWithMode(ctx, issueID, leaseToken, note, invocationMode)
+	resp, err := c.HandoffLeaseWithMode(ctx, issueID, leaseToken, leaseGeneration, note, invocationMode)
 	if err != nil {
 		fail(err)
 	}
@@ -712,7 +721,7 @@ func runIssueHandoff(ctx context.Context, c *client.Client, args []string) error
 	return nil
 }
 
-const issueUpdateUsage = "Usage: afctl issue update <issue-id> [--title ...] [--type <task|bug|feature|epic|chore>] [--external-key ...] [--description ...] [--acceptance ...] [--priority N] [--assignee ...] [--status ...] [--expected-version N|latest] [--force] [--lease-token ...] [--release]"
+const issueUpdateUsage = "Usage: afctl issue update <issue-id> [--title ...] [--type <task|bug|feature|epic|chore>] [--external-key ...] [--description ...] [--acceptance ...] [--priority N] [--assignee ...] [--status ...] [--expected-version N|latest] [--force] [--lease-token ...] [--lease-generation <generation>] [--release]"
 
 func runIssueUpdate(ctx context.Context, c *client.Client, args []string) error {
 	if hasHelpFlag(args) {
@@ -783,6 +792,14 @@ func runIssueUpdate(ctx context.Context, c *client.Client, args []string) error 
 				req.LeaseToken = args[i+1]
 				i++
 			}
+		// Paired with --lease-token: the daemon fences a leased issue on both
+		// (afc-105). An unleased issue needs neither, so this stays optional
+		// and is only required alongside a token.
+		case "--lease-generation":
+			if i+1 < len(args) {
+				fmt.Sscanf(args[i+1], "%d", &req.LeaseGeneration)
+				i++
+			}
 		case "--release":
 			req.ReleaseLease = true
 		case "--force":
@@ -804,6 +821,9 @@ func runIssueUpdate(ctx context.Context, c *client.Client, args []string) error 
 	}
 	req.Actor = actor
 
+	if req.LeaseToken != "" && req.LeaseGeneration <= 0 {
+		return usageErr(issueUpdateUsage, "--lease-generation is required with --lease-token (from `issue claim`)")
+	}
 	issue, err := c.UpdateIssue(ctx, issueID, req)
 	if err != nil {
 		fail(err)
@@ -816,7 +836,7 @@ func runIssueUpdate(ctx context.Context, c *client.Client, args []string) error 
 	return nil
 }
 
-const issueCloseUsage = "Usage: afctl issue close <issue-id> --resolution done|cancelled --expected-version N --lease-token ... [--branch <name>] [--pr-url <url>] [--commit-sha <sha>] [--note \"what was done\"] [--invocation-mode interactive|scheduled|unknown]\n" + lifecycleHint
+const issueCloseUsage = "Usage: afctl issue close <issue-id> --resolution done|cancelled --expected-version N --lease-token ... --lease-generation <generation> [--branch <name>] [--pr-url <url>] [--commit-sha <sha>] [--note \"what was done\"] [--invocation-mode interactive|scheduled|unknown]\n" + lifecycleHint
 
 func runIssueClose(ctx context.Context, c *client.Client, args []string) error {
 	if hasHelpFlag(args) {
@@ -863,6 +883,11 @@ func runIssueClose(ctx context.Context, c *client.Client, args []string) error {
 				req.LeaseToken = args[i+1]
 				i++
 			}
+		case "--lease-generation":
+			if i+1 < len(args) {
+				fmt.Sscanf(args[i+1], "%d", &req.LeaseGeneration)
+				i++
+			}
 		case "--invocation-mode":
 			if i+1 < len(args) {
 				req.InvocationMode = args[i+1]
@@ -884,6 +909,9 @@ func runIssueClose(ctx context.Context, c *client.Client, args []string) error {
 	}
 	if req.LeaseToken == "" {
 		return usageErr(issueCloseUsage, "--lease-token is required (from `issue claim`)")
+	}
+	if req.LeaseGeneration <= 0 {
+		return usageErr(issueCloseUsage, "--lease-generation is required (from `issue claim`)")
 	}
 
 	actor, err := resolveActor("")

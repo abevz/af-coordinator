@@ -74,9 +74,9 @@ Every agent session follows this cycle:
 
 5. **Close or hand off**
    ```
-   afctl issue close <short_id> --resolution done --expected-version N --lease-token <token> \
+   afctl issue close <short_id> --resolution done --expected-version N --lease-token <token> --lease-generation <generation> \
      --branch <branch> --pr-url <url> --commit-sha <sha> --note "what was done"
-   afctl issue handoff <short_id> --lease-token <token> \
+   afctl issue handoff <short_id> --lease-token <token> --lease-generation <generation> \
      --note "HANDOFF: next agent starts here"
    ```
 

@@ -71,7 +71,7 @@ func (f *fakeClient) HeartbeatLease(_ context.Context, issueID, leaseToken strin
 	f.lastTTL = ttlSeconds
 	return f.heartbeatResp, nil
 }
-func (f *fakeClient) HandoffLease(_ context.Context, issueID, leaseToken, note string) (core.HandoffResponse, error) {
+func (f *fakeClient) HandoffLease(_ context.Context, issueID, leaseToken string, leaseGeneration int64, note string) (core.HandoffResponse, error) {
 	f.lastIssueID = issueID
 	f.lastLeaseToken = leaseToken
 	f.lastHandoffNote = note
@@ -190,7 +190,7 @@ func TestToolCallHandoffIssueUsesAtomicClientPath(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      json.RawMessage("4"),
 		Method:  "tools/call",
-		Params:  json.RawMessage(`{"name":"handoff_issue","arguments":{"issue_id":"afc-52","lease_token":"lease","note":"HANDOFF: continue after review"}}`),
+		Params:  json.RawMessage(`{"name":"handoff_issue","arguments":{"issue_id":"afc-52","lease_token":"lease","lease_generation":1,"note":"HANDOFF: continue after review"}}`),
 	})
 
 	if resp == nil || resp.Error != nil {
@@ -204,7 +204,7 @@ func TestToolCallHandoffIssueUsesAtomicClientPath(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      json.RawMessage("5"),
 		Method:  "tools/call",
-		Params:  json.RawMessage(`{"name":"handoff_issue","arguments":{"issue_id":"afc-52","lease_token":"lease","note":"continue after review"}}`),
+		Params:  json.RawMessage(`{"name":"handoff_issue","arguments":{"issue_id":"afc-52","lease_token":"lease","lease_generation":1,"note":"continue after review"}}`),
 	})
 	result := invalid.Result.(map[string]any)
 	if result["isError"] != true {

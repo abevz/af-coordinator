@@ -84,12 +84,33 @@ type mockCoordinator struct {
 	handoffReqs  []map[string]any
 }
 
+// mockLeaseGeneration is the generation this mock hands out on claim. The
+// lifecycle endpoints below enforce it exactly as the daemon does since
+// afc-105, because a mock that accepts any body cannot tell a client that
+// forgot a required field from one that sends it: that is how afc-118 shipped
+// a CLI unable to close its own issues while every test stayed green.
+const mockLeaseGeneration = 7
+
+// leaseGenerationMatches mirrors the daemon's fencing check.
+func leaseGenerationMatches(body map[string]any) bool {
+	got, ok := body["lease_generation"].(float64)
+	return ok && int64(got) == mockLeaseGeneration
+}
+
+func writeLeaseExpired(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusGone)
+	json.NewEncoder(w).Encode(map[string]any{
+		"error": map[string]any{"code": "lease_expired", "message": "lease_generation does not match the active lease"},
+	})
+}
+
 func (m *mockCoordinator) handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/issues/{id}/claim", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]any{
 			"lease_token":      "test-lease-token",
-			"lease_generation": 7,
+			"lease_generation": mockLeaseGeneration,
 			"expires_at":       "2099-01-01T00:00:00Z",
 			"attempt_id":       "test-attempt-id",
 			"version":          m.claimVersion,
@@ -104,6 +125,10 @@ func (m *mockCoordinator) handler() http.Handler {
 		m.mu.Lock()
 		m.closeReqs = append(m.closeReqs, body)
 		m.mu.Unlock()
+		if !leaseGenerationMatches(body) {
+			writeLeaseExpired(w)
+			return
+		}
 		json.NewEncoder(w).Encode(map[string]any{"status": "closed", "resolution": body["resolution"]})
 	})
 	mux.HandleFunc("POST /v1/issues/{id}/handoff", func(w http.ResponseWriter, r *http.Request) {
@@ -112,6 +137,10 @@ func (m *mockCoordinator) handler() http.Handler {
 		m.mu.Lock()
 		m.handoffReqs = append(m.handoffReqs, body)
 		m.mu.Unlock()
+		if !leaseGenerationMatches(body) {
+			writeLeaseExpired(w)
+			return
+		}
 		json.NewEncoder(w).Encode(map[string]any{"note": map[string]any{"id": "n1", "body": body["note"]}})
 	})
 	return mux

@@ -362,16 +362,17 @@ func (c *Client) ReleaseLease(ctx context.Context, issueID, leaseToken string, l
 	return c.doJSON(ctx, http.MethodPost, "/v1/issues/"+issueID+"/release", body, nil)
 }
 
-// HandoffLease sends a HANDOFF note and lease release as one atomic request.
-func (c *Client) HandoffLease(ctx context.Context, issueID, leaseToken, note string) (core.HandoffResponse, error) {
-	return c.HandoffLeaseWithMode(ctx, issueID, leaseToken, note, "")
+// HandoffLease sends a HANDOFF note and lease release as one atomic request
+// with the lease generation from the claim that created the lease.
+func (c *Client) HandoffLease(ctx context.Context, issueID, leaseToken string, leaseGeneration int64, note string) (core.HandoffResponse, error) {
+	return c.HandoffLeaseWithMode(ctx, issueID, leaseToken, leaseGeneration, note, "")
 }
 
 // HandoffLeaseWithMode sends a HANDOFF note and lease release as one atomic
 // request, recording a caller-declared invocation mode on the handoff note's
 // audit event. An empty mode normalizes to "unknown" on the daemon.
-func (c *Client) HandoffLeaseWithMode(ctx context.Context, issueID, leaseToken, note, invocationMode string) (core.HandoffResponse, error) {
-	body := core.HandoffRequest{LeaseToken: leaseToken, Note: note, InvocationMode: invocationMode}
+func (c *Client) HandoffLeaseWithMode(ctx context.Context, issueID, leaseToken string, leaseGeneration int64, note, invocationMode string) (core.HandoffResponse, error) {
+	body := core.HandoffRequest{LeaseToken: leaseToken, LeaseGeneration: leaseGeneration, Note: note, InvocationMode: invocationMode}
 	var result core.HandoffResponse
 	if err := c.doJSON(ctx, http.MethodPost, "/v1/issues/"+issueID+"/handoff", body, &result); err != nil {
 		return core.HandoffResponse{}, err

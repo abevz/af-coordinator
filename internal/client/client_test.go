@@ -422,7 +422,7 @@ func TestHandoffLeasePostsRequiredNote(t *testing.T) {
 	}))
 	defer server.Close()
 
-	result, err := testClient(t, server).HandoffLease(context.Background(), "i1", "test-token", "HANDOFF: continue from test")
+	result, err := testClient(t, server).HandoffLease(context.Background(), "i1", "test-token", 1, "HANDOFF: continue from test")
 	if err != nil {
 		t.Fatalf("HandoffLease() error = %v", err)
 	}
