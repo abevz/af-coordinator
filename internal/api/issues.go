@@ -192,6 +192,9 @@ func handleClaimIssue(st store.CoordinatorStore, logger *slog.Logger) http.Handl
 				case core.ErrLeaseHeld:
 					writeError(w, http.StatusConflict, core.ErrLeaseHeld, apiErr.Message)
 					return
+				case core.ErrConflict:
+					writeError(w, http.StatusConflict, core.ErrConflict, apiErr.Message)
+					return
 				case core.ErrNotFound:
 					writeError(w, http.StatusNotFound, core.ErrNotFound, apiErr.Message)
 					return

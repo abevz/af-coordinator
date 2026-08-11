@@ -316,6 +316,22 @@ func appendIssueListInFilter(where *[]string, args *[]interface{}, column string
 	*where = append(*where, column+" IN ("+strings.Join(placeholders, ", ")+")")
 }
 
+// readyIssueEligibilityPredicate is the shared executable-state contract used
+// by both the advisory ready view and the authoritative claim transaction.
+// Lease availability is checked separately because claim must distinguish an
+// active owner from a dependency/status conflict without ever returning that
+// owner's secret token.
+const readyIssueEligibilityPredicate = `
+	            i.status IN ('open', 'in_progress')
+	            AND i.issue_type != 'epic'
+	            AND NOT EXISTS (
+	                SELECT 1 FROM dependencies d
+	                JOIN issues blocker ON blocker.id = d.depends_on_issue_id
+	                WHERE d.issue_id = i.id
+	                  AND d.kind = 'blocks'
+	                  AND blocker.status NOT IN ('done', 'cancelled')
+	            )`
+
 // ListReadyIssues returns issues that are actionable (not terminal), not currently leased,
 // and not blocked by an unfinished blocks dependency. tags filters to
 // issues carrying every listed tag (AND semantics).
@@ -328,16 +344,8 @@ func ListReadyIssues(ctx context.Context, db *sql.DB, projectID, repoID string, 
 	                 COALESCE(l.holder, ''), COALESCE(l.expires_at, '')
 	          FROM issues i
 	          LEFT JOIN leases l ON l.issue_id = i.id AND l.expires_at > ?
-	          WHERE i.status NOT IN ('done', 'cancelled', 'deferred', 'blocked')
-	            AND i.issue_type != 'epic'
-	            AND i.id NOT IN (SELECT issue_id FROM leases WHERE expires_at > ?)
-	            AND NOT EXISTS (
-	                SELECT 1 FROM dependencies d
-	                JOIN issues blocker ON blocker.id = d.depends_on_issue_id
-	                WHERE d.issue_id = i.id
-	                  AND d.kind = 'blocks'
-	                  AND blocker.status NOT IN ('done', 'cancelled')
-	            )`
+	          WHERE ` + readyIssueEligibilityPredicate + `
+	            AND NOT EXISTS (SELECT 1 FROM leases active_lease WHERE active_lease.issue_id = i.id AND active_lease.expires_at > ?)`
 
 	args = append(args, now)
 
@@ -431,62 +439,43 @@ func ClaimIssueWithMode(ctx context.Context, db *sql.DB, issueID, holder string,
 			"epics cannot be claimed; claim their child issues instead")
 	}
 	if status != "open" && status != "in_progress" {
-		return core.ClaimResponse{}, core.NewAPIError(core.ErrLeaseHeld,
+		return core.ClaimResponse{}, core.NewAPIError(core.ErrConflict,
 			"issue cannot be claimed from status: "+status)
 	}
 
 	now := time.Now().UTC()
 	nowStr := now.Format(time.RFC3339)
 
-	// Check whether an unexpired lease exists and, if so, whether the
-	// requesting holder already owns it (same-holder reattach).
-	var existingHolder, existingToken, existingAttemptID string
-	var existingGeneration int64
+	// Holder is attribution, not authentication. An active lease always wins;
+	// claim never reads or returns its token, even when the caller repeats the
+	// same holder string. Retry-safe recovery belongs to the operation ledger.
+	var activeLease int
 	err = tx.QueryRowContext(ctx,
-		`SELECT holder, lease_token, attempt_id, lease_generation FROM leases WHERE issue_id = ? AND expires_at > ?`,
+		`SELECT 1 FROM leases WHERE issue_id = ? AND expires_at > ?`,
 		issueID, nowStr,
-	).Scan(&existingHolder, &existingToken, &existingAttemptID, &existingGeneration)
+	).Scan(&activeLease)
 	if err != nil && err != sql.ErrNoRows {
 		return core.ClaimResponse{}, fmt.Errorf("check lease: %w", err)
 	}
 	if err == nil {
-		// An active lease exists.
-		if existingHolder != holder {
-			// Different holder — reject as before.
-			return core.ClaimResponse{}, core.NewAPIError(core.ErrLeaseHeld,
-				"issue is already claimed: "+issueID)
-		}
-		// Same holder — reattach: renew the expiry in-place.
-		newExpiry := now.Add(time.Duration(ttlSeconds) * time.Second).Format(time.RFC3339)
-		_, err = tx.ExecContext(ctx,
-			`UPDATE leases SET expires_at = ?, updated_at = ? WHERE issue_id = ?`,
-			newExpiry, nowStr, issueID,
-		)
-		if err != nil {
-			return core.ClaimResponse{}, fmt.Errorf("renew lease: %w", err)
-		}
-		reattachPayload := map[string]any{
-			"attempt_id":       existingAttemptID,
-			"lease_generation": existingGeneration,
-			"ttl_seconds":      ttlSeconds,
-			"expires_at":       newExpiry,
-			"session_id":       sessionID,
-			"invocation_mode":  invocationMode,
-		}
-		if err := insertEvent(ctx, tx, issueID, holder, "lease_reattached", reattachPayload, nowStr); err != nil {
-			return core.ClaimResponse{}, err
-		}
-		if err := tx.Commit(); err != nil {
-			return core.ClaimResponse{}, fmt.Errorf("commit tx: %w", err)
-		}
-		return core.ClaimResponse{
-			LeaseToken:      existingToken,
-			LeaseGeneration: existingGeneration,
-			ExpiresAt:       newExpiry,
-			AttemptID:       existingAttemptID,
-			Version:         version,
-			Reattached:      true,
-		}, nil
+		return core.ClaimResponse{}, core.NewAPIError(core.ErrLeaseHeld,
+			"issue is already claimed: "+issueID)
+	}
+
+	// Re-evaluate the exact ready eligibility predicate inside the claim
+	// transaction. Ready-list output is advisory and may be stale immediately;
+	// this check is authoritative for dependencies and executable state.
+	var eligible int
+	err = tx.QueryRowContext(ctx,
+		`SELECT EXISTS (SELECT 1 FROM issues i WHERE i.id = ? AND `+readyIssueEligibilityPredicate+`)`,
+		issueID,
+	).Scan(&eligible)
+	if err != nil {
+		return core.ClaimResponse{}, fmt.Errorf("check claim eligibility: %w", err)
+	}
+	if eligible != 1 {
+		return core.ClaimResponse{}, core.NewAPIError(core.ErrConflict,
+			"issue is not ready: unfinished blocks dependency")
 	}
 
 	// A row that did not pass the active-lease query is an expired attempt.

@@ -132,12 +132,10 @@ func TestClaimIssueDefaultsToUnknown(t *testing.T) {
 	}
 }
 
-// TestLeaseReattachRecordsInvocationMode covers the second claim path. A
-// re-attach is where a long-running agent resumes, and it is exactly the kind
-// of event a reader scans when reconstructing who was driving a task -- the
-// question afc-95 was filed about. Removing the field from the issue_claimed
-// payload alone leaves this path green, so it needs its own assertion.
-func TestLeaseReattachRecordsInvocationMode(t *testing.T) {
+// TestRejectedSameHolderClaimDoesNotAppendInvocationEvent proves an
+// unauthenticated holder-only retry cannot manufacture a lifecycle event or
+// renew the current attempt under a different invocation mode.
+func TestRejectedSameHolderClaimDoesNotAppendInvocationEvent(t *testing.T) {
 	t.Parallel()
 
 	db := newTestDB(t)
@@ -154,15 +152,18 @@ func TestLeaseReattachRecordsInvocationMode(t *testing.T) {
 	if _, err := ClaimIssueWithMode(context.Background(), db, issue.ID, "tester", 3600, "", core.InvocationModeInteractive); err != nil {
 		t.Fatal(err)
 	}
-	// The same holder claiming again re-attaches rather than creating a new
-	// attempt, and must carry the declared mode into that event too.
-	if _, err := ClaimIssueWithMode(context.Background(), db, issue.ID, "tester", 3600, "", core.InvocationModeScheduled); err != nil {
-		t.Fatal(err)
+	if _, err := ClaimIssueWithMode(context.Background(), db, issue.ID, "tester", 3600, "", core.InvocationModeScheduled); err == nil {
+		t.Fatal("same-holder claim unexpectedly succeeded")
 	}
 
-	payload := invocationEventPayload(t, db, issue.ID, "lease_reattached")
-	if payload["invocation_mode"] != core.InvocationModeScheduled {
-		t.Errorf("lease_reattached recorded %v, want %q", payload["invocation_mode"], core.InvocationModeScheduled)
+	events, err := ListEvents(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, event := range events {
+		if event.EventType == "lease_reattached" {
+			t.Fatalf("rejected same-holder claim appended lease_reattached: %+v", event)
+		}
 	}
 }
 

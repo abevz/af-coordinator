@@ -314,11 +314,15 @@ holder identity and lease token.
 
 `lease_generation` is monotonically increasing per issue. It advances exactly
 once for each fresh claim, is returned with the secret token, and is copied to
-lifecycle events. Reattach and heartbeat keep the existing generation. The
-generation is safe to log and lets downstream publishers reject output from an
-older attempt without exposing the token.
+lifecycle events. Heartbeat keeps the existing generation. The generation is
+safe to log and lets downstream publishers reject output from an older attempt
+without exposing the token.
 
-While an unexpired lease exists, only its holder may mutate the issue.
+Holder names are attribution only. A repeated claim against an active lease
+always returns `lease_held`, even when the holder string matches, and never
+reads or returns the existing token. Safe retry/recovery requires the original
+token plus generation or the future operation-id ledger; a lost token is
+handled by TTL expiry or the explicit operator-release path.
 
 ### Lease expiry
 
