@@ -143,7 +143,7 @@ func TestClientCoverage(t *testing.T) {
 	_, _ = c.ClaimIssueWithSession(ctx, "i1", "actor", 10, "session-1")
 	_, _ = c.HeartbeatLease(ctx, "i1", "token", 1, 10)
 	_ = c.ReleaseLease(ctx, "i1", "token", 1)
-	_, _ = c.HandoffLease(ctx, "i1", "token", "HANDOFF: coverage")
+	_, _ = c.HandoffLease(ctx, "i1", "token", 1, "HANDOFF: coverage")
 	_, _ = c.CloseIssue(ctx, "i1", core.CloseIssueRequest{})
 	_, _ = c.OperatorCloseIssue(ctx, "i1", core.OperatorCloseIssueRequest{})
 	_, _ = c.OperatorReopenIssue(ctx, "i1", core.OperatorReopenIssueRequest{})
