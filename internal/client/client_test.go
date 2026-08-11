@@ -360,7 +360,7 @@ func TestClaimIssueWithSessionSendsCorrelationAndReturnsAttempt(t *testing.T) {
 		if req.Holder != "agent" || req.TTLSeconds != 900 || req.SessionID != "session-1" {
 			t.Fatalf("unexpected claim request: %+v", req)
 		}
-		_, _ = w.Write([]byte(`{"lease_token":"secret","expires_at":"2026-07-13T21:00:00Z","attempt_id":"attempt-1"}`))
+		_, _ = w.Write([]byte(`{"lease_token":"secret","lease_generation":9,"expires_at":"2026-07-13T21:00:00Z","attempt_id":"attempt-1"}`))
 	}))
 	defer server.Close()
 
@@ -370,6 +370,9 @@ func TestClaimIssueWithSessionSendsCorrelationAndReturnsAttempt(t *testing.T) {
 	}
 	if claim.AttemptID != "attempt-1" {
 		t.Fatalf("attempt_id = %q", claim.AttemptID)
+	}
+	if claim.LeaseGeneration != 9 {
+		t.Fatalf("lease_generation = %d, want 9", claim.LeaseGeneration)
 	}
 }
 

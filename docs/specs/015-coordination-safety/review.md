@@ -2,7 +2,33 @@
 
 ## Status
 
-Specification and backlog slicing complete; implementation not started.
+Specification and backlog slicing complete; implementation in progress.
+
+## AFC-SDD-0151 / afc-103 implementation review
+
+The lease-generation slice is implemented on
+`feat/afc-103-lease-generation` pending merge:
+
+- migration `0008_lease_generation.sql` adds an issue-local counter and the
+  matching active-lease generation, backfilling active legacy leases to `1`;
+- fresh claims increment generation once, while heartbeat and current
+  same-holder reattach preserve it;
+- claim responses, secret-safe issue reads, CLI text/JSON, `issue run` through
+  `AF_LEASE_GENERATION`, and lease lifecycle events expose the same non-secret
+  generation without recording the lease token;
+- migration, monotonicity, legacy-read, API, client, CLI environment, expiry,
+  release, and operator-release regressions use the embedded production
+  migrations.
+
+Verification in the sibling worktree:
+
+- `git diff --check` — pass;
+- `make build` — pass;
+- `go test ./... -count=1` — pass;
+- `go test -race ./... -count=1` — pass.
+
+The generation is not yet required on heartbeat/update/handoff/close requests;
+those atomic fencing predicates remain owned by `afc-104` and `afc-105`.
 
 ## Planning outcome
 
@@ -20,9 +46,9 @@ Specification and backlog slicing complete; implementation not started.
 
 ## What has not shipped
 
-No coordinator correctness, storage, protocol, CLI, or runtime behavior is
-changed by this planning slice. In particular, the race classifications in
-`audit.md` remain current until their leaves land and are verified.
+Until the implementation branch above is merged and installed, released
+coordinator behavior remains unchanged. The race classifications in `audit.md`
+remain current until their corresponding leaves land and are verified.
 
 ## Implementation review gate
 

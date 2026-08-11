@@ -540,6 +540,7 @@ func runIssueClaim(ctx context.Context, c *client.Client, args []string) error {
 	}
 	fmt.Printf("Lease Token: %s\n", resp.LeaseToken)
 	fmt.Printf("Attempt ID:  %s\n", resp.AttemptID)
+	fmt.Printf("Generation:  %d\n", resp.LeaseGeneration)
 	fmt.Printf("Expires At:  %s\n", resp.ExpiresAt)
 	fmt.Printf("Version:     %d  (use this for --expected-version on close/handoff, not a value read from `issue get`)\n", resp.Version)
 	return nil

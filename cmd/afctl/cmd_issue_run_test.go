@@ -86,10 +86,11 @@ func (m *mockCoordinator) handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/issues/{id}/claim", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]any{
-			"lease_token": "test-lease-token",
-			"expires_at":  "2099-01-01T00:00:00Z",
-			"attempt_id":  "test-attempt-id",
-			"version":     m.claimVersion,
+			"lease_token":      "test-lease-token",
+			"lease_generation": 7,
+			"expires_at":       "2099-01-01T00:00:00Z",
+			"attempt_id":       "test-attempt-id",
+			"version":          m.claimVersion,
 		})
 	})
 	mux.HandleFunc("POST /v1/issues/{id}/heartbeat", func(w http.ResponseWriter, r *http.Request) {
@@ -231,9 +232,10 @@ func TestIssueRunExportsLeaseEnvToChild(t *testing.T) {
 	sockPath := startMockCoordinator(t, mock)
 
 	printEnv := `test "$AF_LEASE_TOKEN" = "test-lease-token" || exit 10
-test "$AF_ATTEMPT_ID" = "test-attempt-id" || exit 11
-test "$AF_ISSUE_ID" = "afc-3" || exit 12
-test "$AF_EXPECTED_VERSION" = "1" || exit 13
+test "$AF_LEASE_GENERATION" = "7" || exit 11
+test "$AF_ATTEMPT_ID" = "test-attempt-id" || exit 12
+test "$AF_ISSUE_ID" = "afc-3" || exit 13
+test "$AF_EXPECTED_VERSION" = "1" || exit 14
 exit 0`
 	cmd := exec.Command(binPath, "issue", "run", "afc-3", "--actor", "tester", "--ttl", "60", "--", "sh", "-c", printEnv)
 	cmd.Env = append(os.Environ(), "AF_COORDINATOR_SOCKET="+sockPath)

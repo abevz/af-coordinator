@@ -630,6 +630,9 @@ func TestClaimIssue(t *testing.T) {
 	if claim.AttemptID == "" {
 		t.Error("expected non-empty attempt_id")
 	}
+	if claim.LeaseGeneration != 1 {
+		t.Errorf("lease_generation = %d, want 1", claim.LeaseGeneration)
+	}
 
 	// Verify issue status changed.
 	got, lease, err := GetIssue(context.Background(), db, issue.ID)
@@ -657,6 +660,9 @@ func TestClaimIssue(t *testing.T) {
 	}
 	if lease.AttemptID != claim.AttemptID || lease.SessionID != "" {
 		t.Fatalf("unexpected compatibility lease telemetry: %+v", lease)
+	}
+	if lease.LeaseGeneration != claim.LeaseGeneration {
+		t.Fatalf("lease generation = %d, want claim generation %d", lease.LeaseGeneration, claim.LeaseGeneration)
 	}
 }
 
@@ -701,12 +707,81 @@ func TestClaimIssueRecordsAttemptAndSessionWithoutLeakingToken(t *testing.T) {
 	if err := json.Unmarshal([]byte(last.PayloadJSON), &payload); err != nil {
 		t.Fatal(err)
 	}
-	if payload["attempt_id"] != claim.AttemptID || payload["session_id"] != "session-42" ||
+	if payload["attempt_id"] != claim.AttemptID || payload["lease_generation"] != float64(claim.LeaseGeneration) || payload["session_id"] != "session-42" ||
 		payload["ttl_seconds"] != float64(900) || payload["expires_at"] != claim.ExpiresAt {
 		t.Fatalf("unexpected claim payload: %v", payload)
 	}
 	if strings.Contains(last.PayloadJSON, claim.LeaseToken) {
 		t.Fatalf("claim event leaked lease token: %s", last.PayloadJSON)
+	}
+}
+
+func TestLeaseGenerationAdvancesOnlyOnFreshClaim(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+	if _, err := CreateProject(context.Background(), db, "generation", "Generation", ""); err != nil {
+		t.Fatal(err)
+	}
+	issue, err := CreateIssue(context.Background(), db, "generation", core.CreateIssueRequest{
+		ScopeKind: "project", Title: "Monotonic lease generation",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	first, err := ClaimIssueWithSession(context.Background(), db, issue.ID, "agent-1", 3600, "session-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.LeaseGeneration != 1 {
+		t.Fatalf("first generation = %d, want 1", first.LeaseGeneration)
+	}
+	if _, err := HeartbeatLease(context.Background(), db, issue.ID, first.LeaseToken, 3600); err != nil {
+		t.Fatal(err)
+	}
+	reattached, err := ClaimIssueWithSession(context.Background(), db, issue.ID, "agent-1", 3600, "session-2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reattached.Reattached || reattached.LeaseGeneration != first.LeaseGeneration {
+		t.Fatalf("reattach = %+v, want generation %d unchanged", reattached, first.LeaseGeneration)
+	}
+	if err := ReleaseLease(context.Background(), db, issue.ID, first.LeaseToken); err != nil {
+		t.Fatal(err)
+	}
+	second, err := ClaimIssue(context.Background(), db, issue.ID, "agent-2", 3600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.LeaseGeneration != first.LeaseGeneration+1 {
+		t.Fatalf("second generation = %d, want %d", second.LeaseGeneration, first.LeaseGeneration+1)
+	}
+
+	events, err := ListEvents(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var claimGenerations []float64
+	for _, event := range events {
+		if event.EventType != "issue_claimed" && event.EventType != "lease_reattached" && event.EventType != "issue_released" {
+			continue
+		}
+		if strings.Contains(event.PayloadJSON, first.LeaseToken) || strings.Contains(event.PayloadJSON, second.LeaseToken) {
+			t.Fatalf("lifecycle event leaked lease token: %s", event.PayloadJSON)
+		}
+		var payload map[string]any
+		if err := json.Unmarshal([]byte(event.PayloadJSON), &payload); err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := payload["lease_generation"]; !ok {
+			t.Fatalf("%s event missing lease_generation: %v", event.EventType, payload)
+		}
+		if event.EventType == "issue_claimed" {
+			claimGenerations = append(claimGenerations, payload["lease_generation"].(float64))
+		}
+	}
+	if len(claimGenerations) != 2 || claimGenerations[0] != 1 || claimGenerations[1] != 2 {
+		t.Fatalf("claim generations = %v, want [1 2]", claimGenerations)
 	}
 }
 
@@ -738,6 +813,9 @@ func TestLazyReclaimRecordsExpiredAttemptBeforeReplacement(t *testing.T) {
 	if second.AttemptID == first.AttemptID {
 		t.Fatalf("replacement reused attempt_id %q", second.AttemptID)
 	}
+	if second.LeaseGeneration != first.LeaseGeneration+1 {
+		t.Fatalf("replacement generation = %d, want %d", second.LeaseGeneration, first.LeaseGeneration+1)
+	}
 
 	events, err := ListEvents(context.Background(), db, issue.ID)
 	if err != nil {
@@ -748,7 +826,7 @@ func TestLazyReclaimRecordsExpiredAttemptBeforeReplacement(t *testing.T) {
 		switch event.EventType {
 		case "lease_expired":
 			expiredIndex = index
-			var payload map[string]string
+			var payload map[string]any
 			if err := json.Unmarshal([]byte(event.PayloadJSON), &payload); err != nil {
 				t.Fatal(err)
 			}
@@ -1021,12 +1099,15 @@ func TestReleaseLease(t *testing.T) {
 		t.Fatal(err)
 	}
 	last := events[len(events)-1]
-	var payload map[string]string
+	var payload map[string]any
 	if err := json.Unmarshal([]byte(last.PayloadJSON), &payload); err != nil {
 		t.Fatal(err)
 	}
 	if last.EventType != "issue_released" || payload["attempt_id"] != claim.AttemptID || payload["end_reason"] != "released" {
 		t.Fatalf("unexpected release event: type=%q payload=%v", last.EventType, payload)
+	}
+	if payload["lease_generation"] != float64(claim.LeaseGeneration) {
+		t.Fatalf("release event generation = %v, want %d", payload["lease_generation"], claim.LeaseGeneration)
 	}
 	if strings.Contains(last.PayloadJSON, claim.LeaseToken) {
 		t.Fatalf("release event leaked lease token: %s", last.PayloadJSON)
@@ -2115,12 +2196,15 @@ func TestOperatorReleaseIssueClearsStuckLeaseWithoutClosing(t *testing.T) {
 	for _, e := range events {
 		if e.EventType == "issue_operator_released" {
 			sawReleased = true
-			var payload map[string]string
+			var payload map[string]any
 			if err := json.Unmarshal([]byte(e.PayloadJSON), &payload); err != nil {
 				t.Fatal(err)
 			}
 			if payload["reason"] != "flaky-script crashed before persisting the lease token" {
 				t.Fatalf("unexpected release payload: %v", payload)
+			}
+			if payload["lease_generation"] != float64(claim.LeaseGeneration) || payload["attempt_id"] != claim.AttemptID {
+				t.Fatalf("operator release lost lease identity: %v", payload)
 			}
 		}
 	}
@@ -4091,6 +4175,9 @@ func TestClaimIssueSameHolderReattachEmitsEvent(t *testing.T) {
 	if reattachResp.AttemptID != firstResp.AttemptID {
 		t.Errorf("expected same attempt_id after reattach: got %q, want %q", reattachResp.AttemptID, firstResp.AttemptID)
 	}
+	if reattachResp.LeaseGeneration != firstResp.LeaseGeneration {
+		t.Errorf("reattach generation = %d, want %d", reattachResp.LeaseGeneration, firstResp.LeaseGeneration)
+	}
 
 	// Verify the event stream contains a lease_reattached event.
 	events, err := ListEvents(context.Background(), db, issue.ID)
@@ -4116,6 +4203,9 @@ func TestClaimIssueSameHolderReattachEmitsEvent(t *testing.T) {
 	}
 	if payload["attempt_id"] != firstResp.AttemptID {
 		t.Errorf("event attempt_id = %q, want %q", payload["attempt_id"], firstResp.AttemptID)
+	}
+	if payload["lease_generation"] != float64(firstResp.LeaseGeneration) {
+		t.Errorf("event lease_generation = %v, want %d", payload["lease_generation"], firstResp.LeaseGeneration)
 	}
 	if _, ok := payload["expires_at"]; !ok {
 		t.Error("event payload missing expires_at")

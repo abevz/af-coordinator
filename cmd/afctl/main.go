@@ -440,6 +440,7 @@ func printIssueDetailed(i core.Issue, l *core.IssueLease) {
 	if l != nil {
 		fmt.Printf("Claimed:    %s (expires %s)\n", l.Holder, l.ExpiresAt)
 		fmt.Printf("Attempt ID: %s\n", l.AttemptID)
+		fmt.Printf("Generation: %d\n", l.LeaseGeneration)
 		if l.SessionID != "" {
 			fmt.Printf("Session ID: %s\n", l.SessionID)
 		}
@@ -487,6 +488,7 @@ func printIssueFull(i core.Issue, l *core.IssueLease, events []core.Event, notes
 	if l != nil {
 		fmt.Printf("Claimed:       %s (expires %s)\n", l.Holder, l.ExpiresAt)
 		fmt.Printf("Attempt ID:    %s\n", l.AttemptID)
+		fmt.Printf("Generation:    %d\n", l.LeaseGeneration)
 		if l.SessionID != "" {
 			fmt.Printf("Session ID:    %s\n", l.SessionID)
 		}

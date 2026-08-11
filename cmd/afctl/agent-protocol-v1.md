@@ -30,10 +30,11 @@ Every agent session follows this cycle:
    ```
    afctl issue claim <short_id> --actor <name> --ttl 900 [--session-id <non-secret-id>] [--invocation-mode interactive|scheduled]
    ```
-   Exports `lease_token`, `attempt_id`, and `version`. Keep the token secret —
-   it proves your right to mutate the issue. The attempt ID is safe lifecycle
-   correlation; an optional session ID must also be non-secret and never
-   changes the acting identity.
+   Exports `lease_token`, `lease_generation`, `attempt_id`, and `version`. Keep
+   the token secret — it proves your right to mutate the issue. Generation is
+   a non-secret, issue-local fencing value that increases on every fresh claim;
+   the attempt ID is safe lifecycle correlation. An optional session ID must
+   also be non-secret and never changes the acting identity.
 
    Claiming increments the issue's version as a side effect. **Use the
    `version` from this claim response — not one read earlier from `issue
@@ -110,8 +111,9 @@ Every agent session follows this cycle:
    ```
    afctl issue run <short_id> --ttl 900 -- ./do-the-work.sh
    ```
-   The child sees `AF_LEASE_TOKEN`, `AF_ATTEMPT_ID`, `AF_ISSUE_ID`, and
-   `AF_EXPECTED_VERSION` if it needs to make its own coordinator calls.
+   The child sees `AF_LEASE_TOKEN`, `AF_LEASE_GENERATION`, `AF_ATTEMPT_ID`,
+   `AF_ISSUE_ID`, and `AF_EXPECTED_VERSION` if it needs to make its own
+   coordinator calls.
    Exit `0` closes with `--close-resolution` (default `done`, forwarding
    `--branch`/`--pr-url`/`--commit-sha`/`--note`); any other exit, or
    Ctrl-C, hands the lease off with an auto-generated `HANDOFF:` note

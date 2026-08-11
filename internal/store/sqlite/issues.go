@@ -418,7 +418,8 @@ func ClaimIssueWithMode(ctx context.Context, db *sql.DB, issueID, holder string,
 	// Check issue exists and is open.
 	var status, issueType string
 	var version int
-	err = tx.QueryRowContext(ctx, `SELECT status, issue_type, version FROM issues WHERE id = ?`, issueID).Scan(&status, &issueType, &version)
+	var currentGeneration int64
+	err = tx.QueryRowContext(ctx, `SELECT status, issue_type, version, lease_generation FROM issues WHERE id = ?`, issueID).Scan(&status, &issueType, &version, &currentGeneration)
 	if err == sql.ErrNoRows {
 		return core.ClaimResponse{}, core.NewAPIError(core.ErrNotFound, "issue not found: "+issueID)
 	}
@@ -440,10 +441,11 @@ func ClaimIssueWithMode(ctx context.Context, db *sql.DB, issueID, holder string,
 	// Check whether an unexpired lease exists and, if so, whether the
 	// requesting holder already owns it (same-holder reattach).
 	var existingHolder, existingToken, existingAttemptID string
+	var existingGeneration int64
 	err = tx.QueryRowContext(ctx,
-		`SELECT holder, lease_token, attempt_id FROM leases WHERE issue_id = ? AND expires_at > ?`,
+		`SELECT holder, lease_token, attempt_id, lease_generation FROM leases WHERE issue_id = ? AND expires_at > ?`,
 		issueID, nowStr,
-	).Scan(&existingHolder, &existingToken, &existingAttemptID)
+	).Scan(&existingHolder, &existingToken, &existingAttemptID, &existingGeneration)
 	if err != nil && err != sql.ErrNoRows {
 		return core.ClaimResponse{}, fmt.Errorf("check lease: %w", err)
 	}
@@ -464,11 +466,12 @@ func ClaimIssueWithMode(ctx context.Context, db *sql.DB, issueID, holder string,
 			return core.ClaimResponse{}, fmt.Errorf("renew lease: %w", err)
 		}
 		reattachPayload := map[string]any{
-			"attempt_id":      existingAttemptID,
-			"ttl_seconds":     ttlSeconds,
-			"expires_at":      newExpiry,
-			"session_id":      sessionID,
-			"invocation_mode": invocationMode,
+			"attempt_id":       existingAttemptID,
+			"lease_generation": existingGeneration,
+			"ttl_seconds":      ttlSeconds,
+			"expires_at":       newExpiry,
+			"session_id":       sessionID,
+			"invocation_mode":  invocationMode,
 		}
 		if err := insertEvent(ctx, tx, issueID, holder, "lease_reattached", reattachPayload, nowStr); err != nil {
 			return core.ClaimResponse{}, err
@@ -477,11 +480,12 @@ func ClaimIssueWithMode(ctx context.Context, db *sql.DB, issueID, holder string,
 			return core.ClaimResponse{}, fmt.Errorf("commit tx: %w", err)
 		}
 		return core.ClaimResponse{
-			LeaseToken: existingToken,
-			ExpiresAt:  newExpiry,
-			AttemptID:  existingAttemptID,
-			Version:    version,
-			Reattached: true,
+			LeaseToken:      existingToken,
+			LeaseGeneration: existingGeneration,
+			ExpiresAt:       newExpiry,
+			AttemptID:       existingAttemptID,
+			Version:         version,
+			Reattached:      true,
 		}, nil
 	}
 
@@ -489,19 +493,21 @@ func ClaimIssueWithMode(ctx context.Context, db *sql.DB, issueID, holder string,
 	// Record its terminal outcome before replacing it, so the event stream
 	// remains the complete attempt history.
 	var expiredAttemptID, expiredSessionID, expiredAt string
+	var expiredGeneration int64
 	err = tx.QueryRowContext(ctx,
-		`SELECT attempt_id, session_id, expires_at FROM leases WHERE issue_id = ? AND expires_at <= ?`,
+		`SELECT attempt_id, session_id, expires_at, lease_generation FROM leases WHERE issue_id = ? AND expires_at <= ?`,
 		issueID, nowStr,
-	).Scan(&expiredAttemptID, &expiredSessionID, &expiredAt)
+	).Scan(&expiredAttemptID, &expiredSessionID, &expiredAt, &expiredGeneration)
 	if err != nil && err != sql.ErrNoRows {
 		return core.ClaimResponse{}, fmt.Errorf("select expired lease: %w", err)
 	}
 	if err == nil {
 		payload := map[string]any{
-			"attempt_id": expiredAttemptID,
-			"end_reason": "expired",
-			"expired_at": expiredAt,
-			"session_id": expiredSessionID,
+			"attempt_id":       expiredAttemptID,
+			"lease_generation": expiredGeneration,
+			"end_reason":       "expired",
+			"expired_at":       expiredAt,
+			"session_id":       expiredSessionID,
 		}
 		if err := insertEvent(ctx, tx, issueID, "system", "lease_expired", payload, nowStr); err != nil {
 			return core.ClaimResponse{}, err
@@ -518,12 +524,13 @@ func ClaimIssueWithMode(ctx context.Context, db *sql.DB, issueID, holder string,
 	// intentionally never written to events or public issue responses.
 	leaseToken := uuid.New().String()
 	attemptID := uuid.New().String()
+	leaseGeneration := currentGeneration + 1
 	expiresAt := now.Add(time.Duration(ttlSeconds) * time.Second).Format(time.RFC3339)
 
 	_, err = tx.ExecContext(ctx,
-		`INSERT INTO leases (issue_id, holder, lease_token, expires_at, attempt_id, session_id, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		issueID, holder, leaseToken, expiresAt, attemptID, sessionID, nowStr, nowStr,
+		`INSERT INTO leases (issue_id, holder, lease_token, expires_at, attempt_id, session_id, lease_generation, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		issueID, holder, leaseToken, expiresAt, attemptID, sessionID, leaseGeneration, nowStr, nowStr,
 	)
 	if err != nil {
 		// Constraint violation (PK on issue_id) means another claim won while
@@ -537,19 +544,21 @@ func ClaimIssueWithMode(ctx context.Context, db *sql.DB, issueID, holder string,
 
 	// Update issue status and version.
 	_, err = tx.ExecContext(ctx,
-		`UPDATE issues SET status = 'in_progress', claimed_at = ?, version = version + 1, updated_at = ? WHERE id = ?`,
-		nowStr, nowStr, issueID,
+		`UPDATE issues SET status = 'in_progress', claimed_at = ?, version = version + 1,
+		 lease_generation = ?, updated_at = ? WHERE id = ?`,
+		nowStr, leaseGeneration, nowStr, issueID,
 	)
 	if err != nil {
 		return core.ClaimResponse{}, fmt.Errorf("update issue: %w", err)
 	}
 
 	payload := map[string]any{
-		"attempt_id":      attemptID,
-		"ttl_seconds":     ttlSeconds,
-		"expires_at":      expiresAt,
-		"session_id":      sessionID,
-		"invocation_mode": invocationMode,
+		"attempt_id":       attemptID,
+		"lease_generation": leaseGeneration,
+		"ttl_seconds":      ttlSeconds,
+		"expires_at":       expiresAt,
+		"session_id":       sessionID,
+		"invocation_mode":  invocationMode,
 	}
 	if err := insertEvent(ctx, tx, issueID, holder, "issue_claimed", payload, nowStr); err != nil {
 		return core.ClaimResponse{}, err
@@ -559,7 +568,7 @@ func ClaimIssueWithMode(ctx context.Context, db *sql.DB, issueID, holder string,
 		return core.ClaimResponse{}, fmt.Errorf("commit tx: %w", err)
 	}
 
-	return core.ClaimResponse{LeaseToken: leaseToken, ExpiresAt: expiresAt, AttemptID: attemptID, Version: version + 1}, nil
+	return core.ClaimResponse{LeaseToken: leaseToken, LeaseGeneration: leaseGeneration, ExpiresAt: expiresAt, AttemptID: attemptID, Version: version + 1}, nil
 }
 
 // HeartbeatLease extends the TTL on an existing lease.
@@ -611,10 +620,11 @@ func ReleaseLease(ctx context.Context, db *sql.DB, issueID, leaseToken string) e
 
 	// Find the lease.
 	var holder, attemptID string
+	var leaseGeneration int64
 	err = tx.QueryRowContext(ctx,
-		`SELECT holder, attempt_id FROM leases WHERE issue_id = ? AND lease_token = ?`,
+		`SELECT holder, attempt_id, lease_generation FROM leases WHERE issue_id = ? AND lease_token = ?`,
 		issueID, leaseToken,
-	).Scan(&holder, &attemptID)
+	).Scan(&holder, &attemptID, &leaseGeneration)
 	if err == sql.ErrNoRows {
 		return core.NewAPIError(core.ErrLeaseExpired, "lease not found")
 	}
@@ -647,8 +657,9 @@ func ReleaseLease(ctx context.Context, db *sql.DB, issueID, leaseToken string) e
 	}
 
 	if err := insertEvent(ctx, tx, issueID, holder, "issue_released", map[string]any{
-		"attempt_id": attemptID,
-		"end_reason": "released",
+		"attempt_id":       attemptID,
+		"lease_generation": leaseGeneration,
+		"end_reason":       "released",
 	}, now); err != nil {
 		return err
 	}
@@ -684,11 +695,12 @@ func HandoffLease(ctx context.Context, db *sql.DB, issueID string, req core.Hand
 
 	now := time.Now().UTC().Format(time.RFC3339)
 	var holder, attemptID string
+	var leaseGeneration int64
 	err = tx.QueryRowContext(ctx,
-		`SELECT holder, attempt_id FROM leases
+		`SELECT holder, attempt_id, lease_generation FROM leases
 		 WHERE issue_id = ? AND lease_token = ? AND expires_at > ?`,
 		issueID, req.LeaseToken, now,
-	).Scan(&holder, &attemptID)
+	).Scan(&holder, &attemptID, &leaseGeneration)
 	if err == sql.ErrNoRows {
 		return core.HandoffResponse{}, core.NewAPIError(core.ErrLeaseExpired, "active lease not found")
 	}
@@ -736,8 +748,9 @@ func HandoffLease(ctx context.Context, db *sql.DB, issueID string, req core.Hand
 		return core.HandoffResponse{}, fmt.Errorf("update issue: %w", err)
 	}
 	if err := insertEvent(ctx, tx, issueID, holder, "issue_released", map[string]any{
-		"attempt_id": attemptID,
-		"end_reason": "handoff",
+		"attempt_id":       attemptID,
+		"lease_generation": leaseGeneration,
+		"end_reason":       "handoff",
 	}, now); err != nil {
 		return core.HandoffResponse{}, err
 	}
@@ -750,11 +763,11 @@ func HandoffLease(ctx context.Context, db *sql.DB, issueID string, req core.Hand
 
 func getActiveLease(ctx context.Context, db *sql.DB, issueID string) (*core.IssueLease, error) {
 	row := db.QueryRowContext(ctx,
-		`SELECT holder, lease_token, expires_at, attempt_id, session_id FROM leases WHERE issue_id = ? AND expires_at > ?`,
+		`SELECT holder, lease_token, lease_generation, expires_at, attempt_id, session_id FROM leases WHERE issue_id = ? AND expires_at > ?`,
 		issueID, time.Now().UTC().Format(time.RFC3339),
 	)
 	var lease core.IssueLease
-	err := row.Scan(&lease.Holder, &lease.LeaseToken, &lease.ExpiresAt, &lease.AttemptID, &lease.SessionID)
+	err := row.Scan(&lease.Holder, &lease.LeaseToken, &lease.LeaseGeneration, &lease.ExpiresAt, &lease.AttemptID, &lease.SessionID)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -956,8 +969,9 @@ func UpdateIssue(ctx context.Context, db *sql.DB, issueID string, req core.Updat
 		}
 
 		if err := insertEvent(ctx, tx, issueID, lease.Holder, "issue_released", map[string]any{
-			"attempt_id": lease.AttemptID,
-			"end_reason": "released",
+			"attempt_id":       lease.AttemptID,
+			"lease_generation": lease.LeaseGeneration,
+			"end_reason":       "released",
 		}, now); err != nil {
 			return core.Issue{}, err
 		}
@@ -1037,10 +1051,11 @@ func CloseIssue(ctx context.Context, db *sql.DB, issueID string, req core.CloseI
 	}
 
 	var leaseToken, attemptID string
+	var leaseGeneration int64
 	err = tx.QueryRowContext(ctx,
-		`SELECT lease_token, attempt_id FROM leases WHERE issue_id = ? AND expires_at > ?`,
+		`SELECT lease_token, attempt_id, lease_generation FROM leases WHERE issue_id = ? AND expires_at > ?`,
 		issueID, now,
-	).Scan(&leaseToken, &attemptID)
+	).Scan(&leaseToken, &attemptID, &leaseGeneration)
 	if err == sql.ErrNoRows {
 		return core.CloseIssueResult{}, core.NewAPIError(core.ErrLeaseExpired,
 			"an active lease is required to close an issue")
@@ -1076,6 +1091,7 @@ func CloseIssue(ctx context.Context, db *sql.DB, issueID string, req core.CloseI
 	payload := terminalEventPayload(issue.Status, req.Resolution, issue.ExternalKey)
 	payload["invocation_mode"] = invocationMode
 	payload["attempt_id"] = attemptID
+	payload["lease_generation"] = leaseGeneration
 	payload["end_reason"] = req.Resolution
 	if req.Branch != "" {
 		payload["branch"] = req.Branch
@@ -1139,6 +1155,13 @@ func OperatorCloseIssue(ctx context.Context, db *sql.DB, issueID string, req cor
 	result.PRURL = req.PRURL
 	result.CommitSHA = req.CommitSHA
 
+	var attemptID sql.NullString
+	var leaseGeneration sql.NullInt64
+	if err := tx.QueryRowContext(ctx,
+		`SELECT attempt_id, lease_generation FROM leases WHERE issue_id = ?`, issueID,
+	).Scan(&attemptID, &leaseGeneration); err != nil && err != sql.ErrNoRows {
+		return core.CloseIssueResult{}, fmt.Errorf("select operator-close lease: %w", err)
+	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM leases WHERE issue_id = ?`, issueID); err != nil {
 		return core.CloseIssueResult{}, fmt.Errorf("delete leases: %w", err)
 	}
@@ -1154,6 +1177,12 @@ func OperatorCloseIssue(ctx context.Context, db *sql.DB, issueID string, req cor
 	payload := terminalEventPayload(issue.Status, req.Resolution, issue.ExternalKey)
 	payload["invocation_mode"] = invocationMode
 	payload["reason"] = req.Reason
+	if attemptID.Valid {
+		payload["attempt_id"] = attemptID.String
+	}
+	if leaseGeneration.Valid {
+		payload["lease_generation"] = leaseGeneration.Int64
+	}
 	if req.Branch != "" {
 		payload["branch"] = req.Branch
 	}
@@ -1272,11 +1301,22 @@ func OperatorReleaseIssue(ctx context.Context, db *sql.DB, issueID string, req c
 	} else if rows != 1 {
 		return core.Issue{}, core.NewAPIError(core.ErrConflict, "issue changed while releasing")
 	}
+	var attemptID string
+	var leaseGeneration int64
+	if err := tx.QueryRowContext(ctx,
+		`SELECT attempt_id, lease_generation FROM leases WHERE issue_id = ?`, issueID,
+	).Scan(&attemptID, &leaseGeneration); err == sql.ErrNoRows {
+		return core.Issue{}, core.NewAPIError(core.ErrLeaseExpired, "lease not found")
+	} else if err != nil {
+		return core.Issue{}, fmt.Errorf("select operator-release lease: %w", err)
+	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM leases WHERE issue_id = ?`, issueID); err != nil {
 		return core.Issue{}, fmt.Errorf("delete leases: %w", err)
 	}
 	if err := insertEvent(ctx, tx, issueID, req.Actor, "issue_operator_released", map[string]any{
-		"reason": req.Reason,
+		"reason":           req.Reason,
+		"attempt_id":       attemptID,
+		"lease_generation": leaseGeneration,
 	}, now); err != nil {
 		return core.Issue{}, err
 	}

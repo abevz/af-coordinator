@@ -173,6 +173,87 @@ func TestMigrateLeaseAttemptsBackfillsExistingLease(t *testing.T) {
 	}
 }
 
+func TestMigrateLeaseGenerationBackfillsExistingLease(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		activeLease bool
+		wantIssue   int64
+		wantLease   int64
+	}{
+		{name: "without_active_lease", wantIssue: 0},
+		{name: "with_active_lease", activeLease: true, wantIssue: 1, wantLease: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db, err := sql.Open("sqlite", ":memory:")
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = db.Close() })
+			db.SetMaxOpenConns(1)
+			if _, err := db.Exec("PRAGMA foreign_keys=ON"); err != nil {
+				t.Fatal(err)
+			}
+
+			legacyMigrations := embeddedMigrations(t,
+				"0001_schema_v1.sql", "0002_issue_type.sql", "0003_acceptance_criteria.sql",
+				"0004_issue_external_key.sql", "0005_event_sequence.sql",
+				"0006_lease_attempts.sql", "0007_issue_tags.sql",
+			)
+			if err := Migrate(context.Background(), db, legacyMigrations); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := CreateProject(context.Background(), db, "test", "Test", ""); err != nil {
+				t.Fatal(err)
+			}
+			issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{
+				ScopeKind: "project", Title: "Generation migration",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.activeLease {
+				const now = "2026-07-13T20:00:00Z"
+				if _, err := db.Exec(
+					`INSERT INTO leases (issue_id, holder, lease_token, expires_at, attempt_id, session_id, created_at, updated_at)
+					 VALUES (?, 'legacy-agent', 'legacy-token', '2099-01-01T00:00:00Z', 'legacy-attempt', '', ?, ?)`,
+					issue.ID, now, now,
+				); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			if err := Migrate(context.Background(), db, embeddedMigrations(t, "0008_lease_generation.sql")); err != nil {
+				t.Fatal(err)
+			}
+			var issueGeneration int64
+			if err := db.QueryRow(`SELECT lease_generation FROM issues WHERE id = ?`, issue.ID).Scan(&issueGeneration); err != nil {
+				t.Fatal(err)
+			}
+			if issueGeneration != tc.wantIssue {
+				t.Fatalf("issue lease_generation = %d, want %d", issueGeneration, tc.wantIssue)
+			}
+			_, publicLease, err := GetIssue(context.Background(), db, issue.ID)
+			if err != nil {
+				t.Fatalf("read upgraded issue: %v", err)
+			}
+			if tc.activeLease {
+				var leaseGeneration int64
+				if err := db.QueryRow(`SELECT lease_generation FROM leases WHERE issue_id = ?`, issue.ID).Scan(&leaseGeneration); err != nil {
+					t.Fatal(err)
+				}
+				if leaseGeneration != tc.wantLease {
+					t.Fatalf("lease lease_generation = %d, want %d", leaseGeneration, tc.wantLease)
+				}
+				if publicLease == nil || publicLease.LeaseGeneration != tc.wantLease {
+					t.Fatalf("public upgraded lease = %+v, want generation %d", publicLease, tc.wantLease)
+				}
+			} else if publicLease != nil {
+				t.Fatalf("unexpected lease after no-active-lease upgrade: %+v", publicLease)
+			}
+		})
+	}
+}
+
 func embeddedMigrations(t *testing.T, names ...string) fstest.MapFS {
 	t.Helper()
 	result := fstest.MapFS{}
