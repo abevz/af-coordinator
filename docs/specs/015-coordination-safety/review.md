@@ -6,8 +6,8 @@ Specification and backlog slicing complete; implementation in progress.
 
 ## AFC-SDD-0151 / afc-103 implementation review
 
-The lease-generation slice is implemented on
-`feat/afc-103-lease-generation` pending merge:
+The lease-generation slice is merged via PR `#47` (source `78a6489`, merge
+`48c157d`):
 
 - migration `0008_lease_generation.sql` adds an issue-local counter and the
   matching active-lease generation, backfilling active legacy leases to `1`;
@@ -26,13 +26,17 @@ Verification in the sibling worktree:
 - `go test ./... -count=1` — pass;
 - `go test -race ./... -count=1` — pass.
 
+Installed verification confirmed generation `1` for a migrated active legacy
+lease and monotonic generations `1`, then `2`, across release and fresh claim.
+
 The generation is not yet required on heartbeat/update/handoff/close requests;
 those atomic fencing predicates remain owned by `afc-104` and `afc-105`.
 
 ## AFC-SDD-0154 / afc-106 implementation review
 
-The ready-qualified claim slice is implemented on `fix/afc-106-ready-claim`
-pending merge:
+The ready-qualified claim slice is merged via PR `#48` (source `d876146`, merge
+`a76b099`), with its typed `issue_not_ready` correction in PR `#49` (source
+`2a83437`, merge `4f94a0a`):
 
 - ready listing and claim use one executable-state predicate for status, issue
   type, and unfinished `blocks` dependencies;
@@ -52,13 +56,17 @@ Verification in the sibling worktree:
 - `go test ./... -count=1` — pass;
 - `go test -race ./... -count=1` — pass.
 
+Installed black-box verification confirmed a blocked direct claim returns
+`issue_not_ready` with CLI exit code `7` and no claim side effects.
+
 Durable retry of an ambiguously completed claim remains intentionally pending
 the operation-id ledger in `afc-111`; until then, clients must reconcile rather
 than attempting holder-only token recovery.
 
 ## AFC-SDD-0156 / afc-108 implementation review
 
-The single-daemon writer and SQLite connection-contract slice is implemented:
+The single-daemon writer and SQLite connection-contract slice is merged via PR
+`#50` (source `a055aa7`, merge `28b0f80`):
 
 - startup takes a non-blocking `flock` on `<canonical-db-path>.lock` before
   opening or migrating SQLite and holds it until listener and database shutdown;
@@ -86,6 +94,10 @@ Verification in the sibling worktree:
   disturbing the first listener; after `SIGKILL`, a replacement acquired the
   released lock, removed the stale socket, and served `/v1/health`;
 - black-box modes — database and lock `0600`, Unix socket `0660`.
+
+The same black-box recovery scenario passed through the installed binaries at
+revision `28b0f80`; `afctl doctor` confirmed client, daemon, and local `HEAD`
+revision parity, and the live `afc-108` claim survived the service restart.
 
 This lock prevents cooperative daemon duplication. It deliberately does not
 prevent hostile same-UID code from opening SQLite directly. Full eight-case
