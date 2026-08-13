@@ -14,7 +14,7 @@ Status values describe implementation, not specification completeness.
 | R-08 lease time semantics | `afc-104`, `afc-114` | Lease/TTL; restart failure cases | planned |
 | R-09 idempotent mutations | `afc-111`, `afc-112`, `afc-113` | Idempotency; Race 6 | planned |
 | R-10 crash/recovery | `afc-114` | Crash/Recovery Analysis; SQLite correctness | planned |
-| R-11 protocol and agent decisions | `afc-109`, `afc-116` | Protocol/API; Agent UX | fail-closed `issue run` ownership-loss behavior implemented by `afc-109` with process-group correction pending merge; broader protocol hardening remains `afc-116` |
+| R-11 protocol and agent decisions | `afc-109`, `afc-116` | Protocol/API; Agent UX | fail-closed `issue run` ownership-loss behavior verified by corrected PR `#58`; broader protocol hardening remains `afc-116` |
 | R-12 audit/observability | `afc-115` | Auditability; Observability | planned |
 | R-13 verification evidence | each behavior leaf, then `afc-110`, `afc-114` | Six races; eight failure cases | planned |
 
