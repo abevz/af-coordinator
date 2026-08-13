@@ -138,9 +138,16 @@ files, and one SQLite database. The reopened `afc-108` change now:
 - normalizes existing default runtime directories to `0700`, while leaving
   custom configured parents operator-managed.
 
-Focused tests pass in `fix/afc-108-canonical-db-identity`. Merge, full-suite,
-race-suite, and installed runtime verification remain to be recorded before the
-reopened issue can close.
+Verification after rebasing onto the corrected `afc-109` remote main:
+
+- focused daemon singleton and permission regressions — pass;
+- `go test ./... -count=1` — pass;
+- `go test -race ./... -count=1` — pass;
+- `go vet ./...` and `make build` — pass.
+
+PR, CI, merge, and scratch installed-runtime evidence remain to be recorded
+before the reopened issue can close. The production daemon must remain
+untouched until the operator separately permits an install/restart.
 
 ## AFC-SDD-0155 / afc-107 implementation review
 
