@@ -12,8 +12,8 @@ leader, its active `sleep` child retained the subprocess pipes, and the shell's
 TERM trap never recorded graceful cancellation before `WaitDelay` killed the
 leader. The reopened correction isolates every `issue run` workload in its own
 Unix process group, sends group-wide `SIGTERM`, and performs bounded group-wide
-`SIGKILL` cleanup after a cancelled run. Final verification and merge evidence
-remain to be recorded.
+`SIGKILL` cleanup after a cancelled run. The correction is merged via PR `#58`
+(source `fcc768e`, merge `b6fb9b0`).
 
 Local verification in the sibling worktree:
 
@@ -23,7 +23,8 @@ Local verification in the sibling worktree:
 - `go test ./... -count=1` — pass;
 - `go test -race ./... -count=1` — pass.
 
-PR, CI, and merge evidence remain pending.
+GitHub CI passed in 2m33s before merge. Production daemon and installed binaries
+were intentionally not changed or restarted during this follow-up.
 
 ## AFC-SDD-0151 / afc-103 implementation review
 
