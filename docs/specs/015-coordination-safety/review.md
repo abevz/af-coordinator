@@ -74,7 +74,12 @@ Local verification in the sibling worktree:
 - `go test ./... -count=1` — pass;
 - `go test -race ./... -count=1` — pass.
 
-PR, CI, and merge evidence remain to be recorded.
+The correction is merged via PR `#62` (source `6620f0c`, merge `43574f5`);
+GitHub CI passed in 2m24s. A temporary installation under `/tmp` ran the merged
+revision against a scratch DB/socket: after a one-second lease expired,
+`afctl issue update` returned typed `lease_expired`, and reread preserved the
+original title and version. The production daemon and installed binaries were
+not changed or restarted.
 
 ## AFC-SDD-0157 / afc-109 quality follow-up
 
