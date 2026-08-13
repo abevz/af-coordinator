@@ -245,6 +245,12 @@ still-owned job. No heartbeat goroutine survives command exit.
 
 **Dependencies.** `afc-101`, `afc-104`.
 
+**Reopened 2026-08-13.** The focused regression fails on the merged
+implementation: `exec.CommandContext` sends `SIGTERM` only to the shell leader,
+so its active `sleep` child retains the pipes and the shell never runs its TERM
+trap before `WaitDelay` kills the leader. The correction must isolate and
+terminate the launched process group, with bounded cleanup of descendants.
+
 ## AFC-SDD-0158 / afc-110 — Six-race concurrency proof
 
 **Problem.** The existing suite has useful lifecycle tests, but shared helpers

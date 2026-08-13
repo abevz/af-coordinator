@@ -252,7 +252,10 @@ agent to decide its next action. Error documentation separates:
 
 `afctl issue run` treats `lease_expired`, token/generation mismatch, or
 confirmed replacement as ownership loss: it cancels the child, attempts a
-bounded graceful termination, never closes, and returns a distinct failure.
+bounded graceful termination of the isolated Unix process group, never closes,
+and returns a distinct failure. Group-wide `SIGTERM` lets both a shell leader
+and its current child observe cancellation; bounded `SIGKILL` cleanup prevents
+a descendant that ignores termination from surviving the cancelled run.
 Transient transport failures may be retried with the same heartbeat operation
 ID only within the remaining known lease window; once ownership cannot be
 proved, the child is stopped.
