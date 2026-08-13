@@ -145,9 +145,15 @@ Verification after rebasing onto the corrected `afc-109` remote main:
 - `go test -race ./... -count=1` — pass;
 - `go vet ./...` and `make build` — pass.
 
-PR, CI, merge, and scratch installed-runtime evidence remain to be recorded
-before the reopened issue can close. The production daemon must remain
-untouched until the operator separately permits an install/restart.
+The correction is merged via PR `#60` (source `41d5517`, merge `46f1623`);
+GitHub CI passed in 2m22s. A temporary `make build-install` target under `/tmp`
+proved revision parity without replacing user binaries. In that scratch
+runtime, the second daemon through a DB-file symlink exited as already owned;
+after `SIGKILL`, a replacement served health on the stale socket using the alias
+path; only canonical `real.db.lock` existed and DB/WAL/SHM modes were `0600`.
+
+The production daemon and installed binaries were intentionally left untouched
+until the operator separately permits an install/restart.
 
 ## AFC-SDD-0155 / afc-107 implementation review
 
