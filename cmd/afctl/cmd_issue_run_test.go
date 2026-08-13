@@ -3,14 +3,18 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/abevz/af-coordinator/internal/testsocket"
 )
@@ -312,14 +316,19 @@ func TestIssueRunStopsChildOnLeaseLoss(t *testing.T) {
 	sockPath := startMockCoordinator(t, mock)
 
 	marker := filepath.Join(t.TempDir(), "term-marker")
-	// The child trap writes the marker on SIGTERM. A trailing command after
-	// sleep keeps the shell from exec-replacing itself, so the trap actually
-	// runs when afctl terminates the child.
+	descendantPID := filepath.Join(t.TempDir(), "descendant-pid")
+	// The leader records graceful SIGTERM handling while its background child
+	// deliberately ignores SIGTERM. issue run must not return until bounded
+	// cleanup has also killed that descendant.
 	child := `trap 'echo terminated > "$TERM_MARKER"; exit 0' TERM
-sleep 10
-echo after-sleep`
+	sh -c 'trap "" TERM; echo $$ > "$DESCENDANT_PID"; while :; do sleep 1; done' &
+	wait`
 	cmd := exec.Command(binPath, "issue", "run", "afc-4", "--actor", "tester", "--ttl", "15", "--", "sh", "-c", child)
-	cmd.Env = append(os.Environ(), "AF_COORDINATOR_SOCKET="+sockPath, "TERM_MARKER="+marker)
+	cmd.Env = append(os.Environ(),
+		"AF_COORDINATOR_SOCKET="+sockPath,
+		"TERM_MARKER="+marker,
+		"DESCENDANT_PID="+descendantPID,
+	)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -342,6 +351,28 @@ echo after-sleep`
 	}
 	if string(markerData) != "terminated\n" {
 		t.Errorf("marker = %q, want %q", string(markerData), "terminated\n")
+	}
+	descendantData, rerr := os.ReadFile(descendantPID)
+	if rerr != nil {
+		t.Fatalf("descendant PID not written: %v", rerr)
+	}
+	descendant, rerr := strconv.Atoi(strings.TrimSpace(string(descendantData)))
+	if rerr != nil {
+		t.Fatalf("parse descendant PID %q: %v", descendantData, rerr)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		err := syscall.Kill(descendant, 0)
+		if errors.Is(err, syscall.ESRCH) {
+			break
+		}
+		if err != nil {
+			t.Fatalf("probe descendant process %d: %v", descendant, err)
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("descendant process %d survived lease-loss cancellation", descendant)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 
 	mock.mu.Lock()

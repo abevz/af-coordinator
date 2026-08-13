@@ -168,6 +168,10 @@ func runIssueRun(ctx context.Context, c *client.Client, args []string) error {
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+	// Isolate the launched workload from afctl's own process group. Cancelling
+	// only the shell leader can otherwise leave its current child running and
+	// prevent the shell from observing SIGTERM until WaitDelay kills it.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Env = append(os.Environ(),
 		"AF_LEASE_TOKEN="+claim.LeaseToken,
 		fmt.Sprintf("AF_LEASE_GENERATION=%d", claim.LeaseGeneration),
@@ -175,10 +179,11 @@ func runIssueRun(ctx context.Context, c *client.Client, args []string) error {
 		"AF_ISSUE_ID="+issueID,
 		fmt.Sprintf("AF_EXPECTED_VERSION=%d", claim.Version),
 	)
-	// exec.CommandContext's default cancellation is an immediate SIGKILL;
-	// give the child a chance to clean up with SIGTERM first.
+	// exec.CommandContext's default cancellation is an immediate SIGKILL of
+	// only the process leader. Signal the isolated workload group so shells and
+	// their current children all get the same graceful-stop request.
 	cmd.Cancel = func() error {
-		return cmd.Process.Signal(syscall.SIGTERM)
+		return signalCommandProcessGroup(cmd, syscall.SIGTERM)
 	}
 	cmd.WaitDelay = 5 * time.Second
 
@@ -196,6 +201,16 @@ func runIssueRun(ctx context.Context, c *client.Client, args []string) error {
 		// terminating so no orphan process is left behind.
 		runErr = <-runErrCh
 	}
+	// WaitDelay can force the process leader to exit while a descendant that
+	// ignored SIGTERM remains in the isolated group. Ensure no such descendant
+	// survives a cancelled run.
+	var cleanupErr error
+	if childCtx.Err() != nil {
+		cleanupErr = signalCommandProcessGroup(cmd, syscall.SIGKILL)
+		if errors.Is(cleanupErr, os.ErrProcessDone) {
+			cleanupErr = nil
+		}
+	}
 
 	// Stop the heartbeat and wait for it to return so no heartbeat goroutine
 	// survives command exit.
@@ -211,7 +226,13 @@ func runIssueRun(ctx context.Context, c *client.Client, args []string) error {
 	}
 
 	if lossErr != nil {
+		if cleanupErr != nil {
+			return fmt.Errorf("%w; process-group cleanup failed: %v", lossErr, cleanupErr)
+		}
 		return lossErr
+	}
+	if cleanupErr != nil {
+		return fmt.Errorf("clean up cancelled issue run process group: %w", cleanupErr)
 	}
 
 	background := context.Background()
@@ -255,6 +276,19 @@ func runIssueRun(ctx context.Context, c *client.Client, args []string) error {
 	fmt.Fprintf(os.Stderr, "issue run: command failed, lease handed off with note: %s\n", handoffNote)
 	os.Exit(exitCode)
 	return nil // unreachable
+}
+
+func signalCommandProcessGroup(cmd *exec.Cmd, signal syscall.Signal) error {
+	if cmd.Process == nil {
+		return os.ErrProcessDone
+	}
+	if err := syscall.Kill(-cmd.Process.Pid, signal); err != nil {
+		if errors.Is(err, syscall.ESRCH) {
+			return os.ErrProcessDone
+		}
+		return err
+	}
+	return nil
 }
 
 // runHeartbeat heartbeats the lease until ownership is lost, the known lease

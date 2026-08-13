@@ -4,6 +4,27 @@
 
 Specification and backlog slicing complete; implementation in progress.
 
+## AFC-SDD-0157 / afc-109 quality follow-up
+
+The 2026-08-13 full-suite review reproduced a deterministic failure in
+`TestIssueRunStopsChildOnLeaseLoss`: cancellation signalled only the shell
+leader, its active `sleep` child retained the subprocess pipes, and the shell's
+TERM trap never recorded graceful cancellation before `WaitDelay` killed the
+leader. The reopened correction isolates every `issue run` workload in its own
+Unix process group, sends group-wide `SIGTERM`, and performs bounded group-wide
+`SIGKILL` cleanup after a cancelled run. Final verification and merge evidence
+remain to be recorded.
+
+Local verification in the sibling worktree:
+
+- the focused regression failed before the correction because the TERM marker
+  was absent, then passed with a TERM marker and proof that a descendant which
+  ignored TERM no longer existed when `issue run` returned;
+- `go test ./... -count=1` — pass;
+- `go test -race ./... -count=1` — pass.
+
+PR, CI, and merge evidence remain pending.
+
 ## AFC-SDD-0151 / afc-103 implementation review
 
 The lease-generation slice is merged via PR `#47` (source `78a6489`, merge
