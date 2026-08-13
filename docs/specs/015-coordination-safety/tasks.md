@@ -138,6 +138,9 @@ writer transaction, require token+generation+expiry there, verify affected rows
 for update-release, handoff, and close, and add store/API plus same-version
 concurrency regressions.
 
+**Correction status.** Merged via PR `#62`; exact verification evidence is
+recorded in `review.md`.
+
 ## AFC-SDD-0154 / afc-106 — Ready-qualified claim and safe reattach
 
 **Problem.** Claim validates status and lease but not unfinished `blocks`
