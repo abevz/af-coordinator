@@ -5,7 +5,7 @@ Status values describe implementation, not specification completeness.
 | Requirement | Primary leaves | Audit evidence | Status |
 | --- | --- | --- | --- |
 | R-01 authoritative restart state | `afc-114` | Current Architecture; Crash/Recovery Analysis | planned |
-| R-02 one mutation authority | `afc-108` | Authoritative state; Write ownership; SQLite correctness | verified by PR `#50`, CI, and installed two-daemon/restart black-box at `28b0f80` |
+| R-02 one mutation authority | `afc-108` | Authoritative state; Write ownership; SQLite correctness | reopened after DB-file symlink bypass reproduction; canonical identity and automated two-process recovery fix implemented, merge/install verification pending |
 | R-03 atomic ready-qualified claim | `afc-106`, `afc-110` | Claim semantics; Race 1; Dependencies | implemented by `afc-106`; final multi-connection matrix pending `afc-110` |
 | R-04 lease identity and fencing | `afc-103`, `afc-104`, `afc-105`, `afc-106` | Claim semantics; Races 2-4 | generation and secret-safe claim implemented by `afc-103`/`afc-106`; mutation fencing pending `afc-104`/`afc-105` |
 | R-05 heartbeat and release | `afc-104`, `afc-113` | Lease/TTL; Heartbeat; Race 2 | planned |
