@@ -218,6 +218,13 @@ than corrupt/partial state. Architecture docs and actual connection model agree.
 
 **Dependencies.** `afc-101`.
 
+**Reopened 2026-08-13.** Quality review reproduced two daemons serving one
+SQLite database when the second path was a symlink of the database file itself;
+the original canonical-path test covered only a symlinked parent directory.
+The follow-up must cover existing and dangling DB-file symlinks with a real
+two-process regression, retain abrupt-death replacement proof, and normalize
+existing default runtime-directory modes without chmodding custom parents.
+
 ## AFC-SDD-0157 / afc-109 — Stop `issue run` on lease loss
 
 **Problem.** The background heartbeat prints an error and continues running the

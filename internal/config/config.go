@@ -39,6 +39,21 @@ func (c Config) SlogLevel() slog.Level {
 	}
 }
 
+// UsesDefaultSocketPath reports whether the daemon owns the socket directory
+// layout and may safely normalize its permissions. Custom path parents remain
+// operator-managed because they may intentionally be shared.
+func (c Config) UsesDefaultSocketPath() bool {
+	return filepath.Clean(c.SocketPath) == filepath.Clean(expandHome(defaultSocketPath))
+}
+
+// UsesDefaultDBPath reports whether the daemon owns the database directory
+// layout and may safely normalize its permissions. Custom path parents remain
+// operator-managed because chmodding an arbitrary configured directory could
+// affect unrelated files.
+func (c Config) UsesDefaultDBPath() bool {
+	return filepath.Clean(c.DBPath) == filepath.Clean(expandHome(defaultDBPath))
+}
+
 func expandHome(path string) string {
 	if path == "" || path[0] != '~' {
 		return path

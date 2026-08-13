@@ -20,11 +20,11 @@ import (
 )
 
 func RunDaemon(ctx context.Context, logger *slog.Logger, cfg config.Config, st store.CoordinatorStore) error {
-	if err := os.MkdirAll(filepath.Dir(cfg.SocketPath), 0o700); err != nil {
+	if err := ensureRuntimeDirectory(filepath.Dir(cfg.SocketPath), cfg.UsesDefaultSocketPath()); err != nil {
 		return fmt.Errorf("create socket directory: %w", err)
 	}
 
-	if err := os.MkdirAll(filepath.Dir(cfg.DBPath), 0o700); err != nil {
+	if err := ensureRuntimeDirectory(filepath.Dir(cfg.DBPath), cfg.UsesDefaultDBPath()); err != nil {
 		return fmt.Errorf("create db directory: %w", err)
 	}
 
@@ -150,6 +150,18 @@ func RunDaemon(ctx context.Context, logger *slog.Logger, cfg config.Config, st s
 
 		return nil
 	}
+}
+
+func ensureRuntimeDirectory(path string, normalizeExisting bool) error {
+	if err := os.MkdirAll(path, 0o700); err != nil {
+		return err
+	}
+	if normalizeExisting {
+		if err := os.Chmod(path, 0o700); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func removeStaleSocket(path string) error {

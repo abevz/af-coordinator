@@ -125,6 +125,23 @@ This lock prevents cooperative daemon duplication. It deliberately does not
 prevent hostile same-UID code from opening SQLite directly. Full eight-case
 crash injection, integrity policy, and backup/restore proof remain `afc-114`.
 
+### 2026-08-13 quality follow-up
+
+The original directory-symlink test did not cover a symlink at the database
+file itself. A scratch runtime reproduced two live daemon processes, two lock
+files, and one SQLite database. The reopened `afc-108` change now:
+
+- resolves existing and dangling final DB-file symlinks before deriving the
+  persistent lock path;
+- adds an automated two-process test proving the alias daemon exits, the first
+  socket remains reachable, and a replacement starts after abrupt death;
+- normalizes existing default runtime directories to `0700`, while leaving
+  custom configured parents operator-managed.
+
+Focused tests pass in `fix/afc-108-canonical-db-identity`. Merge, full-suite,
+race-suite, and installed runtime verification remain to be recorded before the
+reopened issue can close.
+
 ## AFC-SDD-0155 / afc-107 implementation review
 
 The dependency-serialization slice is implemented in this change:

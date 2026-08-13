@@ -84,11 +84,34 @@ func canonicalDatabasePath(dbPath string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("resolve database path: %w", err)
 	}
+	canonical, err := filepath.EvalSymlinks(absPath)
+	if err == nil {
+		return canonical, nil
+	}
+	if !os.IsNotExist(err) {
+		return "", fmt.Errorf("resolve database path: %w", err)
+	}
+
 	realDir, err := filepath.EvalSymlinks(filepath.Dir(absPath))
 	if err != nil {
 		return "", fmt.Errorf("resolve database directory: %w", err)
 	}
-	return filepath.Join(realDir, filepath.Base(absPath)), nil
+	candidate := filepath.Join(realDir, filepath.Base(absPath))
+	info, err := os.Lstat(candidate)
+	if err == nil && info.Mode()&os.ModeSymlink != 0 {
+		target, err := os.Readlink(candidate)
+		if err != nil {
+			return "", fmt.Errorf("read database symlink: %w", err)
+		}
+		if !filepath.IsAbs(target) {
+			target = filepath.Join(realDir, target)
+		}
+		return canonicalDatabasePath(target)
+	}
+	if err != nil && !os.IsNotExist(err) {
+		return "", fmt.Errorf("inspect database path: %w", err)
+	}
+	return candidate, nil
 }
 
 func lockOwner(file *os.File) string {

@@ -31,6 +31,12 @@ func main() {
 		logger.Error("failed to create database directory", "error", err)
 		os.Exit(1)
 	}
+	if cfg.UsesDefaultDBPath() {
+		if err := os.Chmod(filepath.Dir(cfg.DBPath), 0o700); err != nil {
+			logger.Error("failed to restrict database directory", "error", err)
+			os.Exit(1)
+		}
+	}
 	dbLock, err := api.AcquireDatabaseLock(cfg.DBPath)
 	if err != nil {
 		logger.Error("failed to acquire database ownership", "error", err)

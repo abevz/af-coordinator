@@ -179,6 +179,12 @@ shutdown. Socket cleanup probes an existing socket and refuses to unlink a live
 daemon; an unreachable stale socket is removed only while the database lock is
 held.
 
+Canonicalization resolves both parent-directory aliases and the final database
+file symlink, including a dangling final symlink whose target will be created by
+SQLite. Otherwise two path-derived lock files could protect the same database.
+Default daemon-owned runtime directories are normalized to `0700` on upgrade;
+custom configured parents remain operator-managed.
+
 The store exposes a serialized write path. Every actual SQLite connection has
 foreign keys enabled and a busy timeout; WAL mode and `synchronous=NORMAL` are
 verified at startup. The implementation may use one write connection plus a

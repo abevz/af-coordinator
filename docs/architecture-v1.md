@@ -61,9 +61,13 @@ Startup and runtime ownership:
   `flock` from before database migration until after listener/database shutdown
 - a second daemon for the same canonical database path exits before touching
   its socket, while an existing socket is probed before stale removal
-- newly created runtime directories are mode `0700`; DB, WAL, SHM, and lock
-  files are restricted by a `0077` process umask, and the DB/lock are also
-  normalized to `0600`; the local group socket remains `0660` by design
+- default runtime directories are created and normalized to mode `0700`; DB,
+  WAL, SHM, and lock files are restricted by a `0077` process umask, and the
+  DB/lock are also normalized to `0600`; the socket remains `0660`, though its
+  default `0700` parent restricts access to the operating user
+- parents of custom `AF_COORDINATOR_DB` / `AF_COORDINATOR_SOCKET` paths remain
+  operator-managed because changing an arbitrary configured directory could
+  affect unrelated or deliberately shared files
 - this is a cooperative single-UID correctness boundary, not protection from a
   hostile process that can open the database files directly
 
