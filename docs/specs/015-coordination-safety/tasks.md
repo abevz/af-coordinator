@@ -89,6 +89,12 @@ transition and one attempt outcome. Tests do not depend on sleeps.
 
 **Dependencies.** `afc-101`, `afc-103`.
 
+**Status.** Implemented in `afc-104`: heartbeat and release authorize the
+current unexpired token+generation with affected-row-checked transactional
+writes and daemon-supplied UTC time. Deterministic renew-before-reclaim,
+reclaim-before-stale-heartbeat, expired release, and single-transition
+regressions are recorded in `review.md`.
+
 ## AFC-SDD-0153 / afc-105 — Fence update, handoff, and close
 
 **Problem.** `UpdateIssue` checks issue version and lease before its transaction,
@@ -118,6 +124,19 @@ Existing valid handoff and close behavior remains covered. Tests use controlled
 barriers and production migrations.
 
 **Dependencies.** `afc-101`, `afc-103`.
+
+**Status.** Implemented in `afc-105`: update, handoff, and close require the
+active lease generation, update commits with expected-version CAS, and failed
+handoff writes roll back atomically. Stale-generation and rollback regressions
+are recorded in `review.md`.
+
+**Reopened 2026-08-13.** `UpdateIssue` still read ownership through `GetIssue`
+before starting its transaction. Because that read intentionally omits expired
+leases, the former owner could perform a metadata update after expiry and
+before reclaim. The correction must read even expired lease rows inside the
+writer transaction, require token+generation+expiry there, verify affected rows
+for update-release, handoff, and close, and add store/API plus same-version
+concurrency regressions.
 
 ## AFC-SDD-0154 / afc-106 — Ready-qualified claim and safe reattach
 

@@ -1739,6 +1739,60 @@ func TestUpdateIssue(t *testing.T) {
 	}
 }
 
+func TestUpdateIssueRejectsExpiredLease(t *testing.T) {
+	server, db := newTestServer(t)
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	if _, err := db.Exec(
+		`INSERT INTO projects (id, key, name, description, next_issue_seq, created_at, updated_at)
+		 VALUES ('proj-1', 'test', 'Test', '', 1, ?, ?)`, now, now,
+	); err != nil {
+		t.Fatal(err)
+	}
+	issueID := "issue-1"
+	if _, err := db.Exec(
+		`INSERT INTO issues (id, short_id, project_id, scope_kind, title, description, status, priority, assignee, version, created_at, updated_at)
+		 VALUES (?, 'test-1', 'proj-1', 'project', 'Expired owner', '', 'in_progress', 3, '', 2, ?, ?)`,
+		issueID, now, now,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(
+		`INSERT INTO leases (issue_id, holder, lease_token, lease_generation, expires_at, created_at, updated_at)
+		 VALUES (?, 'agent-1', 'expired-token', 1, ?, ?, ?)`,
+		issueID, time.Now().UTC().Add(-time.Minute).Format(time.RFC3339), now, now,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	body := `{"title":"stale owner write","expected_version":2,"lease_token":"expired-token","lease_generation":1,"actor":"agent-1"}`
+	req, err := http.NewRequest("PATCH", server.URL+"/v1/issues/"+issueID, strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusGone {
+		t.Fatalf("status = %d, want 410 Gone", resp.StatusCode)
+	}
+	envelope := decodeJSON[core.APIErrorResponse](t, resp)
+	if envelope.Error.Code != core.ErrLeaseExpired {
+		t.Fatalf("error code = %q, want %q", envelope.Error.Code, core.ErrLeaseExpired)
+	}
+
+	var title string
+	var version int
+	if err := db.QueryRow(`SELECT title, version FROM issues WHERE id = ?`, issueID).Scan(&title, &version); err != nil {
+		t.Fatal(err)
+	}
+	if title != "Expired owner" || version != 2 {
+		t.Fatalf("expired update changed issue: title=%q version=%d", title, version)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Close Issue
 // ---------------------------------------------------------------------------

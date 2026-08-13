@@ -4,6 +4,78 @@
 
 Specification and backlog slicing complete; implementation in progress.
 
+## AFC-SDD-0152 / afc-104 implementation review
+
+The heartbeat/release lease-CAS slice is merged via PR `#53` (source
+`f5caa6d`, merge `f9079cc`), whose GitHub CI passed:
+
+- heartbeat conditionally updates by issue, token, generation, and
+  `expires_at > daemon_now`, checks exactly one affected row, and cannot renew
+  an expired or replaced lease;
+- release reads and deletes the same unexpired token+generation inside one
+  transaction, then performs one issue status/version transition and appends
+  one attempt-linked release event before commit;
+- daemon-supplied UTC time defines the authorization boundary consistently;
+- API, client, CLI, MCP, core, and store contracts all carry the generation.
+
+Production-migration store regressions include
+`TestHeartbeatRenewalWinsBeforeReclaim`,
+`TestStaleHeartbeatFailsAfterReclaim`,
+`TestHeartbeatLeaseExpiredFailsWithoutMutation`,
+`TestReleaseLeaseExpiredFailsWithoutStateChanges`, and
+`TestReleaseLeaseSingleStatusVersionTransition`. The 2026-08-13 repository
+quality follow-up also passed the full normal and race suites after the later
+`afc-108`/`afc-109` corrections.
+
+## AFC-SDD-0153 / afc-105 implementation review
+
+The leased-mutation fencing slice is merged via PR `#55` (source `ed61ca5`,
+merge `81ac038`), whose GitHub CI passed:
+
+- update rejects a mismatched token or generation for leased work and applies
+  expected-version in the transactional `UPDATE` predicate;
+- handoff and close require the current unexpired token+generation;
+- rejected stale operations leave replacement ownership, issue state, notes,
+  and lifecycle events unchanged;
+- handoff note, release, and events remain one rollback-safe transaction.
+
+Production-migration store regressions include
+`TestStaleGenerationUpdateFailsAfterReclaim`,
+`TestStaleGenerationHandoffFailsAfterReclaim`,
+`TestStaleGenerationCloseFailsAfterReclaim`,
+`TestUpdateIssueVersionConflict`, and
+`TestHandoffLeaseRollsBackWhenNoteOrReleaseWriteFails`. The 2026-08-13
+repository quality follow-up also passed the full normal and race suites after
+the later `afc-108`/`afc-109` corrections.
+
+### 2026-08-13 afc-105 correction
+
+The review then checked the implementation against R-04/R-06 rather than only
+the merged regressions. `UpdateIssue` still called `GetIssue` before its
+transaction; because `GetIssue` exposes only unexpired leases, an expired owner
+could update metadata before reclaim without any lease check. The new
+`TestExpiredLeaseUpdateFailsWithoutMutation` reproduced that stale write before
+the correction.
+
+The reopened implementation now reads issue version/state and the raw lease row
+inside the immediate writer transaction. Any existing lease row requires the
+matching token and generation and `expires_at > daemon_now`; the update-release,
+handoff, and close writes also repeat the complete lease predicate and verify
+affected rows. Store and API regressions cover the expiry window, while
+`TestConcurrentUpdatesWithSameVersionCommitOnce` proves one commit and one
+typed conflict. `TestUpdateIssueRejectsExpiredLease` verifies the public API
+returns HTTP 410 with `lease_expired` and leaves issue state unchanged.
+
+Local verification in the sibling worktree:
+
+- the focused expired-lease regression failed before the correction and passed
+  after it;
+- all focused update/handoff/close store and API regressions — pass;
+- `go test ./... -count=1` — pass;
+- `go test -race ./... -count=1` — pass.
+
+PR, CI, and merge evidence remain to be recorded.
+
 ## AFC-SDD-0157 / afc-109 quality follow-up
 
 The 2026-08-13 full-suite review reproduced a deterministic failure in
