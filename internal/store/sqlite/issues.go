@@ -744,7 +744,9 @@ func HandoffLease(ctx context.Context, db *sql.DB, issueID string, req core.Hand
 	}
 
 	result, err := tx.ExecContext(ctx,
-		`DELETE FROM leases WHERE issue_id = ? AND lease_token = ?`, issueID, req.LeaseToken)
+		`DELETE FROM leases
+		 WHERE issue_id = ? AND lease_token = ? AND lease_generation = ? AND expires_at > ?`,
+		issueID, req.LeaseToken, req.LeaseGeneration, now)
 	if err != nil {
 		return core.HandoffResponse{}, fmt.Errorf("delete lease: %w", err)
 	}
@@ -754,7 +756,7 @@ func HandoffLease(ctx context.Context, db *sql.DB, issueID string, req core.Hand
 		return core.HandoffResponse{}, core.NewAPIError(core.ErrLeaseExpired, "active lease not found")
 	}
 
-	if _, err := tx.ExecContext(ctx,
+	issueResult, err := tx.ExecContext(ctx,
 		`UPDATE issues SET
 		     status = CASE WHEN status = 'blocked' THEN 'blocked' ELSE 'open' END,
 		     claimed_at = NULL,
@@ -762,8 +764,14 @@ func HandoffLease(ctx context.Context, db *sql.DB, issueID string, req core.Hand
 		     updated_at = ?
 		 WHERE id = ?`,
 		now, issueID,
-	); err != nil {
+	)
+	if err != nil {
 		return core.HandoffResponse{}, fmt.Errorf("update issue: %w", err)
+	}
+	if rows, err := issueResult.RowsAffected(); err != nil {
+		return core.HandoffResponse{}, fmt.Errorf("handoff issue rows affected: %w", err)
+	} else if rows != 1 {
+		return core.HandoffResponse{}, core.NewAPIError(core.ErrConflict, "issue changed while handing off")
 	}
 	if err := insertEvent(ctx, tx, issueID, holder, "issue_released", map[string]any{
 		"attempt_id":       attemptID,
@@ -832,27 +840,39 @@ func scanIssue(s scanner) (core.Issue, error) {
 
 // UpdateIssue updates an issue's mutable fields with optimistic concurrency.
 func UpdateIssue(ctx context.Context, db *sql.DB, issueID string, req core.UpdateIssueRequest) (core.Issue, error) {
-	issue, lease, err := GetIssue(ctx, db, issueID)
+	now := time.Now().UTC().Format(time.RFC3339)
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return core.Issue{}, fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// Read version, state, and lease ownership after the immediate transaction
+	// begins. GetIssue intentionally hides expired lease rows, so using it here
+	// would let a former owner update between expiry and reclaim.
+	issue, err := getIssueForTerminalTransition(ctx, tx, issueID, req.ExpectedVersion)
 	if err != nil {
 		return core.Issue{}, err
 	}
 
-	// Version check.
-	if req.ExpectedVersion != issue.Version {
-		return core.Issue{}, core.NewAPIError(core.ErrConflict,
-			fmt.Sprintf("expected version %d, current version is %d", req.ExpectedVersion, issue.Version))
+	var lease *core.IssueLease
+	var storedLease core.IssueLease
+	err = tx.QueryRowContext(ctx,
+		`SELECT holder, lease_token, lease_generation, expires_at, attempt_id, session_id
+		 FROM leases WHERE issue_id = ?`, issueID,
+	).Scan(&storedLease.Holder, &storedLease.LeaseToken, &storedLease.LeaseGeneration,
+		&storedLease.ExpiresAt, &storedLease.AttemptID, &storedLease.SessionID)
+	if err != nil && err != sql.ErrNoRows {
+		return core.Issue{}, fmt.Errorf("select update lease: %w", err)
 	}
-
-	// Lease check: if issue has an active lease, require lease_token and the
-	// claim's fencing generation to match, so a stale holder after a reclaim
-	// cannot mutate the issue.
-	if lease != nil && lease.LeaseToken != req.LeaseToken {
-		return core.Issue{}, core.NewAPIError(core.ErrLeaseExpired,
-			"issue is leased and lease_token does not match")
-	}
-	if lease != nil && lease.LeaseGeneration != req.LeaseGeneration {
-		return core.Issue{}, core.NewAPIError(core.ErrLeaseExpired,
-			"issue is leased and lease_generation does not match")
+	if err == nil {
+		lease = &storedLease
+		if storedLease.LeaseToken != req.LeaseToken ||
+			storedLease.LeaseGeneration != req.LeaseGeneration ||
+			storedLease.ExpiresAt <= now {
+			return core.Issue{}, core.NewAPIError(core.ErrLeaseExpired,
+				"current unexpired lease ownership is required to update the issue")
+		}
 	}
 
 	// Generic update is for metadata and non-terminal routing only. Closing and
@@ -870,14 +890,6 @@ func UpdateIssue(ctx context.Context, db *sql.DB, issueID string, req core.Updat
 			return core.Issue{}, err
 		}
 	}
-
-	now := time.Now().UTC().Format(time.RFC3339)
-
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		return core.Issue{}, fmt.Errorf("begin tx: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
 
 	// Build dynamic SET clause for non-zero / non-empty fields.
 	var sets []string
@@ -973,18 +985,27 @@ func UpdateIssue(ctx context.Context, db *sql.DB, issueID string, req core.Updat
 				"no active lease to release")
 		}
 
-		// Delete the lease row.
-		_, err = tx.ExecContext(ctx,
-			`DELETE FROM leases WHERE issue_id = ? AND lease_token = ?`,
-			issueID, req.LeaseToken,
+		// Re-verify the complete lease predicate at the release write and require
+		// exactly one row, matching the standalone release contract.
+		leaseResult, err := tx.ExecContext(ctx,
+			`DELETE FROM leases
+			 WHERE issue_id = ? AND lease_token = ? AND lease_generation = ? AND expires_at > ?`,
+			issueID, req.LeaseToken, req.LeaseGeneration, now,
 		)
 		if err != nil {
 			return core.Issue{}, fmt.Errorf("delete lease: %w", err)
 		}
+		leaseRows, err := leaseResult.RowsAffected()
+		if err != nil {
+			return core.Issue{}, fmt.Errorf("update release rows affected: %w", err)
+		}
+		if leaseRows != 1 {
+			return core.Issue{}, core.NewAPIError(core.ErrLeaseExpired, "active lease not found")
+		}
 
 		// Update status to open (unless blocked) and clear claimed_at.
 		// Version is already bumped by the metadata update above, so do not bump again.
-		_, err = tx.ExecContext(ctx,
+		statusResult, err := tx.ExecContext(ctx,
 			`UPDATE issues SET
 			     status = CASE WHEN status = 'blocked' THEN 'blocked' ELSE 'open' END,
 			     claimed_at = NULL,
@@ -994,6 +1015,13 @@ func UpdateIssue(ctx context.Context, db *sql.DB, issueID string, req core.Updat
 		)
 		if err != nil {
 			return core.Issue{}, fmt.Errorf("update issue status for release: %w", err)
+		}
+		statusRows, err := statusResult.RowsAffected()
+		if err != nil {
+			return core.Issue{}, fmt.Errorf("update release status rows affected: %w", err)
+		}
+		if statusRows != 1 {
+			return core.Issue{}, core.NewAPIError(core.ErrConflict, "issue changed while releasing update lease")
 		}
 
 		if err := insertEvent(ctx, tx, issueID, lease.Holder, "issue_released", map[string]any{
@@ -1108,8 +1136,18 @@ func CloseIssue(ctx context.Context, db *sql.DB, issueID string, req core.CloseI
 	result.PRURL = req.PRURL
 	result.CommitSHA = req.CommitSHA
 
-	if _, err := tx.ExecContext(ctx, `DELETE FROM leases WHERE issue_id = ? AND lease_token = ?`, issueID, req.LeaseToken); err != nil {
+	leaseResult, err := tx.ExecContext(ctx,
+		`DELETE FROM leases
+		 WHERE issue_id = ? AND lease_token = ? AND lease_generation = ? AND expires_at > ?`,
+		issueID, req.LeaseToken, req.LeaseGeneration, now,
+	)
+	if err != nil {
 		return core.CloseIssueResult{}, fmt.Errorf("delete lease: %w", err)
+	}
+	if rows, err := leaseResult.RowsAffected(); err != nil {
+		return core.CloseIssueResult{}, fmt.Errorf("close lease rows affected: %w", err)
+	} else if rows != 1 {
+		return core.CloseIssueResult{}, core.NewAPIError(core.ErrLeaseExpired, "active lease not found")
 	}
 
 	// A close note is appended before its closing event so the audit stream has

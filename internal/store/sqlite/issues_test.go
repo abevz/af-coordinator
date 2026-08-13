@@ -2020,6 +2020,66 @@ func TestUpdateIssueVersionConflict(t *testing.T) {
 	}
 }
 
+func TestConcurrentUpdatesWithSameVersionCommitOnce(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+	// Production Open serializes mutations through one physical connection.
+	db.SetMaxOpenConns(1)
+
+	if _, err := CreateProject(context.Background(), db, "test", "Test", ""); err != nil {
+		t.Fatal(err)
+	}
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{
+		ScopeKind: "project",
+		Title:     "Concurrent update",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	start := make(chan struct{})
+	results := make(chan error, 2)
+	for _, title := range []string{"update-a", "update-b"} {
+		title := title
+		go func() {
+			<-start
+			_, err := UpdateIssue(context.Background(), db, issue.ID, core.UpdateIssueRequest{
+				Title:           title,
+				ExpectedVersion: issue.Version,
+			})
+			results <- err
+		}()
+	}
+	close(start)
+
+	succeeded := 0
+	conflicted := 0
+	for range 2 {
+		err := <-results
+		if err == nil {
+			succeeded++
+			continue
+		}
+		var apiErr core.APIError
+		if errors.As(err, &apiErr) && apiErr.Code == core.ErrConflict {
+			conflicted++
+			continue
+		}
+		t.Fatalf("concurrent update error = %v, want nil or conflict", err)
+	}
+	if succeeded != 1 || conflicted != 1 {
+		t.Fatalf("concurrent update outcomes: succeeded=%d conflicted=%d, want 1/1", succeeded, conflicted)
+	}
+
+	updated, _, err := GetIssue(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Version != issue.Version+1 {
+		t.Fatalf("version = %d, want one increment to %d", updated.Version, issue.Version+1)
+	}
+}
+
 func TestCloseIssue(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
@@ -3648,6 +3708,127 @@ func TestUpdateIssueLeaseTokenRequired(t *testing.T) {
 	}
 	if apiErr.Code != core.ErrLeaseExpired {
 		t.Errorf("expected code %q, got %q", core.ErrLeaseExpired, apiErr.Code)
+	}
+}
+
+func TestExpiredLeaseUpdateFailsWithoutMutation(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	if _, err := CreateProject(context.Background(), db, "test", "Test", ""); err != nil {
+		t.Fatal(err)
+	}
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{
+		ScopeKind: "project",
+		Title:     "Expired owner update",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	claim, err := ClaimIssue(context.Background(), db, issue.ID, "agent-1", 3600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, _, err := GetIssue(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	eventsBefore, err := ListEvents(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	forcedExpires := time.Now().UTC().Add(-time.Minute).Format(time.RFC3339)
+	if _, err := db.Exec(`UPDATE leases SET expires_at = ? WHERE issue_id = ?`, forcedExpires, issue.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = UpdateIssue(context.Background(), db, issue.ID, core.UpdateIssueRequest{
+		Title:           "stale owner write after expiry",
+		ExpectedVersion: before.Version,
+		LeaseToken:      claim.LeaseToken,
+		LeaseGeneration: claim.LeaseGeneration,
+	})
+	if err == nil {
+		t.Fatal("expired lease update succeeded before reclaim")
+	}
+	var apiErr core.APIError
+	if !errors.As(err, &apiErr) || apiErr.Code != core.ErrLeaseExpired {
+		t.Fatalf("expired lease update error = %v, want lease_expired", err)
+	}
+
+	after, _, err := GetIssue(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Title != before.Title || after.Status != before.Status || after.Version != before.Version {
+		t.Fatalf("expired lease update changed issue: before=%+v after=%+v", before, after)
+	}
+	eventsAfter, err := ListEvents(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(eventsAfter) != len(eventsBefore) {
+		t.Fatalf("expired lease update appended events: %d -> %d", len(eventsBefore), len(eventsAfter))
+	}
+}
+
+func TestUpdateIssueWithReleaseUsesFencedLease(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	if _, err := CreateProject(context.Background(), db, "test", "Test", ""); err != nil {
+		t.Fatal(err)
+	}
+	issue, err := CreateIssue(context.Background(), db, "test", core.CreateIssueRequest{
+		ScopeKind: "project",
+		Title:     "Update and release",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	claim, err := ClaimIssue(context.Background(), db, issue.ID, "agent-1", 3600)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	updated, err := UpdateIssue(context.Background(), db, issue.ID, core.UpdateIssueRequest{
+		Title:           "Released update",
+		ExpectedVersion: claim.Version,
+		LeaseToken:      claim.LeaseToken,
+		LeaseGeneration: claim.LeaseGeneration,
+		ReleaseLease:    true,
+		Actor:           "agent-1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Title != "Released update" || updated.Status != "open" || updated.Version != claim.Version+1 {
+		t.Fatalf("updated issue = %+v, want title/status/version transition", updated)
+	}
+	_, lease, err := GetIssue(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lease != nil {
+		t.Fatalf("lease = %+v, want released", lease)
+	}
+
+	events, err := ListEvents(context.Background(), db, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updatedEvents := 0
+	releasedEvents := 0
+	for _, event := range events {
+		switch event.EventType {
+		case "issue_updated":
+			updatedEvents++
+		case "issue_released":
+			releasedEvents++
+		}
+	}
+	if updatedEvents != 1 || releasedEvents != 1 {
+		t.Fatalf("update/release events = %d/%d, want 1/1", updatedEvents, releasedEvents)
 	}
 }
 
