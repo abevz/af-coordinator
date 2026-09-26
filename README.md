@@ -97,6 +97,14 @@ dibs issue run app-7 --require-complete --publish -- claude -p '...'
 dibs hooks complete --pr-url https://github.com/acme/app/pull/51 --commit-sha 1a2b3c4
 ```
 
+![A dibs session imports a real GitHub issue, runs a scripted agent that opens a pull request, and the closed result appears as a comment on the original issue](docs/assets/dibs-github-demo.gif)
+
+The recording runs the published `v0.1.0-rc.4` binaries against a real
+throwaway repository. The agent is a short script (`contrib/demo/demo-agent.sh`)
+that edits a file, opens a real pull request, and reports it with
+`dibs hooks complete`; re-record with
+[`contrib/demo/record-github.sh`](contrib/demo/record-github.sh).
+
 After the run closes `app-7`, dibs adds one comment to issue #42 with the
 resolution, PR, commit, branch, and closing note. Importing or publishing
 again does not create duplicates. If publication fails, the local close
