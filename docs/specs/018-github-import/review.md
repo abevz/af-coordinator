@@ -106,6 +106,12 @@
   `/tmp/dibs-afc169-build-final.log` and `/tmp/dibs-afc169-test-final.log`.
   `cmp` confirmed the protocol source and embedded copy are identical;
   `git diff --check` passed.
+- PR #117 follow-up: CI found an unused CLI wrapper after the move to
+  `internal/ghsync`; it was removed. Missing GitHub keys now report
+  `validation_failed` in MCP and CLI JSON before local close. The human
+  `secret_in_text` message states once that the close cannot be published.
+  Focused regression tests and the CI lint command passed locally with a
+  temporary Go 1.27-built `golangci-lint` v2.14.0.
 - Intentionally not run: real GitHub API, real Claude Code/Codex sessions,
   cross-compilation, release dry-run, and rc.4 publication. Those belong to
   `afc-165` or the owner release step.

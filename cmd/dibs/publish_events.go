@@ -13,6 +13,3 @@ func latestClose(events []core.Event) (closeRecord, error) { return ghsync.Lates
 func closingNote(events []core.Event, notes []core.Note, closed core.Event) string {
 	return ghsync.ClosingNote(events, notes, closed)
 }
-func hasCloseNoteEvent(events []core.Event, closed core.Event) bool {
-	return ghsync.HasCloseNoteEvent(events, closed)
-}

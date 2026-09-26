@@ -143,7 +143,7 @@ func TestMCPClosePublishRequiresGitHubKeyBeforeClose(t *testing.T) {
 		"lease_token": claim["lease_token"], "lease_generation": claim["lease_generation"],
 		"publish": true, "operation_id": "mcp-local-close-0001",
 	})
-	if result["isError"] != true || !strings.Contains(result["structuredContent"].(map[string]any)["message"].(string), "no GitHub external key") {
+	if result["isError"] != true || result["structuredContent"].(map[string]any)["code"] != "validation_failed" || !strings.Contains(result["structuredContent"].(map[string]any)["message"].(string), "no GitHub external key") {
 		t.Fatalf("missing-key preflight = %v", result)
 	}
 	issue, _, err := c.GetIssue(ctx, id)

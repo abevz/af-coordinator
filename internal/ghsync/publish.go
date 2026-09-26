@@ -20,6 +20,12 @@ type PublishError struct {
 
 func (e *PublishError) Error() string { return e.Code + ": " + e.Message }
 
+// ExternalKeyError is a local publish preflight validation error. It keeps
+// the CLI's existing human text while MCP reports validation_failed.
+type ExternalKeyError struct{ Message string }
+
+func (e *ExternalKeyError) Error() string { return e.Message }
+
 type PublishResult struct {
 	OK         bool          `json:"ok"`
 	Already    bool          `json:"already"`
@@ -51,11 +57,11 @@ func RequireGitHubExternalKey(ctx context.Context, c Coordinator, issueID string
 		return err
 	}
 	if !strings.HasPrefix(issue.ExternalKey, "github:") {
-		return fmt.Errorf("issue %s has no GitHub external key; import or link a GitHub issue before --publish", issue.ShortID)
+		return &ExternalKeyError{Message: fmt.Sprintf("issue %s has no GitHub external key; import or link a GitHub issue before --publish", issue.ShortID)}
 	}
 	_, err = github.ParseIssueRef(strings.TrimPrefix(issue.ExternalKey, "github:"))
 	if err != nil {
-		return fmt.Errorf("invalid GitHub external key: %w", err)
+		return &ExternalKeyError{Message: fmt.Sprintf("invalid GitHub external key: %v", err)}
 	}
 	return nil
 }

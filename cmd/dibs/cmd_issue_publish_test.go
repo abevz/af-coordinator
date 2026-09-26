@@ -198,7 +198,7 @@ func TestClosePublishSecretHasNoRetryHint(t *testing.T) {
 	if err != nil || fixture.closeCalls != 1 {
 		t.Fatalf("close failed: %v; output=%s", err, out)
 	}
-	if !strings.Contains(string(out), "Issue closed.") || !strings.Contains(string(out), "this close cannot be published") || strings.Contains(string(out), "retry:") || strings.Contains(string(out), "synthetic-secret") {
+	if !strings.Contains(string(out), "Issue closed.") || strings.Count(string(out), "this close cannot be published") != 1 || strings.Contains(string(out), "retry:") || strings.Contains(string(out), "synthetic-secret") {
 		t.Fatalf("wrong secret report: %s", out)
 	}
 	cmd = exec.Command(bin, "--json", "issue", "publish", "app-7")
@@ -261,6 +261,27 @@ func TestPublishMissingKeyStopsBeforeCloseOrClaim(t *testing.T) {
 	}
 	if fixture.closeCalls != 0 || fixture.claimCalls != 0 {
 		t.Fatalf("close=%d claim=%d", fixture.closeCalls, fixture.claimCalls)
+	}
+}
+
+func TestClosePublishMissingKeyJSONValidationError(t *testing.T) {
+	fixture := newPublishFixture(t)
+	fixture.issue.ExternalKey = ""
+	fixture.allowClose = true
+	bin := buildAfctlForRunTest(t)
+	cmd := exec.Command(bin, "--json", "issue", "close", "app-7", "--resolution", "done", "--expected-version", "3", "--lease-generation", "1", "--publish")
+	cmd.Env = append(os.Environ(), "DIBS_SOCKET="+fixture.socketPath, "DIBS_LEASE_TOKEN=test-token", "HOME="+t.TempDir(), "DIBS_DB="+fixture.dbPath)
+	out, err := cmd.CombinedOutput()
+	if err == nil || fixture.closeCalls != 0 {
+		t.Fatalf("missing-key close = %v, calls=%d, output=%s", err, fixture.closeCalls, out)
+	}
+	var response struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if jsonErr := json.Unmarshal(out, &response); jsonErr != nil || response.Error.Code != "validation_failed" {
+		t.Fatalf("missing-key JSON = %s, decode=%v", out, jsonErr)
 	}
 }
 

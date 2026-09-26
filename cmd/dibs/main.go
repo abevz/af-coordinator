@@ -19,6 +19,7 @@ import (
 	"github.com/abevz/dibs/internal/config"
 	"github.com/abevz/dibs/internal/core"
 	"github.com/abevz/dibs/internal/firstuse"
+	"github.com/abevz/dibs/internal/ghsync"
 	"github.com/abevz/dibs/internal/github"
 )
 
@@ -219,6 +220,15 @@ func fail(err error) {
 			json.NewEncoder(os.Stderr).Encode(core.APIErrorResponse{Error: core.NewAPIError(core.ErrValidationFailed, argErr.Error())})
 		} else {
 			fmt.Fprintf(os.Stderr, "error: %v\n", argErr)
+		}
+		os.Exit(1)
+	}
+	var keyErr *ghsync.ExternalKeyError
+	if errors.As(err, &keyErr) {
+		if jsonOutput {
+			json.NewEncoder(os.Stderr).Encode(core.APIErrorResponse{Error: core.NewAPIError(core.ErrValidationFailed, keyErr.Message)})
+		} else {
+			fmt.Fprintf(os.Stderr, "error: %s\n", keyErr.Message)
 		}
 		os.Exit(1)
 	}

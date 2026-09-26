@@ -112,7 +112,7 @@ func printPublishFailure(result publishResult, shortID string) {
 		return
 	}
 	if result.Error.Code == "secret_in_text" {
-		fmt.Fprintf(os.Stderr, "publish failed: %s; this close cannot be published\n", result.Error.Message)
+		fmt.Fprintf(os.Stderr, "publish failed: %s\n", result.Error.Message)
 		return
 	}
 	fmt.Fprintf(os.Stderr, "publish failed: %s; retry: dibs issue publish %s\n", result.Error.Message, shortID)

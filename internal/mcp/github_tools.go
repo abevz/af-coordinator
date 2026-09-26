@@ -22,12 +22,15 @@ func githubToolFailure(err error) error {
 	code, message := "internal_error", err.Error()
 	var ghErr *github.Error
 	var syncErr *ghsync.PublishError
+	var keyErr *ghsync.ExternalKeyError
 	var clientErr *client.ClientError
 	switch {
 	case errors.As(err, &ghErr):
 		code, message = ghErr.Code, ghErr.Message()
 	case errors.As(err, &syncErr):
 		code, message = syncErr.Code, syncErr.Message
+	case errors.As(err, &keyErr):
+		code, message = "validation_failed", keyErr.Message
 	case errors.As(err, &clientErr):
 		code, message = clientErr.Code, clientErr.Message
 	}
