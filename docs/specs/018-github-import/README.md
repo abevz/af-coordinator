@@ -1,6 +1,6 @@
 # 018 GitHub Import (thin slice)
 
-Status: **implemented and released in `v0.1.0-rc.4` (2026-09-26)**; one owner check pending (see review). Authoring task: `afc-162`.
+Status: **implemented and released in `v0.1.0-rc.4` (2026-09-26)**. Authoring task: `afc-162`.
 Target release: `v0.1.0-rc.4`.
 
 Most people who try dibs already keep their backlog in GitHub Issues. Asking

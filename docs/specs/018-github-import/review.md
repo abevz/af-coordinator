@@ -253,6 +253,12 @@
     The first two attempts ended as HANDOFF (a flag error, then a cancel
     while it waited on stdin). Each returned the issue to `open`, as
     designed.
-- Pending owner check: one `import_issue` call from an interactive Codex
-  session through its configured `dibs-mcp` server, to confirm `gh` and
-  network access there (R-12).
+- Owner check, 2026-09-26: an interactive Codex session reached the rc.4
+  `dibs-mcp` through a temporary global MCP entry pointed at the scratch
+  daemon. It called `import_issue` for
+  [issue #9](https://github.com/abevz/dibs-sandbox/issues/9) with project
+  `sandbox` and got `imported: true` with `sandbox-6` and
+  `github:abevz/dibs-sandbox#9`. The daemon recorded `issue_created` by
+  `codex-interactive`. The MCP server therefore had `gh` and network access
+  inside Codex. The temporary entry was then removed. Tap PR #6 (rc.4 formula)
+  was merged, and the tap tests on main passed.
