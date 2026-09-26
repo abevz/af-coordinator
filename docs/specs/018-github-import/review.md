@@ -201,3 +201,58 @@
   tests cover all three changes. `go build ./...` and `go test ./...` passed
   after the fix. A scratch daemon recognized a legacy checkout registration
   from a linked worktree and returned the expected JSON import and error.
+
+### afc-165 (release and real round trips)
+
+- `v0.1.0-rc.4` was tagged on `70fd10d` (after README PR #118). Release run
+  [`36263414815`](https://github.com/abevz/dibs/actions/runs/36263414815)
+  verified all four native archives, published the release, and passed
+  public-URL smoke on Linux amd64/arm64 and macOS Intel/Apple Silicon. A
+  public-URL install on Linux amd64 reported `dibs v0.1.0-rc.4 (70fd10d)`;
+  `go install …@v0.1.0-rc.4` for all three commands succeeded with Go 1.27.1.
+- The Homebrew sync workflow, started by hand after the release, opened
+  [tap PR #6](https://github.com/abevz/homebrew-dibs/pull/6) for rc.4. Its
+  pull-request run needed a one-time approval because the PR was opened by
+  GitHub Actions. After approval, all four install checks passed.
+- Real round trips used the published rc.4 binaries against
+  [`abevz/dibs-sandbox`](https://github.com/abevz/dibs-sandbox). They ran on a
+  scratch daemon and database with the owner's `gh` 2.101.0 login:
+  - `dibs doctor` reported the GitHub CLI check as ok with the API rate limit.
+    With `gh` removed from `PATH` it warned `gh not found` with the install hint.
+  - CLI: [issue #1](https://github.com/abevz/dibs-sandbox/issues/1), whose
+    body includes an image, was imported. `issue run --publish
+    --require-complete` then ran a scripted child that pushed a branch,
+    opened [PR #2](https://github.com/abevz/dibs-sandbox/pull/2), and called
+    `hooks complete --pr-url --commit-sha --branch --note`. The single comment
+    links the PR, commit, branch, and note. Repeated import and repeated
+    publish reported the existing issue and comment.
+  - Failure and retry: for [issue #3](https://github.com/abevz/dibs-sandbox/issues/3),
+    a `gh` wrapper failed only the POST with HTTP 503. The issue stayed
+    closed, the run exited 0 and printed the retry command, and
+    `dibs issue publish` then created exactly one comment.
+  - MCP: for [issue #4](https://github.com/abevz/dibs-sandbox/issues/4),
+    `dibs-mcp` over stdio ran `import_issue` (repeated: `imported: false`),
+    `claim_issue`, `close_issue` with `publish: true`, and a repeated
+    `publish_issue` (`already: true`). One comment resulted.
+  - Claude Code: for [issue #5](https://github.com/abevz/dibs-sandbox/issues/5),
+    the SessionStart context showed `(github: abevz/dibs-sandbox#5)` and the
+    GitHub guidance. A real `claude -p` session under `issue run --publish
+    --require-complete` (tools allowed: git, gh, dibs, Read, Write, Edit)
+    read the issue, opened [PR #6](https://github.com/abevz/dibs-sandbox/pull/6),
+    and called `hooks complete`. The published comment links PR #6.
+  - Codex: for [issue #7](https://github.com/abevz/dibs-sandbox/issues/7), a
+    real `codex exec` (codex-cli 0.157.1) session opened
+    [PR #8](https://github.com/abevz/dibs-sandbox/pull/8) and called
+    `hooks complete`; the comment links PR #8. It read `dibs protocol` on its
+    own. Two findings are now documented in `contrib/hooks/README.md`:
+    - `--full-auto` no longer exists; pushing and opening a PR needs
+      `-s workspace-write -c sandbox_workspace_write.network_access=true`;
+    - with a non-terminal stdin, `codex exec` waits for more prompt input
+      and never finishes, so scripted runs need `< /dev/null`.
+
+    The first two attempts ended as HANDOFF (a flag error, then a cancel
+    while it waited on stdin). Each returned the issue to `open`, as
+    designed.
+- Pending owner check: one `import_issue` call from an interactive Codex
+  session through its configured `dibs-mcp` server, to confirm `gh` and
+  network access there (R-12).
