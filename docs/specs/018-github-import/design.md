@@ -2,10 +2,10 @@
 
 ## Boundaries
 
-- All GitHub access lives in the CLI (`cmd/dibs`) behind a small interface in
-  a new `internal/github` package. The daemon, API, store, and schema do not
-  change: import is an ordinary issue create, and publish reads existing
-  issue and event data.
+- All GitHub access lives in the local CLI (`cmd/dibs`) or MCP
+  (`internal/mcp`) process behind a small interface in `internal/github`.
+  The daemon, API, store, and schema do not change: import is an ordinary
+  issue create, and publish reads existing issue and event data.
 - The concrete implementation runs `gh api` with a 30-second timeout. This
   reuses the user's authentication, including private repositories and SSO,
   and keeps credentials out of dibs. Tests use a fake implementation.
@@ -13,8 +13,8 @@
 ```go
 type Client interface {
     GetIssue(ctx context.Context, ref IssueRef) (Issue, error)          // title, body, state, locked, html_url, is_pull_request
-    ListComments(ctx context.Context, ref IssueRef) ([]Comment, error)  // paginated
-    CreateComment(ctx context.Context, ref IssueRef, body string) (Comment, error)
+    ListComments(ctx context.Context, commentsURL string) ([]Comment, error)  // paginated
+    CreateComment(ctx context.Context, commentsURL, body string) (Comment, error)
 }
 ```
 
@@ -147,11 +147,15 @@ dibs issue run <issue-id> ... --publish -- <command>
    `dibs hooks complete` via JSON in `DIBS_COMPLETION_FILE`; nonempty marker
    values override launch flags. With no hook flags the legacy `done\n`
    marker and behavior remain. Only the CLI changes.
-6. On publication failure after close, the command still exits with the close's status and prints
+6. On publication failure after close, the command first prints the local
+   close result, still exits with the close's status, then prints
    `publish failed: <reason>; retry: dibs issue publish <short-id>`, and adds
    `publish: {ok, already, comment_url, error: {code, message}}` to JSON
    (R-10). Explicit `issue publish --json` returns these fields plus `issue`
-   and exits nonzero on failure. `issue run` without `--publish`, HANDOFF,
+   and exits nonzero on failure. If a note or branch contains an exact active
+   token value, the error code is `secret_in_text`; the message explains that
+   this close cannot be published and omits the futile retry command.
+   `issue run` without `--publish`, HANDOFF,
    and lease expiry never publish. Resolution `cancelled` publishes normally.
 
 The remaining race is two simultaneous publishers for the same close, which
@@ -166,11 +170,13 @@ cannot import (package `main`). `afc-169` moves the target-independent logic
 into a new `internal/ghsync` package, without changing behavior:
 
 ```go
-func Import(ctx context.Context, c *client.Client, gh github.Client, req ImportRequest) (ImportResult, error)
-func Publish(ctx context.Context, c *client.Client, gh github.Client, issueID string) (PublishResult, error)
+func Import(ctx context.Context, c Coordinator, gh github.Client, req ImportRequest) (ImportResult, error)
+func Publish(ctx context.Context, c Coordinator, gh github.Client, issueID string) (PublishResult, error)
 ```
 
-`ImportRequest` carries the already resolved project, repository, and scope.
+`Coordinator` is the narrow daemon-client interface used by both CLI and MCP
+and lets MCP tests run against a test daemon. `ImportRequest` carries the
+already resolved project, repository, and scope.
 The CLI keeps argument parsing and current-checkout resolution in `cmd/dibs`
 and calls `ghsync`; its existing tests keep passing unchanged.
 
@@ -198,9 +204,20 @@ with the same code and message as the CLI JSON error, including the `gh`
 stderr detail from `afc-163`.
 
 When `close_issue` replays an earlier close through its `operation_id`,
-`publish` still runs. It is harmless because the marker makes publication
-idempotent, and it lets a client whose first response was lost learn the
-publish result.
+`publish` still runs against the close in the replayed result. Compare that
+result's `closed_at` with the latest `issue_closed` event's `created_at`.
+If they match, publish normally and rely on the marker for idempotency.
+Also compare the close event's lease generation with the replayed request's
+generation, so two closes within one second cannot be confused. A later
+ordinary or operator close supersedes the replayed close. If a newer close
+exists, find the old `issue_closed` event by `created_at` and lease
+generation, then look for its marker in the source issue's comments. An
+existing marker returns `{ok:true, already:true, comment_url}`. Otherwise
+the local close replay remains successful, while publication returns
+`{ok:false, error:{code:"stale_close", message:"a newer close exists; publish it with publish_issue"}}`.
+It never posts the newer close as a side effect of replaying the old one.
+Publication uses the selected close event from that same event-list read;
+it does not fetch the latest event again before rendering the comment.
 
 `docs/agent-protocol-v1.md` gains a "Working from GitHub issues" section
 (content in R-15). It keeps the existing rule that the CLI is primary and
@@ -230,11 +247,12 @@ Choose one issue explicitly. ...   (existing sentence, unchanged)
 
 The source label is the external key without the `github:` prefix. Titles
 pass through one helper that replaces `\r`, `\n`, and other control
-characters with spaces and trims the result. This matters because the hook
-injects the title directly into the agent's context. The two extra sentences
-appear only when at least one listed issue has a GitHub source, so repositories
-that do not use GitHub keep the current output exactly. `<bin>` is the same
-executable path the hook already prints.
+characters with spaces and trims the result when replacement is needed. This
+matters because the hook injects the title directly into the agent's context.
+The two extra sentences appear only when at least one listed issue has a
+GitHub source. Output without GitHub sources is byte-for-byte unchanged for
+titles without control characters. `<bin>` is the same executable path the
+hook already prints.
 
 `contrib/hooks/README.md` gains a "Work from a GitHub issue" section with the
 commands for both agents. The `claude -p` and `codex exec` prompts extend the
@@ -265,5 +283,5 @@ network access in its environment.
 - SessionStart tests: an imported issue shows its source, a multi-line or
   control-character title renders on one line, the two extra sentences appear
   only when a GitHub source is listed, and output without GitHub sources is
-  byte-for-byte unchanged.
+  byte-for-byte unchanged for titles without control characters.
 - No test calls the real GitHub API. R-12 covers the real round trip.

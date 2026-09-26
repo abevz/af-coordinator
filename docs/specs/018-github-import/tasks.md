@@ -12,9 +12,9 @@ owner merges.
 | End-to-end and release | `afc-165` | `afc-163`, `afc-164`, `afc-169` | README "Work from GitHub Issues" section; owner tags `v0.1.0-rc.4`; `dibs doctor` shows the GitHub CLI check as ok on the test machine and as a warning with `gh` removed from `PATH`; the R-12 real round trips on throwaway issues in `abevz/dibs-sandbox`, using the published binaries: CLI, `dibs-mcp`, one `claude -p` and one `codex exec` session under `issue run --publish --require-complete` whose comments link their PRs, and one `import_issue` from an interactive Codex session; transcript and comment links recorded in `review.md`. |
 
 `afc-163` merged in PR #113 (`6c90a41`) and its issue is closed. `afc-164`
-implementation and verification are complete; its PR and owner merge remain.
-`afc-169` follows that merge, and `afc-165` follows `afc-169` and the
-owner-created rc.4 tag.
+merged in PR #116 (`eb6f9c3`). `afc-169` implementation and local
+verification are complete; owner merge remains. `afc-165` follows that merge
+and the owner-created rc.4 tag.
 
 ## Order
 

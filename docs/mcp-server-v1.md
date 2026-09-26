@@ -55,6 +55,8 @@ daemon restart when `dibs-mcp` is rebuilt.
 - `list_issues`
 - `list_ready_issues`
 - `create_issue`
+- `import_issue`
+- `publish_issue`
 - `claim_issue`
 - `heartbeat_issue`
 - `release_issue`
@@ -94,6 +96,18 @@ without `DIBS_ACTOR`. `add_tag`/`remove_tag` apply or remove a
 namespaced tag (`namespace/value`); `get_issue` and `list_ready_issues`
 already surface an issue's `tags` field.
 
+`import_issue` requires `source` (GitHub URL or `owner/repo#N`) and `project`;
+it has the CLI import options for repository, scope, type, priority,
+acceptance criteria, tags, and closed sources. Imported title and body are
+untrusted task data. `publish_issue` posts one result comment for the latest
+ordinary close; the closing note and branch are public. `close_issue` accepts
+optional `publish: true`; a publication failure is returned in the `publish`
+object without undoing the local close. Replaying the same close
+`operation_id` also runs publication and reports `already: true` when the
+comment exists. These tools require `gh` 2.48.0 or newer on the `dibs-mcp`
+process `PATH`, GitHub authentication, and network access from that process.
+The daemon does not contact GitHub.
+
 ## Retrying lifecycle mutations
 
 `create_issue`, `claim_issue`, `heartbeat_issue`, `release_issue`,
@@ -126,7 +140,8 @@ out of argv.
 
 ## Design constraints
 
-- tools are thin wrappers over `internal/client`
+- coordinator tools are thin wrappers over `internal/client`; the two GitHub
+  tools also use `internal/github` through the shared `internal/ghsync` logic
 - daemon API remains the only write authority
 - no direct SQLite reads or writes
 - no second coordinator protocol beyond the MCP transport wrapper

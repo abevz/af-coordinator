@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/abevz/dibs/internal/client"
@@ -50,6 +51,7 @@ func (f *fakePublisher) CreateComment(_ context.Context, commentsURL, body strin
 }
 
 type publishFixture struct {
+	mu         sync.Mutex
 	client     *client.Client
 	socketPath string
 	dbPath     string
@@ -60,6 +62,24 @@ type publishFixture struct {
 	closeCalls int
 	allowClose bool
 	allowClaim bool
+}
+
+func (f *publishFixture) update(fn func(*publishFixture)) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	fn(f)
+}
+
+func (f *publishFixture) issueValue() core.Issue {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.issue
+}
+
+func (f *publishFixture) counts() (claims, closes int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.claimCalls, f.closeCalls
 }
 
 func newPublishFixture(t *testing.T) *publishFixture {
@@ -82,6 +102,8 @@ func newPublishFixture(t *testing.T) *publishFixture {
 		t.Fatal(err)
 	}
 	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fixture.mu.Lock()
+		defer fixture.mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/healthz":
@@ -123,7 +145,7 @@ func newPublishFixture(t *testing.T) *publishFixture {
 
 func TestClosePublishFailureKeepsLocalCloseAndJSON(t *testing.T) {
 	fixture := newPublishFixture(t)
-	fixture.allowClose = true
+	fixture.update(func(f *publishFixture) { f.allowClose = true })
 	bin := buildAfctlForRunTest(t)
 	fakeDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(fakeDir, "gh"), []byte("#!/bin/sh\necho 'gh: Not Found (HTTP 404)' >&2\nexit 1\n"), 0700); err != nil {
@@ -142,8 +164,9 @@ func TestClosePublishFailureKeepsLocalCloseAndJSON(t *testing.T) {
 	if err := json.Unmarshal(output, &result); err != nil {
 		t.Fatalf("invalid JSON: %s: %v", output, err)
 	}
-	if result.Status != "closed" || result.Publish.OK || result.Publish.Error == nil || result.Publish.Error.Code != "not_found" || fixture.closeCalls != 1 {
-		t.Fatalf("result=%+v closeCalls=%d", result, fixture.closeCalls)
+	_, closeCalls := fixture.counts()
+	if result.Status != "closed" || result.Publish.OK || result.Publish.Error == nil || result.Publish.Error.Code != "not_found" || closeCalls != 1 {
+		t.Fatalf("result=%+v closeCalls=%d", result, closeCalls)
 	}
 	cmd = exec.Command(bin, "--json", "issue", "publish", "app-7")
 	cmd.Env = append(os.Environ(), "DIBS_SOCKET="+fixture.socketPath, "PATH="+fakeDir+":"+os.Getenv("PATH"), "HOME="+t.TempDir(), "DIBS_DB="+fixture.dbPath)
@@ -160,10 +183,72 @@ func TestClosePublishFailureKeepsLocalCloseAndJSON(t *testing.T) {
 	}
 }
 
+func TestClosePublishReportsLocalResultBeforeFailure(t *testing.T) {
+	fixture := newPublishFixture(t)
+	fixture.update(func(f *publishFixture) { f.allowClose = true })
+	bin := buildAfctlForRunTest(t)
+	fakeDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(fakeDir, "gh"), []byte("#!/bin/sh\necho 'gh: Not Found (HTTP 404)' >&2\nexit 1\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(bin, "issue", "close", "app-7", "--resolution", "done", "--expected-version", "3", "--lease-generation", "1", "--publish")
+	cmd.Env = append(os.Environ(), "DIBS_SOCKET="+fixture.socketPath, "DIBS_LEASE_TOKEN=test-token", "PATH="+fakeDir+":"+os.Getenv("PATH"), "HOME="+t.TempDir(), "DIBS_DB="+fixture.dbPath)
+	out, err := cmd.CombinedOutput()
+	_, closeCalls := fixture.counts()
+	if err != nil || closeCalls != 1 {
+		t.Fatalf("close failed: %v; output=%s", err, out)
+	}
+	closed, failed := strings.Index(string(out), "Issue closed."), strings.Index(string(out), "publish failed:")
+	if closed < 0 || failed <= closed || !strings.Contains(string(out), "retry: dibs issue publish app-7") {
+		t.Fatalf("wrong report order: %s", out)
+	}
+}
+
+func TestClosePublishSecretHasNoRetryHint(t *testing.T) {
+	fixture := newPublishFixture(t)
+	fixture.update(func(f *publishFixture) {
+		f.allowClose = true
+		f.notes[0].Body = "contains synthetic-secret"
+	})
+	t.Setenv("DIBS_OPERATOR_TOKEN", "synthetic-secret")
+	bin := buildAfctlForRunTest(t)
+	fakeDir := t.TempDir()
+	script := "#!/bin/sh\n" +
+		"printf '%s\\n' '{\"comments_url\":\"https://api.github.com/repos/o/r/issues/1/comments\"}'\n"
+	if err := os.WriteFile(filepath.Join(fakeDir, "gh"), []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(bin, "issue", "close", "app-7", "--resolution", "done", "--expected-version", "3", "--lease-generation", "1", "--publish")
+	cmd.Env = append(os.Environ(), "DIBS_SOCKET="+fixture.socketPath, "DIBS_LEASE_TOKEN=test-token", "PATH="+fakeDir+":"+os.Getenv("PATH"), "HOME="+t.TempDir(), "DIBS_DB="+fixture.dbPath)
+	out, err := cmd.CombinedOutput()
+	_, closeCalls := fixture.counts()
+	if err != nil || closeCalls != 1 {
+		t.Fatalf("close failed: %v; output=%s", err, out)
+	}
+	if !strings.Contains(string(out), "Issue closed.") || strings.Count(string(out), "this close cannot be published") != 1 || strings.Contains(string(out), "retry:") || strings.Contains(string(out), "synthetic-secret") {
+		t.Fatalf("wrong secret report: %s", out)
+	}
+	cmd = exec.Command(bin, "--json", "issue", "publish", "app-7")
+	cmd.Env = append(os.Environ(), "DIBS_SOCKET="+fixture.socketPath, "DIBS_OPERATOR_TOKEN=synthetic-secret", "PATH="+fakeDir+":"+os.Getenv("PATH"), "HOME="+t.TempDir(), "DIBS_DB="+fixture.dbPath)
+	out, err = cmd.Output()
+	if err == nil {
+		t.Fatal("explicit secret publish succeeded")
+	}
+	var result struct {
+		Issue string        `json:"issue"`
+		Error *publishError `json:"error"`
+	}
+	if jsonErr := json.Unmarshal(out, &result); jsonErr != nil || result.Error == nil || result.Error.Code != "secret_in_text" || result.Issue != "app-7" || strings.Contains(string(out), "synthetic-secret") {
+		t.Fatalf("secret JSON: %s; decode=%v", out, jsonErr)
+	}
+}
+
 func TestRunPublishFailureKeepsLocalCloseAndJSON(t *testing.T) {
 	fixture := newPublishFixture(t)
-	fixture.allowClaim, fixture.allowClose = true, true
-	fixture.issue.Status = "open"
+	fixture.update(func(f *publishFixture) {
+		f.allowClaim, f.allowClose = true, true
+		f.issue.Status = "open"
+	})
 	bin := buildAfctlForRunTest(t)
 	fakeDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(fakeDir, "gh"), []byte("#!/bin/sh\necho 'gh: Not Found (HTTP 404)' >&2\nexit 1\n"), 0700); err != nil {
@@ -182,14 +267,15 @@ func TestRunPublishFailureKeepsLocalCloseAndJSON(t *testing.T) {
 	if err := json.Unmarshal(output, &result); err != nil {
 		t.Fatalf("invalid JSON: %s: %v", output, err)
 	}
-	if result.Status != "closed" || result.Publish.OK || result.Publish.Error == nil || result.Publish.Error.Code != "not_found" || fixture.claimCalls != 1 || fixture.closeCalls != 1 {
-		t.Fatalf("result=%+v claim=%d close=%d", result, fixture.claimCalls, fixture.closeCalls)
+	claimCalls, closeCalls := fixture.counts()
+	if result.Status != "closed" || result.Publish.OK || result.Publish.Error == nil || result.Publish.Error.Code != "not_found" || claimCalls != 1 || closeCalls != 1 {
+		t.Fatalf("result=%+v claim=%d close=%d", result, claimCalls, closeCalls)
 	}
 }
 
 func TestPublishMissingKeyStopsBeforeCloseOrClaim(t *testing.T) {
 	fixture := newPublishFixture(t)
-	fixture.issue.ExternalKey = ""
+	fixture.update(func(f *publishFixture) { f.issue.ExternalKey = "" })
 	err := requireGitHubExternalKey(t.Context(), fixture.client, "app-7")
 	if err == nil || !strings.Contains(err.Error(), "no GitHub external key") {
 		t.Fatalf("preflight = %v", err)
@@ -203,19 +289,46 @@ func TestPublishMissingKeyStopsBeforeCloseOrClaim(t *testing.T) {
 	if err := runIssueRun(t.Context(), fixture.client, []string{"app-7", "--actor", "agent", "--publish", "--", "true"}); err == nil {
 		t.Fatal("run accepted issue without GitHub key")
 	}
-	if fixture.closeCalls != 0 || fixture.claimCalls != 0 {
-		t.Fatalf("close=%d claim=%d", fixture.closeCalls, fixture.claimCalls)
+	claimCalls, closeCalls := fixture.counts()
+	if closeCalls != 0 || claimCalls != 0 {
+		t.Fatalf("close=%d claim=%d", closeCalls, claimCalls)
+	}
+}
+
+func TestClosePublishMissingKeyJSONValidationError(t *testing.T) {
+	fixture := newPublishFixture(t)
+	fixture.update(func(f *publishFixture) {
+		f.issue.ExternalKey = ""
+		f.allowClose = true
+	})
+	bin := buildAfctlForRunTest(t)
+	cmd := exec.Command(bin, "--json", "issue", "close", "app-7", "--resolution", "done", "--expected-version", "3", "--lease-generation", "1", "--publish")
+	cmd.Env = append(os.Environ(), "DIBS_SOCKET="+fixture.socketPath, "DIBS_LEASE_TOKEN=test-token", "HOME="+t.TempDir(), "DIBS_DB="+fixture.dbPath)
+	out, err := cmd.CombinedOutput()
+	_, closeCalls := fixture.counts()
+	if err == nil || closeCalls != 0 {
+		t.Fatalf("missing-key close = %v, calls=%d, output=%s", err, closeCalls, out)
+	}
+	var response struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if jsonErr := json.Unmarshal(out, &response); jsonErr != nil || response.Error.Code != "validation_failed" {
+		t.Fatalf("missing-key JSON = %s, decode=%v", out, jsonErr)
 	}
 }
 
 func TestPublishRecloseUsesNewEventID(t *testing.T) {
 	fixture := newPublishFixture(t)
 	gh := &fakePublisher{source: github.Issue{CommentsURL: "https://api.github.com/repos/new/repo/issues/1/comments"}}
-	if _, err := publishForIssue(t.Context(), fixture.client, gh, fixture.issue); err != nil {
+	if _, err := publishForIssue(t.Context(), fixture.client, gh, fixture.issueValue()); err != nil {
 		t.Fatal(err)
 	}
-	fixture.events = append(fixture.events, core.Event{ID: "close-event-two", Sequence: 13, EventType: "issue_closed", Actor: "agent", CreatedAt: "2026-09-26T16:45:00Z", PayloadJSON: `{"resolution":"cancelled"}`})
-	result, err := publishForIssue(t.Context(), fixture.client, gh, fixture.issue)
+	fixture.update(func(f *publishFixture) {
+		f.events = append(f.events, core.Event{ID: "close-event-two", Sequence: 13, EventType: "issue_closed", Actor: "agent", CreatedAt: "2026-09-26T16:45:00Z", PayloadJSON: `{"resolution":"cancelled"}`})
+	})
+	result, err := publishForIssue(t.Context(), fixture.client, gh, fixture.issueValue())
 	if err != nil || result.Already || gh.createCalls != 2 {
 		t.Fatalf("reclose = %+v, %v, calls=%d", result, err, gh.createCalls)
 	}
@@ -252,13 +365,15 @@ func TestPublishResultJSONShape(t *testing.T) {
 func TestPublishPreconditionsAvoidGitHub(t *testing.T) {
 	fixture := newPublishFixture(t)
 	gh := &fakePublisher{source: github.Issue{Locked: false}}
-	fixture.issue.Status = "in_progress"
-	if _, err := publishForIssue(t.Context(), fixture.client, gh, fixture.issue); err == nil || gh.getCalls != 0 {
+	fixture.update(func(f *publishFixture) { f.issue.Status = "in_progress" })
+	if _, err := publishForIssue(t.Context(), fixture.client, gh, fixture.issueValue()); err == nil || gh.getCalls != 0 {
 		t.Fatalf("in-progress publish: %v, GitHub calls %d", err, gh.getCalls)
 	}
-	fixture.issue.Status = "done"
-	fixture.issue.ExternalKey = ""
-	if _, err := publishForIssue(t.Context(), fixture.client, gh, fixture.issue); err == nil || gh.getCalls != 0 {
+	fixture.update(func(f *publishFixture) {
+		f.issue.Status = "done"
+		f.issue.ExternalKey = ""
+	})
+	if _, err := publishForIssue(t.Context(), fixture.client, gh, fixture.issueValue()); err == nil || gh.getCalls != 0 {
 		t.Fatalf("no-key publish: %v, GitHub calls %d", err, gh.getCalls)
 	}
 }
@@ -266,13 +381,13 @@ func TestPublishPreconditionsAvoidGitHub(t *testing.T) {
 func TestPublishPreflightLockedAndNotFound(t *testing.T) {
 	fixture := newPublishFixture(t)
 	gh := &fakePublisher{source: github.Issue{Locked: true}}
-	_, err := publishForIssue(t.Context(), fixture.client, gh, fixture.issue)
+	_, err := publishForIssue(t.Context(), fixture.client, gh, fixture.issueValue())
 	var ghErr *github.Error
 	if !errors.As(err, &ghErr) || ghErr.Code != "locked" || gh.listCalls != 0 || gh.createCalls != 0 {
 		t.Fatalf("locked preflight = %v, calls %+v", err, gh)
 	}
 	gh = &fakePublisher{getErr: &github.Error{Code: "not_found", Remedy: "check access"}}
-	_, err = publishForIssue(t.Context(), fixture.client, gh, fixture.issue)
+	_, err = publishForIssue(t.Context(), fixture.client, gh, fixture.issueValue())
 	if !errors.As(err, &ghErr) || ghErr.Code != "not_found" || gh.listCalls != 0 || gh.createCalls != 0 {
 		t.Fatalf("missing preflight = %v, calls %+v", err, gh)
 	}
@@ -281,7 +396,7 @@ func TestPublishPreflightLockedAndNotFound(t *testing.T) {
 func TestPublishRepeatAndSecretGuard(t *testing.T) {
 	fixture := newPublishFixture(t)
 	gh := &fakePublisher{source: github.Issue{CommentsURL: "https://api.github.com/repos/new/repo/issues/1/comments"}}
-	first, err := publishForIssue(t.Context(), fixture.client, gh, fixture.issue)
+	first, err := publishForIssue(t.Context(), fixture.client, gh, fixture.issueValue())
 	if err != nil || !first.OK || first.Already || gh.createCalls != 1 || gh.lastCommentsURL != gh.source.CommentsURL {
 		t.Fatalf("first publish = %+v, %v, calls %d", first, err, gh.createCalls)
 	}
@@ -290,13 +405,13 @@ func TestPublishRepeatAndSecretGuard(t *testing.T) {
 			t.Fatalf("comment lacks %q: %s", part, gh.lastPostBody)
 		}
 	}
-	second, err := publishForIssue(t.Context(), fixture.client, gh, fixture.issue)
+	second, err := publishForIssue(t.Context(), fixture.client, gh, fixture.issueValue())
 	if err != nil || !second.OK || !second.Already || second.CommentURL != first.CommentURL || gh.createCalls != 1 {
 		t.Fatalf("repeat publish = %+v, %v, calls %d", second, err, gh.createCalls)
 	}
 	t.Setenv("DIBS_OPERATOR_TOKEN", "synthetic-secret")
-	fixture.notes[0].Body = "contains synthetic-secret"
-	_, err = publishForIssue(t.Context(), fixture.client, gh, fixture.issue)
+	fixture.update(func(f *publishFixture) { f.notes[0].Body = "contains synthetic-secret" })
+	_, err = publishForIssue(t.Context(), fixture.client, gh, fixture.issueValue())
 	if err == nil || strings.Contains(err.Error(), "synthetic-secret") || gh.createCalls != 1 {
 		t.Fatalf("secret guard = %v, calls %d", err, gh.createCalls)
 	}

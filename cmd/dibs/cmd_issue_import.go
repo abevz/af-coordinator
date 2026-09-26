@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -14,8 +13,8 @@ import (
 	"github.com/abevz/dibs/internal/client"
 	"github.com/abevz/dibs/internal/core"
 	"github.com/abevz/dibs/internal/firstuse"
+	"github.com/abevz/dibs/internal/ghsync"
 	"github.com/abevz/dibs/internal/github"
-	"github.com/google/uuid"
 )
 
 const issueImportUsage = "Usage: dibs issue import <url|owner/repo#n> [--project <key>] [--repo <name>] [--scope-kind project|repository] [--type <type>] [--priority <n>] [--acceptance <text>] [--tag <namespace/value>]... [--allow-closed]"
@@ -27,14 +26,10 @@ type importOptions struct {
 	AllowClosed                                     bool
 }
 
-type importResult struct {
-	Issue     core.Issue `json:"issue"`
-	Imported  bool       `json:"imported"`
-	SourceURL string     `json:"source_url"`
-}
+type importResult = ghsync.ImportResult
 
 func importOperationID(projectID, externalKey string) string {
-	return uuid.NewSHA1(uuid.NameSpaceURL, []byte("dibs:issue-import:"+projectID+":"+externalKey)).String()
+	return ghsync.ImportOperationID(projectID, externalKey)
 }
 
 func runIssueImport(ctx context.Context, c *client.Client, args []string) error {
@@ -188,60 +183,12 @@ func importIssue(ctx context.Context, c *client.Client, gh github.Client, args [
 	if err != nil {
 		return importResult{}, ref, err
 	}
-	key := ref.ExternalKey()
-	sourceURL := fmt.Sprintf("https://github.com/%s/%s/issues/%d", ref.Owner, ref.Repo, ref.Number)
-	lookup := func() (core.Issue, bool, error) {
-		issues, err := c.ListIssuesWithFilters(ctx, core.IssueListParams{Project: project.Key, ExternalKey: key})
-		if err != nil {
-			return core.Issue{}, false, err
-		}
-		if len(issues) == 0 {
-			return core.Issue{}, false, nil
-		}
-		oldest := issues[0]
-		for _, issue := range issues[1:] {
-			if issue.CreatedAt < oldest.CreatedAt || (issue.CreatedAt == oldest.CreatedAt && issue.ID < oldest.ID) {
-				oldest = issue
-			}
-		}
-		return oldest, true, nil
-	}
-	if issue, ok, err := lookup(); err != nil {
-		return importResult{}, ref, err
-	} else if ok {
-		return importResult{Issue: issue, SourceURL: sourceURL}, ref, nil
-	}
-	source, err := gh.GetIssue(ctx, ref)
-	if err != nil {
-		return importResult{}, ref, err
-	}
-	if source.IsPullRequest() {
-		return importResult{}, ref, fmt.Errorf("GitHub pull requests cannot be imported; use an issue URL")
-	}
-	if source.State == "closed" && !opts.AllowClosed {
-		return importResult{}, ref, fmt.Errorf("GitHub issue is closed; pass --allow-closed to import it")
-	}
-	actor, err := resolveActor("")
-	if err != nil {
-		return importResult{}, ref, err
-	}
-	req := core.CreateIssueRequest{
-		Project: project.Key, ScopeKind: scope, Repo: repoName,
-		IssueType: opts.IssueType, Priority: opts.Priority, Tags: opts.Tags,
-		Title: source.Title, ExternalKey: key,
-		Description:        "Source: " + source.HTMLURL + "\n\n" + source.Body,
-		AcceptanceCriteria: opts.Acceptance, Actor: actor,
-		OperationID: importOperationID(project.ID, key),
-	}
-	issue, err := c.CreateIssue(ctx, req)
-	if err != nil {
-		var clientErr *client.ClientError
-		if errors.As(err, &clientErr) && (clientErr.Code == "idempotency_conflict" || clientErr.Code == "conflict") {
-			if existing, ok, lookupErr := lookup(); lookupErr == nil && ok {
-				return importResult{Issue: existing, SourceURL: sourceURL}, ref, nil
-			}
-		}
-		return importResult{}, ref, err
-	}
-	return importResult{Issue: issue, Imported: true, SourceURL: source.HTMLURL}, ref, nil
+	result, err := ghsync.Import(ctx, c, gh, ghsync.ImportRequest{
+		Source: ref, ProjectID: project.ID, ProjectKey: project.Key,
+		Repo: repoName, ScopeKind: scope, IssueType: opts.IssueType,
+		AcceptanceCriteria: opts.Acceptance, Priority: opts.Priority,
+		Tags: opts.Tags, AllowClosed: opts.AllowClosed,
+		ResolveActor: func() (string, error) { return resolveActor("") },
+	})
+	return result, ref, err
 }
