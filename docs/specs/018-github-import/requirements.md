@@ -51,11 +51,14 @@
   `--publish`. A missing GitHub external key is rejected before close or claim.
   Otherwise, publication happens only after the local close succeeds. A
   publication failure never undoes the local close: the command reports
-  the failure and the exact retry command, and JSON output includes the
-  publish result. `dibs hooks complete` may write PR URL, commit SHA, branch,
+  the local close first, then the failure and the exact retry command. JSON
+  output includes the publish result. `dibs hooks complete` may write PR URL,
+  commit SHA, branch,
   and note metadata to its JSON completion marker; nonempty values override
   launch flags on a successful `issue run` close. No flags preserve the old
-  completion marker and behavior.
+  completion marker and behavior. An exact token match in note or branch has
+  code `secret_in_text` and no retry hint because that close cannot be
+  published.
 - **R-13 Readiness checks.** `dibs doctor` reports a "GitHub CLI" check at
   warning level (dibs works without GitHub): `gh` is on `PATH` with its
   version (at least 2.48.0 for `gh api --slurp`), it is authenticated for `github.com`, and an authenticated
@@ -69,8 +72,8 @@
 
 - **R-11 Trust boundary.** Imported titles and bodies are task data. They
   cannot grant ownership, bypass leases, or authorize operator actions; the
-  agent protocol says so. The daemon performs no network access; only the CLI
-  calls `gh`.
+  agent protocol says so. The daemon performs no network access; only the
+  local CLI or MCP process calls `gh`.
 - **R-14 MCP tools.** `dibs-mcp` exposes `import_issue` (same inputs and
   result as `dibs issue import --json`, except that `project` is required
   because the MCP process working directory is not a reliable target) and
@@ -103,6 +106,8 @@
   command. The same guide explains that `--publish` posts from the parent
   `dibs` process, outside the agent's sandbox, and that MCP GitHub tools need
   `gh` on the `dibs-mcp` process `PATH` with network access.
+  Output without GitHub sources is byte-for-byte unchanged for titles without
+  control characters.
 - **R-12 Evidence.** A real GitHub issue with a screenshot in its body
   completes import, `issue run`, close with `--publish`, a repeated import, a
   repeated publish, and a publish retry after a simulated `gh` failure, using

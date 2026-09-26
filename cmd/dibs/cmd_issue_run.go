@@ -319,13 +319,20 @@ func runIssueRun(ctx context.Context, c *client.Client, args []string) error {
 			publication = &outcome
 		}
 		if jsonOutput {
+			var encodeErr error
 			if publication != nil {
-				json.NewEncoder(os.Stdout).Encode(struct {
+				encodeErr = json.NewEncoder(os.Stdout).Encode(struct {
 					core.CloseIssueResult
 					Publish *publishResult `json:"publish"`
 				}{result, publication})
 			} else {
-				json.NewEncoder(os.Stdout).Encode(result)
+				encodeErr = json.NewEncoder(os.Stdout).Encode(result)
+			}
+			if encodeErr != nil {
+				return encodeErr
+			}
+			if publication != nil && !publication.OK {
+				printPublishResult(*publication, issueID)
 			}
 			return nil
 		}

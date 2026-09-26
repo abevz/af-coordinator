@@ -160,6 +160,62 @@ func TestClosePublishFailureKeepsLocalCloseAndJSON(t *testing.T) {
 	}
 }
 
+func TestClosePublishReportsLocalResultBeforeFailure(t *testing.T) {
+	fixture := newPublishFixture(t)
+	fixture.allowClose = true
+	bin := buildAfctlForRunTest(t)
+	fakeDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(fakeDir, "gh"), []byte("#!/bin/sh\necho 'gh: Not Found (HTTP 404)' >&2\nexit 1\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(bin, "issue", "close", "app-7", "--resolution", "done", "--expected-version", "3", "--lease-generation", "1", "--publish")
+	cmd.Env = append(os.Environ(), "DIBS_SOCKET="+fixture.socketPath, "DIBS_LEASE_TOKEN=test-token", "PATH="+fakeDir+":"+os.Getenv("PATH"), "HOME="+t.TempDir(), "DIBS_DB="+fixture.dbPath)
+	out, err := cmd.CombinedOutput()
+	if err != nil || fixture.closeCalls != 1 {
+		t.Fatalf("close failed: %v; output=%s", err, out)
+	}
+	closed, failed := strings.Index(string(out), "Issue closed."), strings.Index(string(out), "publish failed:")
+	if closed < 0 || failed <= closed || !strings.Contains(string(out), "retry: dibs issue publish app-7") {
+		t.Fatalf("wrong report order: %s", out)
+	}
+}
+
+func TestClosePublishSecretHasNoRetryHint(t *testing.T) {
+	fixture := newPublishFixture(t)
+	fixture.allowClose = true
+	fixture.notes[0].Body = "contains synthetic-secret"
+	t.Setenv("DIBS_OPERATOR_TOKEN", "synthetic-secret")
+	bin := buildAfctlForRunTest(t)
+	fakeDir := t.TempDir()
+	script := "#!/bin/sh\n" +
+		"printf '%s\\n' '{\"comments_url\":\"https://api.github.com/repos/o/r/issues/1/comments\"}'\n"
+	if err := os.WriteFile(filepath.Join(fakeDir, "gh"), []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(bin, "issue", "close", "app-7", "--resolution", "done", "--expected-version", "3", "--lease-generation", "1", "--publish")
+	cmd.Env = append(os.Environ(), "DIBS_SOCKET="+fixture.socketPath, "DIBS_LEASE_TOKEN=test-token", "PATH="+fakeDir+":"+os.Getenv("PATH"), "HOME="+t.TempDir(), "DIBS_DB="+fixture.dbPath)
+	out, err := cmd.CombinedOutput()
+	if err != nil || fixture.closeCalls != 1 {
+		t.Fatalf("close failed: %v; output=%s", err, out)
+	}
+	if !strings.Contains(string(out), "Issue closed.") || !strings.Contains(string(out), "this close cannot be published") || strings.Contains(string(out), "retry:") || strings.Contains(string(out), "synthetic-secret") {
+		t.Fatalf("wrong secret report: %s", out)
+	}
+	cmd = exec.Command(bin, "--json", "issue", "publish", "app-7")
+	cmd.Env = append(os.Environ(), "DIBS_SOCKET="+fixture.socketPath, "DIBS_OPERATOR_TOKEN=synthetic-secret", "PATH="+fakeDir+":"+os.Getenv("PATH"), "HOME="+t.TempDir(), "DIBS_DB="+fixture.dbPath)
+	out, err = cmd.Output()
+	if err == nil {
+		t.Fatal("explicit secret publish succeeded")
+	}
+	var result struct {
+		Issue string        `json:"issue"`
+		Error *publishError `json:"error"`
+	}
+	if jsonErr := json.Unmarshal(out, &result); jsonErr != nil || result.Error == nil || result.Error.Code != "secret_in_text" || result.Issue != "app-7" || strings.Contains(string(out), "synthetic-secret") {
+		t.Fatalf("secret JSON: %s; decode=%v", out, jsonErr)
+	}
+}
+
 func TestRunPublishFailureKeepsLocalCloseAndJSON(t *testing.T) {
 	fixture := newPublishFixture(t)
 	fixture.allowClaim, fixture.allowClose = true, true

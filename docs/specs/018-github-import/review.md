@@ -68,6 +68,48 @@
 
 ## Evidence
 
+### afc-169 implementation evidence (2026-09-26)
+
+- Moved target-independent import, close-event selection, publication, and
+  token text checks from CLI code into `internal/ghsync`. CLI parsing and
+  checkout target resolution remain in `cmd/dibs`; no daemon, API, store, or
+  schema changes. Existing afc-163/afc-164 CLI tests were left unchanged.
+- Added MCP `import_issue`, `publish_issue`, and `close_issue.publish` with a
+  fake-injectable GitHub client. A repeated close operation still attempts
+  publication; the existing close marker prevents a second comment. CLI and
+  MCP share GitHub error codes and retain the concise `gh` stderr text.
+- Added the GitHub protocol section, matching embedded protocol, MCP tool
+  documentation, managed AGENTS line, and Claude Code/Codex hook guide.
+  SessionStart adds the source label and guidance only when a displayed task
+  has a GitHub key. Owner clarified that output without GitHub sources is
+  byte-for-byte unchanged for titles without control characters; titles with
+  control characters are sanitized even without GitHub sources.
+- The CLI reports a successful local close before a publication failure.
+  Exact token text refusal has code `secret_in_text` and no retry hint, since
+  the recorded note or branch cannot be changed after close.
+- Final review found that replaying an old MCP `close_issue` operation after
+  reopen and reclose could publish the newer close. Owner chose to preserve
+  the local replay result, return `already` if the old close marker exists,
+  or return `stale_close` without posting. The implementation matches the
+  replayed `closed_at` and lease generation against close events; a same-second
+  reclose is therefore also disambiguated. A second review found that a later
+  operator close needed the same stale handling and that rereading events
+  after selecting the replayed close could publish a newer close. Publication
+  now renders from the selected event using one event-list read. Focused tests
+  cover both stale outcomes, later operator-close, same-second closes, and the
+  MCP test daemon replay after a newer close.
+- Focused tests covered shared import/publish mapping, moved GitHub comment
+  URL, idempotent marker, token refusal, MCP import and close replay against a
+  temporary test daemon, missing-key preflight, locked source, GitHub error
+  classes, SessionStart output, and CLI close output order. `go build ./...`
+  and `go test ./...` passed before final review; final validation logs are
+  `/tmp/dibs-afc169-build-final.log` and `/tmp/dibs-afc169-test-final.log`.
+  `cmp` confirmed the protocol source and embedded copy are identical;
+  `git diff --check` passed.
+- Intentionally not run: real GitHub API, real Claude Code/Codex sessions,
+  cross-compilation, release dry-run, and rc.4 publication. Those belong to
+  `afc-165` or the owner release step.
+
 ### afc-164 owner decisions (2026-09-26)
 
 - The CLI-only `hooks complete` marker may carry PR URL, commit SHA, branch,
