@@ -84,17 +84,41 @@ project hook with `dibs hooks install --agent claude` or
 calls `dibs hooks complete` after meeting the task's acceptance criteria.
 See the [agent integration guide](contrib/hooks/README.md).
 
-GitHub import and result publication in a source build require GitHub CLI
-2.48.0 or newer and `gh auth login`. `dibs doctor` checks the installed
-version, authentication, and API access. `dibs issue publish` posts the
-closing note and branch publicly to the source issue.
+## Work from GitHub Issues
+
+Starting with `v0.1.0-rc.4`, dibs works on top of the issues you already keep
+in GitHub. You do not re-create them; dibs imports one by URL, lets exactly
+one agent own it, and reports the result back on the original issue:
+
+```sh
+dibs issue import https://github.com/acme/app/issues/42        # -> app-7
+dibs issue run app-7 --require-complete --publish -- claude -p '...'
+# inside the run, after opening the PR:
+dibs hooks complete --pr-url https://github.com/acme/app/pull/51 --commit-sha 1a2b3c4
+```
+
+After the run closes `app-7`, dibs adds one comment to issue #42 with the
+resolution, PR, commit, branch, and closing note. Importing or publishing
+again does not create duplicates. If publication fails, the local close
+stands and `dibs issue publish app-7` retries it. The same flow works with
+`codex exec`, and through MCP with `import_issue`, `publish_issue`, and
+`publish` on `close_issue`. The Claude Code and Codex session hook shows each
+imported issue's GitHub source.
+
+GitHub access goes through your own `gh` (2.48.0 or newer, `gh auth login`);
+dibs stores no GitHub token and the daemon stays offline. `dibs doctor`
+checks `gh`. Imported titles and bodies are task data, not instructions for
+the agent, and the closing note and branch are posted publicly. See the
+[agent protocol](docs/agent-protocol-v1.md#working-from-github-issues) and the
+[integration guide](contrib/hooks/README.md#work-from-a-github-issue).
 
 ## Current scope
 
 The published preview supports local issue creation, dependencies, ready
 queries, claims, handoffs, audit events, live watch, and one-shot Claude Code
-and Codex hooks. GitHub issue import and result publication, plus stored
-attachments, remain planned work. Jira is only a possible future adapter; no
+and Codex hooks. From `v0.1.0-rc.4` it also imports single GitHub issues and
+publishes results back to them. Tracking source edits after import, label and
+assignee sync, and stored attachments remain planned work. Jira is only a possible future adapter; no
 Jira target or plugin format is committed. See the
 [delivery plan](docs/specs/016-adoption/implementation-plan.md) for the order
 and acceptance criteria.
