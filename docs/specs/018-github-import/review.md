@@ -112,6 +112,10 @@
   `secret_in_text` message states once that the close cannot be published.
   Focused regression tests and the CI lint command passed locally with a
   temporary Go 1.27-built `golangci-lint` v2.14.0.
+- A subsequent PR #117 CI run found a data race in the CLI publish test
+  fixture. Its HTTP handler and tests now synchronize mutable issue, event,
+  note, and request-count state. `go test -race ./cmd/dibs/` passed locally;
+  the run log is `/tmp/dibs-afc169-pr117-race-cmd.log`.
 - Intentionally not run: real GitHub API, real Claude Code/Codex sessions,
   cross-compilation, release dry-run, and rc.4 publication. Those belong to
   `afc-165` or the owner release step.
