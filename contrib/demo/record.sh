@@ -6,21 +6,27 @@ set -euo pipefail
 
 root=$(cd "$(dirname "$0")/../.." && pwd)
 out="${1:-$root/docs/assets/dibs-race-demo.gif}"
+tape_src="${DEMO_TAPE:-contrib/demo/race.tape}"
 frames="$root/.demo-frames"
 tmp="$root/.demo-tmp"
 
 cd "$root"
 rm -rf "$frames" "$tmp"
 mkdir -p "$tmp"
-# vhs does not pass the caller's environment to the recorded shell, so a
-# DIBS_BIN_DIR (for example published release binaries) goes in as a tape Env.
-tape=contrib/demo/race.tape
-if [ -n "${DIBS_BIN_DIR:-}" ]; then
-	tape="$tmp/race.tape"
-	# vhs ignores Set lines after any other command, so Env goes after them.
-	awk -v dir="$DIBS_BIN_DIR" '!done && /^Hide$/ { print "Env DIBS_BIN_DIR \"" dir "\""; done = 1 } { print }' \
-		contrib/demo/race.tape >"$tape"
-fi
+trap 'rm -rf "$frames" "$tmp"' EXIT
+# vhs does not pass the caller's environment to the recorded shell, so
+# DIBS_BIN_DIR (for example published release binaries) and any variables
+# named in DEMO_ENV_VARS go in as tape Env lines. vhs ignores Set lines after
+# any other command, so the Env lines go just before the first Hide.
+tape="$tmp/demo.tape"
+env_lines=""
+for var in DIBS_BIN_DIR ${DEMO_ENV_VARS:-}; do
+	if [ -n "${!var:-}" ]; then
+		env_lines+="Env $var \"${!var}\""$'\n'
+	fi
+done
+DEMO_ENV_LINES="$env_lines" awk '!done && /^Hide$/ { printf "%s", ENVIRON["DEMO_ENV_LINES"]; done = 1 } { print }' \
+	"$tape_src" >"$tape"
 # vhs moves its frame directory out of TMPDIR with a rename, which fails
 # silently across filesystems (for example tmpfs /tmp), so keep it local.
 TMPDIR="$tmp" vhs "$tape"
