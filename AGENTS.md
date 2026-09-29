@@ -1,4 +1,4 @@
-# af-coordinator repo instructions
+# dibs repo instructions
 
 ## Purpose
 
@@ -136,7 +136,7 @@ agent_open / sub-agent spawn args:
   {
     "worktree": true,
     "worktree_branch": "docs/example-branch",
-    "worktree_path": "/home/abevz/github/af-coordinator/docs-example-branch"
+    "worktree_path": "/home/abevz/github/dibs/docs-example-branch"
   }
 ```
 
@@ -159,7 +159,7 @@ main. Do not write or commit directly from the main checkout.
 This repository uses a separate git dir:
 
 ```text
-/home/abevz/github/af-coordinator/.bare
+/home/abevz/github/dibs/.bare
 ```
 
 The current working tree is the main checkout.
