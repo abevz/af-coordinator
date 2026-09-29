@@ -1146,6 +1146,25 @@ func TestStats(t *testing.T) {
 	if result.Report.Version != "v1" || result.Report.Inventory.Total != 1 {
 		t.Fatalf("stats response = %#v", result)
 	}
+	resp, err = http.Get(server.URL + "/v1/stats?until=2026-07-14T00%3A00%3A00Z")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		t.Fatalf("expected 200 OK, got %d", resp.StatusCode)
+	}
+	global := decodeJSON[struct {
+		Report struct {
+			ByProject map[string]struct {
+				Total int `json:"total"`
+				Open  int `json:"open"`
+			} `json:"by_project"`
+		} `json:"report"`
+	}](t, resp)
+	if row, ok := global.Report.ByProject["test"]; !ok || row.Total != 1 || row.Open != 1 {
+		t.Fatalf("global project breakdown = %#v", global.Report.ByProject)
+	}
 
 	resp, err = http.Get(server.URL + "/v1/stats?since=not-a-time")
 	if err != nil {

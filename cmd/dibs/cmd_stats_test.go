@@ -80,14 +80,46 @@ func TestWriteStatsIncludesMetricsAndDataQuality(t *testing.T) {
 	})
 
 	for _, want := range []string{
-		"Execution statistics (v1)", "Project: afc", "Inventory: 2 total, 1 ready, 1 in progress",
-		"Lead time: n=1 p50=60s", "Attempt duration: n=1 p50=30s", "Outcomes: done=1 released=0",
+		"Execution statistics (v1)", "Project: afc", "Inventory\n  2 total, 1 ready, 1 in progress",
+		"Lead time: n=1 p50=1m", "Duration: n=1 p50=30s", "Outcomes: done=1 released=0",
 		"Data quality: 2 legacy events in scope; exact ordering starts at sequence 17",
 	} {
 		if !strings.Contains(out.String(), want) {
 			t.Fatalf("stats output missing %q:\n%s", want, out.String())
 		}
 	}
+}
+
+func TestWriteStatsProjectsAndDurations(t *testing.T) {
+	var out bytes.Buffer
+	writeStats(&out, report.Report{
+		Version: "v1", Window: report.Window{Until: "2026-07-14T12:00:00Z"},
+		Inventory: report.Inventory{Total: 6, ByStatus: map[string]int{}},
+		ByProject: map[string]report.ProjectStats{
+			"quiet": {Total: 1, Open: 1},
+			"busy":  {Total: 5, Open: 2, Ready: 1, InProgress: 1, Blocked: 1, Done: 1, Created7d: 3, Closed7d: 1},
+		},
+		Flow: report.Flow{LeadTime: report.Percentiles{SampleSize: 3, P50Seconds: 2520, P75Seconds: 24480, P90Seconds: 216000}},
+	})
+	got := out.String()
+	for _, want := range []string{"Projects: 2", "PROJECT", "IN PROGRESS", "BLOCKED", "7D CREATE/CLOSE", "83.3%", "16.7%", "p50=42m", "p75=6.8h", "p90=2.5d"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("stats output missing %q:\n%s", want, got)
+		}
+	}
+	if strings.Index(got, "busy") >= strings.Index(got, "quiet") {
+		t.Fatalf("projects not sorted by open count:\n%s", got)
+	}
+	for _, line := range strings.Split(got, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) > 0 && fields[0] == "busy" {
+			if len(fields) != 11 || fields[5] != "1" {
+				t.Fatalf("blocked count missing from busy row: %q", line)
+			}
+			return
+		}
+	}
+	t.Fatalf("busy project row missing:\n%s", got)
 }
 
 func TestRunStatsJSON(t *testing.T) {

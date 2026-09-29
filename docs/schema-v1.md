@@ -363,6 +363,9 @@ time. Event `sequence` remains the causal ordering source: the global
 `event_ordering_enabled` marker separates deterministic-but-legacy history
 from exact ordering. Report responses expose that cutoff and do not infer
 causal attempt order for events before it.
+The additive `by_project` report section groups the already loaded issues,
+ready issues, and close events by project key when no project filter is set.
+It creates no persisted rollup or additional store query.
 
 ## Indexes
 

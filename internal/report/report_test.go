@@ -30,8 +30,38 @@ func TestBuild(t *testing.T) {
 				if got.Version != Version || got.Inventory.Total != 0 || got.Flow.LeadTime.SampleSize != 0 {
 					t.Fatalf("unexpected empty report: %#v", got)
 				}
+				if got.ByProject == nil || len(got.ByProject) != 0 {
+					t.Fatalf("empty report should include an empty project breakdown: %#v", got.ByProject)
+				}
 				if got.Inventory.ByStatus["open"] != 0 || got.Attempts.Outcomes["handoff"] != 0 {
 					t.Fatalf("empty report did not preserve stable zero counts: %#v", got)
+				}
+			},
+		},
+		{
+			name: "global project breakdown reconciles with inventory",
+			source: func() fixtureSource {
+				fixture := richFixture()
+				fixture.projects = append(fixture.projects, core.Project{ID: "project-3", Key: "empty"})
+				fixture.issues = append(fixture.issues,
+					core.Issue{ID: "in-progress", ProjectID: "project-1", Status: "in_progress", CreatedAt: "2026-07-13T09:00:00Z"},
+					core.Issue{ID: "blocked", ProjectID: "project-1", Status: "blocked", CreatedAt: "2026-07-13T09:00:00Z"},
+				)
+				return fixture
+			}(),
+			check: func(t *testing.T, got Report) {
+				if len(got.ByProject) != 3 || got.ByProject["empty"].Total != 0 {
+					t.Fatalf("project rows = %#v", got.ByProject)
+				}
+				p1, p2 := got.ByProject["p1"], got.ByProject["p2"]
+				if p1.Total != 6 || p1.Open != 2 || p1.Ready != 1 || p1.InProgress != 1 || p1.Blocked != 1 || p1.Cancelled != 1 || p1.Deferred != 1 || p1.Created7d != 6 || p1.Closed7d != 2 {
+					t.Fatalf("p1 = %#v", p1)
+				}
+				if p2.Total != 1 || p2.Done != 1 || p2.Created7d != 1 || p2.Closed7d != 1 {
+					t.Fatalf("p2 = %#v", p2)
+				}
+				if p1.Total+p2.Total+got.ByProject["empty"].Total != got.Inventory.Total {
+					t.Fatalf("project totals do not match inventory: %#v", got)
 				}
 			},
 		},
@@ -40,6 +70,9 @@ func TestBuild(t *testing.T) {
 			source: richFixture(),
 			query:  Query{Project: "p1", Since: "2026-07-13T00:00:00Z", Until: "2026-07-14T00:00:00Z"},
 			check: func(t *testing.T, got Report) {
+				if got.ByProject != nil {
+					t.Fatalf("filtered report has project breakdown: %#v", got.ByProject)
+				}
 				if got.Scope.ProjectKey != "p1" || got.Inventory.Total != 4 || got.Inventory.Ready != 1 || got.Inventory.InProgress != 0 {
 					t.Fatalf("inventory = %#v, scope = %#v", got.Inventory, got.Scope)
 				}
@@ -76,6 +109,16 @@ func TestBuild(t *testing.T) {
 				}
 			},
 		},
+		{
+			name:   "repository-only scope retains project rows",
+			source: richFixture(),
+			query:  Query{Repo: "repo-one"},
+			check: func(t *testing.T, got Report) {
+				if got.Inventory.Total != 2 || got.ByProject["p1"].Total != 2 || got.ByProject["p2"].Total != 0 {
+					t.Fatalf("repository breakdown = %#v", got.ByProject)
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -86,6 +129,32 @@ func TestBuild(t *testing.T) {
 			}
 			tt.check(t, got)
 		})
+	}
+}
+
+func TestBuildProjectSevenDayWindowIgnoresFlowSince(t *testing.T) {
+	t.Parallel()
+	source := fixtureSource{
+		projects: []core.Project{{ID: "p-id", Key: "p"}},
+		issues: []core.Issue{
+			{ID: "old", ProjectID: "p-id", Status: "done", CreatedAt: "2026-07-06T11:59:59Z"},
+			{ID: "boundary", ProjectID: "p-id", Status: "done", CreatedAt: "2026-07-07T12:00:00Z"},
+			{ID: "recent", ProjectID: "p-id", Status: "open", CreatedAt: "2026-07-13T12:00:00Z"},
+		},
+		events: []core.Event{
+			{ID: "before", IssueID: "old", EventType: "issue_closed", PayloadJSON: "{}", CreatedAt: "2026-07-07T11:59:59Z"},
+			{ID: "at-start", IssueID: "boundary", EventType: "issue_closed", PayloadJSON: "{}", CreatedAt: "2026-07-07T12:00:00Z"},
+			{ID: "at-end", IssueID: "recent", EventType: "issue_operator_closed", PayloadJSON: "{}", CreatedAt: "2026-07-14T12:00:00Z"},
+			{ID: "after", IssueID: "recent", EventType: "issue_closed", PayloadJSON: "{}", CreatedAt: "2026-07-14T12:00:01Z"},
+		},
+	}
+	got, err := Build(context.Background(), source, Query{Since: "24h"}, mustTime(t, "2026-07-14T12:00:00Z"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := got.ByProject["p"]
+	if row.Total != 3 || row.Created7d != 2 || row.Closed7d != 2 || got.Flow.Created != 1 || got.Flow.Closed != 1 {
+		t.Fatalf("project window = %#v, flow = %#v", row, got.Flow)
 	}
 }
 
