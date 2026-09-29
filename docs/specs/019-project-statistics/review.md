@@ -13,5 +13,10 @@ read-only review found a missing blocked column; the final diff includes that
 column and a formatting test, and the reviewer confirmed resolution with no
 other findings.
 
-Integration and issue closure remain pending. The implementation matches
+A separate check ran the branch at `8196110` against a copy of the live
+database: the table listed 11 projects whose totals and open counts matched
+inventory (1276 and 132).
+
+Merged to `main` in PR #124 (`562fecd`) with CI passing; `afc-174` is closed as
+done. The implementation matches
 [requirements.md](requirements.md) and [design.md](design.md).
