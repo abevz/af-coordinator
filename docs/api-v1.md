@@ -241,6 +241,16 @@ This is the compact route-to-implementation inventory for the current daemon.
   the inclusive `[since, until]` window; an omitted `since` includes retained
   history. SCM close-metadata coverage uses each issue's latest terminal close
   in that window.
+- With no `project` filter, `report.by_project` is an object keyed by project
+  key. Every registered project has a row, including projects with no issues.
+  Rows contain `total`, `open`, `ready`, `in_progress`, `blocked`, `done`,
+  `cancelled`, `deferred`, `created_7d`, and `closed_7d`. `ready` is a subset of
+  `open`; the other status counts partition `total`. The seven-day counters use
+  the inclusive `[until - 7 days, until]` window independently of `since`:
+  `created_7d` counts issues by creation time, and `closed_7d` counts close
+  events, including operator closes. A report filtered by `project` has a null
+  `by_project`; a report filtered only by `repo` includes all projects, with
+  zero rows for those outside the repository scope.
 - Percentiles are seconds, use nearest-rank selection, and always include
   `sample_size`. Ratios include `numerator` and `denominator`; a zero
   denominator reports a zero ratio rather than an invented percentage.

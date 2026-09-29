@@ -41,17 +41,18 @@ type Source interface {
 
 // Report is the stable, versioned execution-statistics response.
 type Report struct {
-	Version     string      `json:"version"`
-	GeneratedAt string      `json:"generated_at"`
-	Scope       Scope       `json:"scope"`
-	Window      Window      `json:"window"`
-	DataQuality DataQuality `json:"data_quality"`
-	Inventory   Inventory   `json:"inventory"`
-	Flow        Flow        `json:"flow"`
-	Attempts    Attempts    `json:"attempts"`
-	Handoff     Coverage    `json:"handoff"`
-	Coverage    CoverageSet `json:"coverage"`
-	Definitions Definitions `json:"definitions"`
+	Version     string                  `json:"version"`
+	GeneratedAt string                  `json:"generated_at"`
+	Scope       Scope                   `json:"scope"`
+	Window      Window                  `json:"window"`
+	DataQuality DataQuality             `json:"data_quality"`
+	Inventory   Inventory               `json:"inventory"`
+	ByProject   map[string]ProjectStats `json:"by_project"`
+	Flow        Flow                    `json:"flow"`
+	Attempts    Attempts                `json:"attempts"`
+	Handoff     Coverage                `json:"handoff"`
+	Coverage    CoverageSet             `json:"coverage"`
+	Definitions Definitions             `json:"definitions"`
 }
 
 type Scope struct {
@@ -77,6 +78,21 @@ type Inventory struct {
 	ByStatus   map[string]int `json:"by_status"`
 	Ready      int            `json:"ready"`
 	InProgress int            `json:"in_progress"`
+}
+
+// ProjectStats combines a current inventory snapshot with trailing seven-day
+// throughput. Ready is a subset of Open, not an additional status.
+type ProjectStats struct {
+	Total      int `json:"total"`
+	Open       int `json:"open"`
+	Ready      int `json:"ready"`
+	InProgress int `json:"in_progress"`
+	Blocked    int `json:"blocked"`
+	Done       int `json:"done"`
+	Cancelled  int `json:"cancelled"`
+	Deferred   int `json:"deferred"`
+	Created7d  int `json:"created_7d"`
+	Closed7d   int `json:"closed_7d"`
 }
 
 type Flow struct {
@@ -222,6 +238,15 @@ func Build(ctx context.Context, source Source, query Query, now time.Time) (Repo
 			LegacyOrdering:    "events before exact_ordering_from_sequence are deterministic but not causally ordered",
 		},
 	}
+	projectKeys := make(map[string]string, len(projects))
+	if filters.project == nil {
+		report.ByProject = make(map[string]ProjectStats, len(projects))
+		for _, project := range projects {
+			projectKeys[project.ID] = project.Key
+			report.ByProject[project.Key] = ProjectStats{}
+		}
+	}
+	sevenDaysAgo := filters.until.Add(-7 * 24 * time.Hour)
 
 	for _, issue := range issues {
 		report.Inventory.Total++
@@ -234,9 +259,40 @@ func Build(ctx context.Context, source Source, query Query, now time.Time) (Repo
 			report.Flow.Created++
 			addDaily(&report.Flow.Daily, createdAt, func(bucket *DailyThroughput) { bucket.Created++ })
 		}
+		if report.ByProject != nil {
+			key := projectKeys[issue.ProjectID]
+			row := report.ByProject[key]
+			row.Total++
+			switch issue.Status {
+			case "open":
+				row.Open++
+			case "in_progress":
+				row.InProgress++
+			case "blocked":
+				row.Blocked++
+			case "done":
+				row.Done++
+			case "cancelled":
+				row.Cancelled++
+			case "deferred":
+				row.Deferred++
+			}
+			if inWindow(createdAt, sevenDaysAgo, filters.until) {
+				row.Created7d++
+			}
+			report.ByProject[key] = row
+		}
 	}
 	report.Inventory.Ready = len(readyIssues)
 	report.Inventory.InProgress = report.Inventory.ByStatus["in_progress"]
+	for _, issue := range readyIssues {
+		if report.ByProject != nil {
+			key := projectKeys[issue.ProjectID]
+			row := report.ByProject[key]
+			row.Ready++
+			report.ByProject[key] = row
+		}
+	}
 
 	notesByIssue := make(map[string]struct{})
 	for _, note := range notes {
@@ -257,6 +313,24 @@ func Build(ctx context.Context, source Source, query Query, now time.Time) (Repo
 	_, scopedEvents, windowEvents, cutoff, malformed, err := classifyEvents(events, issueIDs, filters)
 	if err != nil {
 		return Report{}, err
+	}
+	if report.ByProject != nil {
+		issueProjects := make(map[string]string, len(issues))
+		for _, issue := range issues {
+			issueProjects[issue.ID] = projectKeys[issue.ProjectID]
+		}
+		for _, event := range scopedEvents {
+			if event.EventType != "issue_closed" && event.EventType != "issue_operator_closed" {
+				continue
+			}
+			at, _ := parseTimestamp(event.CreatedAt)
+			if inWindow(at, sevenDaysAgo, filters.until) {
+				key := issueProjects[event.IssueID]
+				row := report.ByProject[key]
+				row.Closed7d++
+				report.ByProject[key] = row
+			}
+		}
 	}
 	report.DataQuality.ExactOrderingFromSequence = cutoff
 	report.DataQuality.LegacyEventCount = legacyEventCount(scopedEvents, cutoff)

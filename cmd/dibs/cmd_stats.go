@@ -8,6 +8,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"text/tabwriter"
 
 	"github.com/abevz/dibs/internal/client"
 	"github.com/abevz/dibs/internal/report"
@@ -91,7 +92,7 @@ func writeStats(w io.Writer, stats report.Report) {
 	if stats.Scope.RepositoryName != "" {
 		fmt.Fprintf(w, "Repository: %s (%s)\n", stats.Scope.RepositoryName, stats.Scope.RepositoryID)
 	}
-	fmt.Fprintf(w, "\nInventory: %d total, %d ready, %d in progress\n", stats.Inventory.Total, stats.Inventory.Ready, stats.Inventory.InProgress)
+	fmt.Fprintf(w, "\nInventory\n  %d total, %d ready, %d in progress\n", stats.Inventory.Total, stats.Inventory.Ready, stats.Inventory.InProgress)
 	statuses := make([]string, 0, len(stats.Inventory.ByStatus))
 	for status := range stats.Inventory.ByStatus {
 		statuses = append(statuses, status)
@@ -100,11 +101,15 @@ func writeStats(w io.Writer, stats report.Report) {
 	for _, status := range statuses {
 		fmt.Fprintf(w, "  %-12s %d\n", status+":", stats.Inventory.ByStatus[status])
 	}
+	if stats.ByProject != nil {
+		writeProjectStats(w, stats.ByProject, stats.Inventory.Total)
+	}
 
-	fmt.Fprintf(w, "\nFlow: %d created, %d closed, %d cancelled, %d reopened\n", stats.Flow.Created, stats.Flow.Closed, stats.Flow.Cancelled, stats.Flow.Reopened)
-	writePercentiles(w, "Lead time", stats.Flow.LeadTime)
-	writePercentiles(w, "Attempt duration", stats.Attempts.Duration)
-	fmt.Fprintf(w, "Attempts: %d claims, %d completed, %d/%d multi-attempt issues (%.1f%%)\n",
+	fmt.Fprintf(w, "\nFlow\n  %d created, %d closed, %d cancelled, %d reopened\n", stats.Flow.Created, stats.Flow.Closed, stats.Flow.Cancelled, stats.Flow.Reopened)
+	writePercentiles(w, "  Lead time", stats.Flow.LeadTime)
+	fmt.Fprintln(w, "\nAttempts")
+	writePercentiles(w, "  Duration", stats.Attempts.Duration)
+	fmt.Fprintf(w, "  %d claims, %d completed, %d/%d multi-attempt issues (%.1f%%)\n",
 		stats.Attempts.Claims,
 		stats.Attempts.Completed,
 		stats.Attempts.Churn.Numerator,
@@ -116,20 +121,55 @@ func writeStats(w io.Writer, stats report.Report) {
 		outcomes = append(outcomes, outcome)
 	}
 	sort.Strings(outcomes)
-	fmt.Fprint(w, "Outcomes:")
+	fmt.Fprint(w, "  Outcomes:")
 	for _, outcome := range outcomes {
 		fmt.Fprintf(w, " %s=%d", outcome, stats.Attempts.Outcomes[outcome])
 	}
 	fmt.Fprintln(w)
-	fmt.Fprintf(w, "Handoff: %d/%d releases (%.1f%%)\n", stats.Handoff.Numerator, stats.Handoff.Denominator, stats.Handoff.Ratio*100)
-	fmt.Fprintf(w, "Coverage: notes %d/%d (%.1f%%), spec links %d/%d (%.1f%%), SCM metadata %d/%d (%.1f%%)\n",
+	fmt.Fprintln(w, "\nQuality")
+	fmt.Fprintf(w, "  Handoff: %d/%d releases (%.1f%%)\n", stats.Handoff.Numerator, stats.Handoff.Denominator, stats.Handoff.Ratio*100)
+	fmt.Fprintf(w, "  Coverage: notes %d/%d (%.1f%%), spec links %d/%d (%.1f%%), SCM metadata %d/%d (%.1f%%)\n",
 		stats.Coverage.Notes.Numerator, stats.Coverage.Notes.Denominator, stats.Coverage.Notes.Ratio*100,
 		stats.Coverage.SpecLinks.Numerator, stats.Coverage.SpecLinks.Denominator, stats.Coverage.SpecLinks.Ratio*100,
 		stats.Coverage.SCMCloseMetadata.Numerator, stats.Coverage.SCMCloseMetadata.Denominator, stats.Coverage.SCMCloseMetadata.Ratio*100,
 	)
 	if stats.DataQuality.LegacyEventsIncluded {
-		fmt.Fprintf(w, "Data quality: %d legacy events in scope; exact ordering starts at sequence %d\n", stats.DataQuality.LegacyEventCount, stats.DataQuality.ExactOrderingFromSequence)
+		fmt.Fprintf(w, "  Data quality: %d legacy events in scope; exact ordering starts at sequence %d\n", stats.DataQuality.LegacyEventCount, stats.DataQuality.ExactOrderingFromSequence)
 	}
+}
+
+func writeProjectStats(w io.Writer, projects map[string]report.ProjectStats, total int) {
+	fmt.Fprintf(w, "\nProjects: %d\n", len(projects))
+	if len(projects) == 0 {
+		return
+	}
+	keys := make([]string, 0, len(projects))
+	for key := range projects {
+		keys = append(keys, key)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		a, b := projects[keys[i]], projects[keys[j]]
+		if a.Open != b.Open {
+			return a.Open > b.Open
+		}
+		if a.Ready != b.Ready {
+			return a.Ready > b.Ready
+		}
+		return keys[i] < keys[j]
+	})
+	table := tabwriter.NewWriter(w, 2, 4, 2, ' ', 0)
+	fmt.Fprintln(table, "  PROJECT\tTOTAL\tOPEN\tREADY\tIN PROGRESS\tBLOCKED\tDONE\tCANCEL\tDEFER\t7D CREATE/CLOSE\tSHARE")
+	for _, key := range keys {
+		row := projects[key]
+		share := 0.0
+		if total > 0 {
+			share = float64(row.Total) / float64(total) * 100
+		}
+		fmt.Fprintf(table, "  %s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d/%d\t%.1f%%\n",
+			key, row.Total, row.Open, row.Ready, row.InProgress, row.Blocked, row.Done, row.Cancelled, row.Deferred,
+			row.Created7d, row.Closed7d, share)
+	}
+	_ = table.Flush()
 }
 
 func writePercentiles(w io.Writer, label string, values report.Percentiles) {
@@ -137,5 +177,19 @@ func writePercentiles(w io.Writer, label string, values report.Percentiles) {
 		fmt.Fprintf(w, "%s: no samples\n", label)
 		return
 	}
-	fmt.Fprintf(w, "%s: n=%d p50=%.0fs p75=%.0fs p90=%.0fs\n", label, values.SampleSize, values.P50Seconds, values.P75Seconds, values.P90Seconds)
+	fmt.Fprintf(w, "%s: n=%d p50=%s p75=%s p90=%s\n", label, values.SampleSize,
+		humanDuration(values.P50Seconds), humanDuration(values.P75Seconds), humanDuration(values.P90Seconds))
+}
+
+func humanDuration(seconds float64) string {
+	switch {
+	case seconds < 60:
+		return fmt.Sprintf("%.0fs", seconds)
+	case seconds < 3600:
+		return fmt.Sprintf("%.0fm", seconds/60)
+	case seconds < 86400:
+		return fmt.Sprintf("%.1fh", seconds/3600)
+	default:
+		return fmt.Sprintf("%.1fd", seconds/86400)
+	}
 }
