@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/url"
 	"strings"
 	"testing"
@@ -12,6 +13,7 @@ import (
 	"github.com/mattn/go-runewidth"
 
 	"github.com/abevz/dibs/internal/core"
+	"github.com/abevz/dibs/internal/report"
 )
 
 type eventResponse struct {
@@ -20,6 +22,8 @@ type eventResponse struct {
 }
 
 type sourceFixture struct {
+	stats     map[string]report.ProjectStats
+	notes     []core.Note
 	projects  []core.Project
 	issues    []core.Issue
 	ready     []core.Issue
@@ -183,5 +187,120 @@ func TestRenderActiveLeaseProcessMetadata(t *testing.T) {
 	}
 	if !seenActive {
 		t.Fatalf("narrow board lost active row:\n%s", narrow)
+	}
+}
+
+func (f *sourceFixture) GetStats(context.Context, report.Query) (report.Report, error) {
+	return report.Report{ByProject: f.stats}, nil
+}
+func (f *sourceFixture) GetIssue(_ context.Context, id string) (core.Issue, *core.IssueLease, error) {
+	for _, issue := range f.issues {
+		if issue.ID == id {
+			return issue, nil, nil
+		}
+	}
+	return core.Issue{}, nil, errors.New("missing issue")
+}
+func (f *sourceFixture) ListNotes(context.Context, string) ([]core.Note, error) { return f.notes, nil }
+
+func TestSummaryIncludesDormantProjectsAndCounts(t *testing.T) {
+	fixture := &sourceFixture{stats: map[string]report.ProjectStats{
+		"empty": {}, "deferred": {Deferred: 4}, "busy": {Open: 3, Ready: 2, Blocked: 1, InProgress: 1, Deferred: 2, LastEventAt: "2026-10-01T12:00:00Z"},
+	}}
+	snapshot, err := New(fixture, "").Refresh(context.Background(), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshot.Projects) != 3 || snapshot.Projects[0].Key != "busy" || snapshot.Projects[1].Key != "deferred" || snapshot.Projects[2].Key != "empty" {
+		t.Fatalf("summary order: %#v", snapshot.Projects)
+	}
+	row := snapshot.Projects[0]
+	if row.Ready != 2 || row.Blocked != 1 || row.InProgress != 1 || row.Deferred != 2 || row.LastEventAt != "2026-10-01T12:00:00Z" {
+		t.Fatalf("counts/activity lost: %#v", row)
+	}
+}
+
+func TestStaleDetectionAndClockExpiry(t *testing.T) {
+	now := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	fixture := &sourceFixture{issues: []core.Issue{
+		{ID: "stale", ShortID: "demo-1", Status: "in_progress", UpdatedAt: now.Add(-time.Hour).Format(time.RFC3339)},
+		{ID: "expired", ShortID: "demo-2", Status: "in_progress", Holder: "agent", LeaseExpiresAt: now.Add(-time.Minute).Format(time.RFC3339)},
+		{ID: "live", ShortID: "demo-3", Status: "in_progress", Holder: "agent", LeaseExpiresAt: now.Add(time.Minute).Format(time.RFC3339)},
+		{ID: "deferred", Status: "deferred", LeaseExpiresAt: now.Add(-time.Hour).Format(time.RFC3339)},
+		{ID: "done", Status: "done", LeaseExpiresAt: now.Add(-time.Hour).Format(time.RFC3339)},
+		{ID: "open", Status: "open"},
+	}}
+	snapshot, err := New(fixture, "").Refresh(context.Background(), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshot.Stale) != 2 || len(snapshot.Active) != 1 {
+		t.Fatalf("classification: %#v", snapshot)
+	}
+	if snapshot.Stale[0].Reason != "since update (no active lease)" || snapshot.Stale[1].Reason != "since expiry" {
+		t.Fatalf("age basis: %#v", snapshot.Stale)
+	}
+	later := snapshot.At(now.Add(time.Minute))
+	if len(later.Active) != 0 || len(later.Stale) != 3 {
+		t.Fatalf("clock failed to expire lease: %#v", later)
+	}
+	if len(snapshot.Active) != 1 || len(snapshot.Stale) != 2 {
+		t.Fatal("clock mutated previous snapshot")
+	}
+	output := RenderOnce(snapshot, now)
+	if !strings.Contains(output, "1h0m0s since update") || !strings.Contains(output, "1m0s since expiry") {
+		t.Fatalf("stale age missing: %s", output)
+	}
+}
+
+func TestOnceOutputIsCompleteAndUnpadded(t *testing.T) {
+	snapshot := Snapshot{Projects: []ProjectSummary{{Key: "demo", ProjectStats: report.ProjectStats{Ready: 40, InProgress: 1}}}}
+	for i := 0; i < 40; i++ {
+		issue := core.Issue{ID: fmt.Sprint(i), ShortID: fmt.Sprintf("demo-%d", i), Status: "open", Title: "ready"}
+		snapshot.Ready = append(snapshot.Ready, issue)
+		snapshot.Issues = append(snapshot.Issues, issue)
+	}
+	snapshot.Issues = append(snapshot.Issues, core.Issue{ShortID: "demo-stale", Status: "in_progress"})
+	output := RenderOnce(snapshot, time.Now())
+	for _, part := range []string{"PROJECT SUMMARY", "IN_PROGRESS", "STALE (1)", "demo-stale", "READY (40)", "demo-39"} {
+		if !strings.Contains(output, part) {
+			t.Fatalf("missing %q in %s", part, output)
+		}
+	}
+	if strings.HasSuffix(output, "\n") || strings.Contains(output, "q quit") {
+		t.Fatal("one-shot contains terminal padding/footer")
+	}
+}
+
+func TestDetailsShowLastFiveNotes(t *testing.T) {
+	fixture := &sourceFixture{issues: []core.Issue{{ID: "issue", Description: "description"}}}
+	for i := 6; i >= 0; i-- {
+		fixture.notes = append(fixture.notes, core.Note{Body: fmt.Sprint(i), CreatedAt: fmt.Sprintf("2026-10-01T12:00:0%dZ", i)})
+	}
+	detail, err := New(fixture, "").Detail(context.Background(), "issue")
+	if err != nil || detail.Issue.Description != "description" || len(detail.Notes) != 5 || detail.Notes[0].Body != "2" || detail.Notes[4].Body != "6" {
+		t.Fatalf("detail=%#v err=%v", detail, err)
+	}
+	for _, width := range []int{38, 80} {
+		view := RenderDetail(detail, nil, false, width, 12, 1000)
+		for _, line := range strings.Split(view, "\n") {
+			if runewidth.StringWidth(line) > width {
+				t.Fatalf("too wide: %q", line)
+			}
+		}
+	}
+}
+
+func TestOnceActiveLeaseUnknownProcessMetadata(t *testing.T) {
+	now := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	snapshot := Snapshot{Issues: []core.Issue{{ShortID: "demo-1", Status: "in_progress", Holder: "agent", LeaseExpiresAt: now.Add(time.Minute).Format(time.RFC3339)}}}
+	output := RenderOnce(snapshot, now)
+	if !strings.Contains(output, "PID ?") || strings.Contains(output, "PID 0@") {
+		t.Fatalf("invalid unknown process output: %s", output)
+	}
+	snapshot.Issues[0].LeasePID = 1234
+	snapshot.Issues[0].LeaseHost = "host"
+	if output = RenderOnce(snapshot, now); !strings.Contains(output, "PID 1234@host") {
+		t.Fatalf("missing process output: %s", output)
 	}
 }

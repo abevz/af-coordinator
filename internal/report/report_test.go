@@ -339,3 +339,17 @@ func loadExportFixture(t *testing.T, path string) fixtureSource {
 	}
 	return source
 }
+
+func TestProjectLastEventUsesSequenceBeyondRecentTail(t *testing.T) {
+	fixture := richFixture()
+	fixture.events = append(fixture.events,
+		core.Event{Sequence: 1000, IssueID: fixture.issues[0].ID, EventType: "note_added", CreatedAt: "2026-07-14T10:00:00Z", PayloadJSON: "{}"},
+		core.Event{Sequence: 999, IssueID: fixture.issues[0].ID, EventType: "note_added", CreatedAt: "2026-07-14T11:00:00Z", PayloadJSON: "{}"})
+	got, err := Build(context.Background(), fixture, Query{}, mustTime(t, "2026-07-14T12:00:00Z"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ByProject["p1"].LastEventAt != "2026-07-14T10:00:00Z" {
+		t.Fatalf("last activity used wall-clock order: %#v", got.ByProject)
+	}
+}

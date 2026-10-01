@@ -250,7 +250,10 @@ This is the compact route-to-implementation inventory for the current daemon.
   `created_7d` counts issues by creation time, and `closed_7d` counts close
   events, including operator closes. A report filtered by `project` has a null
   `by_project`; a report filtered only by `repo` includes all projects, with
-  zero rows for those outside the repository scope.
+  zero rows for those outside the repository scope. The optional `last_event_at`
+  field is the timestamp of the latest retained issue event by sequence for
+  that project, independent of the flow window; it is omitted if no issue
+  events exist. Wall-clock timestamps do not determine event ordering.
 - Percentiles are seconds, use nearest-rank selection, and always include
   `sample_size`. Ratios include `numerator` and `denominator`; a zero
   denominator reports a zero ratio rather than an invented percentage.
