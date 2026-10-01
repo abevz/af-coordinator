@@ -1,6 +1,11 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"github.com/abevz/dibs/internal/config"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -52,7 +57,7 @@ func TestApplyBlock(t *testing.T) {
 			wantBody: "# Existing content\n\n" + block,
 		},
 		{
-			name: "stale block replaced",
+			name: "legacy block migrated",
 			setup: func(t *testing.T) (string, func()) {
 				dir := t.TempDir()
 				p := filepath.Join(dir, "AGENTS.md")
@@ -60,9 +65,9 @@ func TestApplyBlock(t *testing.T) {
 				os.WriteFile(p, []byte("# Repo\n"+staleBlock+"\nFooter"), 0644)
 				return p, func() {}
 			},
-			want:     initUpdated,
+			want:     initMigrated,
 			wantFile: true,
-			wantBody: "# Repo\n" + block + "\nFooter",
+			wantBody: "# Repo\n" + block + "Footer",
 		},
 		{
 			name: "current block unchanged",
@@ -119,5 +124,117 @@ func TestApplyBlockDryRun(t *testing.T) {
 	}
 	if _, err := os.Stat(p); !os.IsNotExist(err) {
 		t.Errorf("dry-run should not create file")
+	}
+}
+
+func TestIntegrationMigrationPreservesSurroundings(t *testing.T) {
+	block := formatBlock("new content")
+	legacy := legacyBeginMarker + "\nold content\n" + legacyEndMarker
+	for _, suffix := range []string{"", "\nFooter\n", "\r\nFooter", "\n\nFooter"} {
+		for _, dry := range []bool{false, true} {
+			t.Run(fmt.Sprintf("suffix=%q/dry=%v", suffix, dry), func(t *testing.T) {
+				p := filepath.Join(t.TempDir(), "AGENTS.md")
+				before := "# Repo\r\n\n" + legacy + suffix
+				if err := os.WriteFile(p, []byte(before), 0644); err != nil {
+					t.Fatal(err)
+				}
+				action, err := applyBlock(p, block, dry, nil)
+				if err != nil || action != initMigrated {
+					t.Fatalf("action=%v err=%v", action, err)
+				}
+				want := "# Repo\r\n\n" + strings.TrimSuffix(block, "\n") + suffix
+				if dry {
+					want = before
+				}
+				got, err := os.ReadFile(p)
+				if err != nil || string(got) != want {
+					t.Fatalf("got=%q want=%q err=%v", got, want, err)
+				}
+			})
+		}
+	}
+}
+
+func TestIntegrationConflictsDoNotWrite(t *testing.T) {
+	block := formatBlock("new")
+	legacy := legacyBeginMarker + "\nold\n" + legacyEndMarker + "\n"
+	for _, before := range []string{block + legacy, legacy + block, beginMarker, endMarker + beginMarker, block + block, legacy + legacy} {
+		for _, dry := range []bool{false, true} {
+			p := filepath.Join(t.TempDir(), "AGENTS.md")
+			if err := os.WriteFile(p, []byte(before), 0644); err != nil {
+				t.Fatal(err)
+			}
+			_, err := applyBlock(p, block, dry, nil)
+			if err == nil {
+				t.Fatalf("accepted conflicting content %q", before)
+			}
+			if strings.Contains(before, beginMarker) && strings.Contains(before, legacyBeginMarker) && (!strings.Contains(err.Error(), "lines 1-3") || !strings.Contains(err.Error(), "lines 4-6")) {
+				t.Fatalf("missing block ranges: %v", err)
+			}
+			got, readErr := os.ReadFile(p)
+			if readErr != nil || string(got) != before {
+				t.Fatalf("file changed after conflict: %q", got)
+			}
+		}
+	}
+}
+
+func TestCurrentIntegrationUpdatedWithoutExtraNewline(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "AGENTS.md")
+	old := formatBlock("old")
+	if err := os.WriteFile(p, []byte("Prefix\n"+old+"Suffix"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	action, err := applyBlock(p, formatBlock("new"), false, nil)
+	if err != nil || action != initUpdated {
+		t.Fatalf("action=%v err=%v", action, err)
+	}
+	got, err := os.ReadFile(p)
+	if err != nil || string(got) != "Prefix\n"+formatBlock("new")+"Suffix" {
+		t.Fatalf("unexpected replacement: %q", got)
+	}
+}
+
+func TestInitSetupDryRunReportsMigration(t *testing.T) {
+	oldJSON, oldStdout := jsonOutput, os.Stdout
+	defer func() { jsonOutput, os.Stdout = oldJSON, oldStdout }()
+	before := legacyBeginMarker + "\nold\n" + legacyEndMarker + "\n"
+	for _, jsonMode := range []bool{false, true} {
+		p := filepath.Join(t.TempDir(), "AGENTS.md")
+		if err := os.WriteFile(p, []byte(before), 0644); err != nil {
+			t.Fatal(err)
+		}
+		jsonOutput = jsonMode
+		r, w, err := os.Pipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		os.Stdout = w
+		runErr := runInitSetup(context.Background(), nil, config.Config{}, []string{"--path", p, "--dry-run", "--project", "afc", "--repo", "af-coordinator"})
+		w.Close()
+		out, err := io.ReadAll(r)
+		r.Close()
+		os.Stdout = oldStdout
+		if runErr != nil || err != nil {
+			t.Fatalf("run=%v read=%v", runErr, err)
+		}
+		if !strings.Contains(string(out), "migrated") {
+			t.Fatalf("migration omitted: %s", out)
+		}
+		if jsonMode {
+			var resp map[string]any
+			if err := json.Unmarshal(out, &resp); err != nil {
+				t.Fatal(err)
+			}
+			if resp["action"] != "migrated" || resp["dry_run"] != true {
+				t.Fatalf("bad response: %s", out)
+			}
+		} else if !strings.Contains(string(out), "would migrated") {
+			t.Fatalf("missing dry-run prefix: %s", out)
+		}
+		after, err := os.ReadFile(p)
+		if err != nil || string(after) != before {
+			t.Fatal("dry-run modified file")
+		}
 	}
 }

@@ -69,8 +69,8 @@ format.
 
 ## Per-repo adapter
 
-Managed by `afctl init`: wraps the `<!-- BEGIN/END AF-COORDINATOR
-INTEGRATION v:1 -->` block into a repo's `AGENTS.md`. Outside text is
+Managed by `afctl init`: wraps the `<!-- BEGIN/END DIBS
+INTEGRATION v:2 -->` block into a repo's `AGENTS.md`. Outside text is
 never touched. Re-run `afctl init` to refresh the block after an upgrade.
 
 The block tells deployed agents to:

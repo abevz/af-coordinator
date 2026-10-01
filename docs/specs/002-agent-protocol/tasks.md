@@ -25,14 +25,14 @@ Numbering continues the global AFC-SDD sequence.
       so the contract travels with the binary)
 - [x] AFC-SDD-0033 Add `afctl init` — wire a repo's AGENTS.md into the coordinator
   - writes a managed block into `./AGENTS.md` between markers
-    `<!-- BEGIN AF-COORDINATOR INTEGRATION v:1 -->` /
-    `<!-- END AF-COORDINATOR INTEGRATION -->`; block content is the
+    `<!-- BEGIN DIBS INTEGRATION v:2 -->` /
+    `<!-- END DIBS INTEGRATION -->`; block content is the
     embedded adapter snippet from 0032 (single source, no second copy)
   - idempotent: no AGENTS.md → create with the block; block absent →
     append; block present → replace in place (this is how a repo picks
     up a newer protocol after `afctl` upgrade); text outside the
     markers is never touched
-  - prior art: Beads' `BEGIN/END BEADS INTEGRATION v:1 hash:` block
+  - prior art: Beads' `BEGIN/END BEADS INTEGRATION v:2 hash:` block
   - supports `--json`; standard exit codes; prints what it did
     (created | updated | unchanged)
   - out of scope: project/repo/worktree registration (those commands
@@ -86,3 +86,7 @@ Numbering continues the global AFC-SDD sequence.
 Ordering: 0017 blocks everything else (hooks and the protocol doc quote
 `--json` commands). 0018 before 0019-0021 so snippets can link to it.
 0032 blocks 0033 (shared embedded snippet).
+
+- [x] afc-176 Migrate init markers to DIBS v:2 in place; retain v:1 recognition
+  through v0.1.x, reject mixed/duplicate blocks, preserve surrounding bytes,
+  and report dry-run migration without writes.
