@@ -69,9 +69,15 @@ wrapper use its HTTP API over a Unix socket. Specs and source code stay in Git;
 dibs stores the live execution state. It runs on one machine and does not sync
 leases across machines.
 
-The preview provides `dibs watch --project <key>` for a live,
+The preview provides `dibs watch` with a project summary (ready, blocked,
+in progress, deferred, and last issue event); dormant projects sort last.
+Use ↑/↓ and Enter to open a project, then an issue with its description,
+dependencies and last five notes. Esc returns; q quits and r refreshes.
+The STALE lane marks in-progress issues without active leases, with age since
+expiry when available or since the last issue update.
+`dibs watch --project <key>` opens a live,
 read-only view of ready work, active lease holders and remaining time,
-blockers, and recent events. Use `--once` for a text snapshot or `--json` for
+blockers, and recent events. Use `--once` for a complete text snapshot without terminal padding or `--json` for
 a machine-readable one. It does not claim tasks. Active `issue run` leases show
 their self-reported supervisor PID and host. New manual `issue claim` leases
 show a caller ancestor PID and host when available; that process can exit while
