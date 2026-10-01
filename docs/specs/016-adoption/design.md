@@ -171,3 +171,16 @@ build until a published release includes it.
 The SQLite transaction rechecks the original repository/worktree paths, updates every path and timestamp, writes one `repo_relocated` global event containing old/new paths and IDs, and records the complete result in the operation ledger. The API checks the committed operation ledger before filesystem validation, so a retry still replays after a later move removes the first destination. A path already owned by another worktree fails before any update. Existing issue foreign keys and artifact references retain their IDs. Git probes discard inherited `GIT_*` overrides so a foreign path cannot borrow the daemon's Git context.
 
 The old path must still resolve during verification. If the original checkout has moved, a temporary symlink to the new parent is an explicit prerequisite. This gives an exact common-store/worktree identity check rather than trusting a matching remote URL or commit alone. After the database update, `git worktree repair` must update absolute linked-worktree pointers before the temporary symlink is removed. Post-removal Git commands verify those pointers.
+
+## afc-142 — compatibility removal
+
+Canonical-only config.Env and EnvOrDefault remove legacy variable fallback;
+lease-token helpers read only DIBS_LEASE_TOKEN(_FILE). issue run exports only
+DIBS_* lifecycle metadata. Remove the legacy binary warning package, installer
+alias creation, and the legacy daemon unit template. Both source and release
+installers remove only old symlinks whose targets equal the canonical binary.
+Keep old data path detection to avoid creating a second database. Backup
+scripts use canonical variables but retain the existing backup unit names.
+Known consumer source changes land in isolated sibling worktrees and receive
+independent review and focused validation. Existing owner-only symlink/unit
+cleanup follows identity and inactive-state checks; no service switch.

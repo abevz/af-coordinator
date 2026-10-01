@@ -10,14 +10,12 @@ import (
 	"path/filepath"
 
 	"github.com/abevz/dibs/internal/api"
-	"github.com/abevz/dibs/internal/compat"
 	"github.com/abevz/dibs/internal/config"
 	"github.com/abevz/dibs/internal/store/sqlite"
 	"github.com/abevz/dibs/migrations"
 )
 
 func main() {
-	compat.WarnLegacyBinary("af-coordinatord", "dibsd")
 	// Restrict newly created DB/WAL/SHM/lock files. The Unix socket is
 	// deliberately widened to 0660 after listen according to the local trust
 	// contract.

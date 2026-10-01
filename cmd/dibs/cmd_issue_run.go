@@ -204,17 +204,12 @@ func runIssueRun(ctx context.Context, c *client.Client, args []string) error {
 	// only the shell leader can otherwise leave its current child running and
 	// prevent the shell from observing SIGTERM until WaitDelay kills it.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Env = append(os.Environ(),
+	cmd.Env = append(canonicalRunEnvironment(os.Environ()),
 		"DIBS_LEASE_TOKEN="+claim.LeaseToken,
 		fmt.Sprintf("DIBS_LEASE_GENERATION=%d", claim.LeaseGeneration),
 		"DIBS_ATTEMPT_ID="+claim.AttemptID,
 		"DIBS_ISSUE_ID="+issueID,
 		fmt.Sprintf("DIBS_EXPECTED_VERSION=%d", claim.Version),
-		"AF_LEASE_TOKEN="+claim.LeaseToken,
-		fmt.Sprintf("AF_LEASE_GENERATION=%d", claim.LeaseGeneration),
-		"AF_ATTEMPT_ID="+claim.AttemptID,
-		"AF_ISSUE_ID="+issueID,
-		fmt.Sprintf("AF_EXPECTED_VERSION=%d", claim.Version),
 	)
 	if requireComplete {
 		cmd.Env = append(cmd.Env, "DIBS_COMPLETION_FILE="+completionFile)
@@ -482,4 +477,19 @@ func runHeartbeat(ctx context.Context, c *client.Client, issueID, leaseToken str
 			}
 		}
 	}
+}
+
+// Drop inherited retired lifecycle keys as well as stopping their export.
+// A caller's old lease credentials must not reach the supervised child.
+func canonicalRunEnvironment(environment []string) []string {
+	result := make([]string, 0, len(environment))
+	for _, entry := range environment {
+		key, _, _ := strings.Cut(entry, "=")
+		switch key {
+		case "AF_LEASE_TOKEN", "AF_LEASE_GENERATION", "AF_ATTEMPT_ID", "AF_ISSUE_ID", "AF_EXPECTED_VERSION":
+			continue
+		}
+		result = append(result, entry)
+	}
+	return result
 }

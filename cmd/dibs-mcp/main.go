@@ -9,15 +9,13 @@ import (
 
 	"github.com/abevz/dibs/internal/build"
 	"github.com/abevz/dibs/internal/client"
-	"github.com/abevz/dibs/internal/compat"
 	"github.com/abevz/dibs/internal/config"
 	"github.com/abevz/dibs/internal/mcp"
 )
 
 func main() {
-	compat.WarnLegacyBinary("afc-mcp", "dibs-mcp")
 	cfg := config.Default()
-	actor := config.EnvOrDefault("DIBS_ACTOR", "AF_COORDINATOR_ACTOR", "")
+	actor := config.EnvOrDefault("DIBS_ACTOR", "")
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

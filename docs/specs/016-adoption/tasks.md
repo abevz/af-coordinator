@@ -42,3 +42,8 @@ implementation review.
 - [x] Add the daemon/API/CLI relocation operation, atomic path update, operation replay, and audit event.
 - [x] Verify same Git store, all worktree mappings, collision rejection, idempotency, retained IDs, and lookup after move in tests and a scratch daemon.
 - [ ] Relocate the live af-coordinator registration from the compatibility symlink to `~/github/dibs/main`; verify doctor and path lookups, then remove the compatibility symlink.
+
+- [x] afc-142 Remove legacy binaries/env/deprecation paths and installer aliases.
+- [x] afc-142 Migrate known consumers; preserve existing DB identity; test clean
+  install, lifecycle variables, canonical-only config and consumer checks.
+- [x] afc-142 Record breaking change and retire the disabled legacy unit/path.

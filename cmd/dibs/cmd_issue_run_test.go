@@ -258,7 +258,7 @@ func TestIssueHeartbeatReadsPrivateTokenFileWithoutArgv(t *testing.T) {
 		t.Fatal(err)
 	}
 	cmd := exec.Command(binPath, "issue", "heartbeat", "afc-1", "--lease-generation", "7", "--ttl", "60")
-	cmd.Env = append(os.Environ(), "AF_COORDINATOR_SOCKET="+sockPath,
+	cmd.Env = append(os.Environ(), "DIBS_SOCKET="+sockPath,
 		"DIBS_LEASE_TOKEN=", "AF_LEASE_TOKEN=", "DIBS_LEASE_TOKEN_FILE="+tokenFile)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -280,7 +280,7 @@ func TestIssueRunClosesOnSuccess(t *testing.T) {
 	sockPath := startMockCoordinator(t, mock)
 
 	cmd := exec.Command(binPath, "issue", "run", "afc-1", "--actor", "tester", "--ttl", "60", "--", "sh", "-c", "exit 0")
-	cmd.Env = append(os.Environ(), "AF_COORDINATOR_SOCKET="+sockPath)
+	cmd.Env = append(os.Environ(), "DIBS_SOCKET="+sockPath)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -318,7 +318,7 @@ func TestIssueRunHandsOffOnFailureAndMirrorsExitCode(t *testing.T) {
 	sockPath := startMockCoordinator(t, mock)
 
 	cmd := exec.Command(binPath, "issue", "run", "afc-2", "--actor", "tester", "--ttl", "60", "--", "sh", "-c", "exit 5")
-	cmd.Env = append(os.Environ(), "AF_COORDINATOR_SOCKET="+sockPath)
+	cmd.Env = append(os.Environ(), "DIBS_SOCKET="+sockPath)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -350,15 +350,18 @@ func TestIssueRunHandsOffOnFailureAndMirrorsExitCode(t *testing.T) {
 }
 
 func TestIssueRunExportsLeaseEnvToChild(t *testing.T) {
+	for _, key := range []string{"AF_LEASE_TOKEN", "AF_LEASE_GENERATION", "AF_ATTEMPT_ID", "AF_ISSUE_ID", "AF_EXPECTED_VERSION"} {
+		t.Setenv(key, "stale-legacy-value")
+	}
 	binPath := buildAfctlForRunTest(t)
 	mock := &mockCoordinator{claimVersion: 1}
 	sockPath := startMockCoordinator(t, mock)
 
-	printEnv := `test "$AF_LEASE_TOKEN" = "test-lease-token" || exit 10
-test "$AF_LEASE_GENERATION" = "7" || exit 11
-test "$AF_ATTEMPT_ID" = "test-attempt-id" || exit 12
-test "$AF_ISSUE_ID" = "afc-3" || exit 13
-test "$AF_EXPECTED_VERSION" = "1" || exit 14
+	printEnv := `test -z "$AF_LEASE_TOKEN" || exit 10
+test -z "$AF_LEASE_GENERATION" || exit 11
+test -z "$AF_ATTEMPT_ID" || exit 12
+test -z "$AF_ISSUE_ID" || exit 13
+test -z "$AF_EXPECTED_VERSION" || exit 14
 test "$DIBS_LEASE_TOKEN" = "test-lease-token" || exit 15
 test "$DIBS_LEASE_GENERATION" = "7" || exit 16
 test "$DIBS_ATTEMPT_ID" = "test-attempt-id" || exit 17
@@ -366,7 +369,7 @@ test "$DIBS_ISSUE_ID" = "afc-3" || exit 18
 test "$DIBS_EXPECTED_VERSION" = "1" || exit 19
 exit 0`
 	cmd := exec.Command(binPath, "issue", "run", "afc-3", "--actor", "tester", "--ttl", "60", "--", "sh", "-c", printEnv)
-	cmd.Env = append(os.Environ(), "AF_COORDINATOR_SOCKET="+sockPath)
+	cmd.Env = append(os.Environ(), "DIBS_SOCKET="+sockPath)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -396,7 +399,7 @@ func TestIssueRunStopsChildOnLeaseLoss(t *testing.T) {
 	wait`
 	cmd := exec.Command(binPath, "issue", "run", "afc-4", "--actor", "tester", "--ttl", "15", "--", "sh", "-c", child)
 	cmd.Env = append(os.Environ(),
-		"AF_COORDINATOR_SOCKET="+sockPath,
+		"DIBS_SOCKET="+sockPath,
 		"TERM_MARKER="+marker,
 		"DESCENDANT_PID="+descendantPID,
 	)
@@ -466,7 +469,7 @@ func TestIssueRunRetriesTransientHeartbeatFailure(t *testing.T) {
 	sockPath := startMockCoordinator(t, mock)
 
 	cmd := exec.Command(binPath, "issue", "run", "afc-5", "--actor", "tester", "--ttl", "15", "--", "sh", "-c", "sleep 10")
-	cmd.Env = append(os.Environ(), "AF_COORDINATOR_SOCKET="+sockPath)
+	cmd.Env = append(os.Environ(), "DIBS_SOCKET="+sockPath)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -500,7 +503,7 @@ func TestIssueRunTreatsReplayedHeartbeatExpiryAsHistorical(t *testing.T) {
 	mock := &mockCoordinator{claimVersion: 2, heartbeatFailures: 1, heartbeatExpireAfterReplay: true}
 	sockPath := startMockCoordinator(t, mock)
 	cmd := exec.Command(binPath, "issue", "run", "afc-6", "--actor", "tester", "--ttl", "15", "--", "sh", "-c", "sleep 60")
-	cmd.Env = append(os.Environ(), "AF_COORDINATOR_SOCKET="+sockPath)
+	cmd.Env = append(os.Environ(), "DIBS_SOCKET="+sockPath)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -529,7 +532,7 @@ func TestIssueRunShortTTLStopsBeforeExpiredChildContinues(t *testing.T) {
 	}
 	sockPath := startMockCoordinator(t, mock)
 	cmd := exec.Command(binPath, "issue", "run", "afc-7", "--ttl", "2", "--", "sh", "-c", "sleep 10")
-	cmd.Env = append(os.Environ(), "AF_COORDINATOR_SOCKET="+sockPath)
+	cmd.Env = append(os.Environ(), "DIBS_SOCKET="+sockPath)
 	start := time.Now()
 	out, err := cmd.CombinedOutput()
 	var exitErr *exec.ExitError
@@ -552,7 +555,7 @@ func TestIssueRunRejectsUnknownClaimDeadlineBeforeStartingChild(t *testing.T) {
 	sockPath := startMockCoordinator(t, mock)
 	marker := filepath.Join(t.TempDir(), "started")
 	cmd := exec.Command(binPath, "issue", "run", "afc-8", "--ttl", "2", "--", "sh", "-c", "touch \"$MARKER\"")
-	cmd.Env = append(os.Environ(), "AF_COORDINATOR_SOCKET="+sockPath, "MARKER="+marker)
+	cmd.Env = append(os.Environ(), "DIBS_SOCKET="+sockPath, "MARKER="+marker)
 	out, err := cmd.CombinedOutput()
 	if err == nil || !strings.Contains(string(out), "invalid claim lease expiry") {
 		t.Fatalf("unknown deadline result = %v; output=%s", err, out)
@@ -571,7 +574,7 @@ func TestIssueRunCleanShutdownWithHeartbeats(t *testing.T) {
 	sockPath := startMockCoordinator(t, mock)
 
 	cmd := exec.Command(binPath, "issue", "run", "afc-6", "--actor", "tester", "--ttl", "15", "--", "sh", "-c", "sleep 10")
-	cmd.Env = append(os.Environ(), "AF_COORDINATOR_SOCKET="+sockPath)
+	cmd.Env = append(os.Environ(), "DIBS_SOCKET="+sockPath)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

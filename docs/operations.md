@@ -431,3 +431,24 @@ Environment variables override defaults:
 
 - `DIBS_DB` — database path
 - `DIBS_SOCKET` — socket path
+
+## Legacy alias removal (afc-142)
+
+Before installing the canonical-only release, migrate consumer commands from
+`afctl` / `afc-mcp` / `af-coordinatord` to `dibs` / `dibs-mcp` / `dibsd` and
+configuration to `DIBS_*` names (see CHANGELOG.md for the exact mapping).
+`issue run` child scripts must use the DIBS lifecycle environment variables.
+Update any operator-token EnvironmentFile key to `DIBS_OPERATOR_TOKEN` while
+preserving its private value and mode 0600; do not print tokens. A later
+explicit service switch loads that environment. Existing database/socket
+paths are still discovered; alias removal does not migrate runtime data.
+
+Clean installs create only canonical binaries. Source and release installers
+remove old aliases only if they are symlinks targeting the corresponding
+canonical binary; unrelated files and symlink targets are preserved.
+The legacy daemon unit template is no longer shipped. Retire an installed
+`af-coordinatord.service` only after confirming it is inactive and disabled
+and the `dibsd` service uses the same canonical database. Remove the obsolete
+`~/github/af-coordinator` symlink only after repository relocation and consumer
+path migration are verified. These are operator steps, not automatic service
+or path mutations by the installer. Backup unit names are retained.

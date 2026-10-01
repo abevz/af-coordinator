@@ -80,9 +80,9 @@ rm "$HOME/.local/bin/dibs" "$HOME/.local/bin/dibsd" "$HOME/.local/bin/dibs-mcp"
 rm "$HOME/.local/share/licenses/dibs/LICENSE"
 ```
 
-The release installer also creates legacy command aliases `afctl`,
-`af-coordinatord`, and `afc-mcp` in the same directory. Remove those aliases
-only when they still point to the dibs binaries. The database, backups,
+The installer creates only the three canonical binaries. During upgrades it
+removes old `afctl`, `af-coordinatord`, and `afc-mcp` symlinks only when they
+still point to the corresponding dibs binaries. Independent files are kept. The database, backups,
 configuration, and logs stay on disk so removal of the programs does not
 discard work.
 

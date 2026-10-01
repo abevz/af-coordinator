@@ -44,7 +44,7 @@ func TestDaemonUsesExistingLegacyDatabaseWithoutCreatingSecondDB(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	cmd := exec.CommandContext(ctx, bin)
-	cmd.Env = []string{"HOME=" + home, "PATH=" + os.Getenv("PATH"), "AF_OPERATOR_TOKEN=test-token"}
+	cmd.Env = []string{"HOME=" + home, "PATH=" + os.Getenv("PATH"), "DIBS_OPERATOR_TOKEN=test-token"}
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}

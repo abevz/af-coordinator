@@ -52,3 +52,18 @@ func TestLifecycleTokenSourceMissingFailsClosed(t *testing.T) {
 		t.Fatalf("empty canonical source fell through to legacy: token=%q err=%v", token, err)
 	}
 }
+
+func TestLegacyLeaseTokenAloneIsRejected(t *testing.T) {
+	t.Setenv("DIBS_LEASE_TOKEN", "")
+	if err := os.Unsetenv("DIBS_LEASE_TOKEN"); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DIBS_LEASE_TOKEN_FILE", "")
+	t.Setenv("AF_LEASE_TOKEN", "legacy-secret")
+	if leaseTokenSourceAvailable() {
+		t.Fatal("legacy token accepted by validator")
+	}
+	if token, err := leaseTokenFromEnvironment(); err == nil || token != "" {
+		t.Fatal("legacy token accepted by handler")
+	}
+}

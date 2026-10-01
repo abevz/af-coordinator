@@ -7,8 +7,7 @@ unix-socket HTTP API and never talks to SQLite directly.
 
 Each request is one UTF-8 JSON-RPC object on one line. Responses are compact
 JSON-RPC objects followed by `\n`; notifications have no response. Blank input
-lines are ignored. Stdout contains protocol messages only; diagnostics and the
-deprecated `afc-mcp` alias notice go to stderr. `Content-Length` framing is
+lines are ignored. Stdout contains protocol messages only; diagnostics go to stderr. `Content-Length` framing is
 not supported.
 
 ## Launch

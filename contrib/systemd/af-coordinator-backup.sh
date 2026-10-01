@@ -3,8 +3,6 @@ set -euo pipefail
 
 if [ "${DIBS_DB+x}" ]; then
     DB_PATH="$DIBS_DB"
-elif [ "${AF_COORDINATOR_DB+x}" ]; then
-    DB_PATH="$AF_COORDINATOR_DB"
 elif [ -f "$HOME/.local/share/af-coordinator/af-coordinator.db" ]; then
     DB_PATH="$HOME/.local/share/af-coordinator/af-coordinator.db"
 else

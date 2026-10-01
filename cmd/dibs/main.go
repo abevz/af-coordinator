@@ -15,7 +15,6 @@ import (
 
 	"github.com/abevz/dibs/internal/build"
 	"github.com/abevz/dibs/internal/client"
-	"github.com/abevz/dibs/internal/compat"
 	"github.com/abevz/dibs/internal/config"
 	"github.com/abevz/dibs/internal/core"
 	"github.com/abevz/dibs/internal/firstuse"
@@ -27,11 +26,10 @@ var jsonOutput bool
 var defaultActor string
 
 func init() {
-	defaultActor = config.EnvOrDefault("DIBS_ACTOR", "AF_COORDINATOR_ACTOR", "")
+	defaultActor = config.EnvOrDefault("DIBS_ACTOR", "")
 }
 
 func main() {
-	compat.WarnLegacyBinary("afctl", "dibs")
 	cfg := config.Default()
 
 	// Parse global flags (--json, --actor) from os.Args before command dispatch.

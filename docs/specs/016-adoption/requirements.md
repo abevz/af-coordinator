@@ -117,3 +117,13 @@ This packet does not implement its child issues.
 - Registrations created by `dibs init` use the Git common directory, often `<checkout>/.git`; their main worktree must move with the checkout. Linked worktree Git metadata must be repaired before the old compatibility path is removed.
 - The update is atomic, audited, and safely replayable with an operation ID. Conflicting reuse of that ID is rejected. Path collisions with another registration are rejected.
 - CLI and API return the updated repository and worktree records; MCP can read those results through the existing repository/worktree list tools.
+
+## afc-142 — owner-approved compatibility removal (2026-10-01)
+
+The owner explicitly superseded the after-v0.1.0 timing: remove legacy command
+aliases and AF_* configuration now, migrate known consumers to DIBS_* / dibs,
+and record the breaking change. Clean installs expose only dibs/dibsd/dibs-mcp.
+Upgrade cleanup may remove only symlinks owned by the old installer, never
+unrelated executables. Existing database/socket path discovery stays intact.
+The disabled old service is retired as an explicit operator action; no live
+service restart or data migration is implied by this implementation.

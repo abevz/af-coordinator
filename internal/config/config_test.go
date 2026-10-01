@@ -47,12 +47,12 @@ func TestCanonicalEnvironmentWinsOverLegacy(t *testing.T) {
 	if got.DBPath != "/tmp/dibs.db" || got.SocketPath != "/tmp/dibs.sock" || got.LogLevel != "debug" {
 		t.Fatalf("canonical env did not win: %+v", got)
 	}
-	if value, ok := Env("DIBS_OPERATOR_TOKEN", "AF_OPERATOR_TOKEN"); ok || value != "" {
+	if value, ok := Env("DIBS_OPERATOR_TOKEN"); ok || value != "" {
 		t.Fatalf("unset env returned %q, %v", value, ok)
 	}
 	t.Setenv("DIBS_OPERATOR_TOKEN", "")
 	t.Setenv("AF_OPERATOR_TOKEN", "legacy-secret")
-	if value, ok := Env("DIBS_OPERATOR_TOKEN", "AF_OPERATOR_TOKEN"); !ok || value != "" {
+	if value, ok := Env("DIBS_OPERATOR_TOKEN"); !ok || value != "" {
 		t.Fatalf("explicitly empty canonical env fell through: %q, %v", value, ok)
 	}
 }
@@ -86,5 +86,30 @@ func TestLegacyPathsRemainCanonicalUntilMigration(t *testing.T) {
 	}
 	if got := Default(); got.DBPath != legacyDB {
 		t.Fatalf("legacy DB lost authority when both paths exist: %+v", got)
+	}
+}
+
+func TestLegacyEnvironmentIsIgnored(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	for _, key := range []string{"DIBS_DB", "DIBS_SOCKET", "DIBS_LOG_LEVEL", "DIBS_ACTOR", "DIBS_OPERATOR_TOKEN"} {
+		t.Setenv(key, "")
+		if err := os.Unsetenv(key); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("AF_COORDINATOR_DB", "/legacy.db")
+	t.Setenv("AF_COORDINATOR_SOCKET", "/legacy.sock")
+	t.Setenv("AF_COORDINATOR_LOG_LEVEL", "debug")
+	t.Setenv("AF_COORDINATOR_ACTOR", "legacy-actor")
+	t.Setenv("AF_OPERATOR_TOKEN", "legacy-secret")
+	got := Default()
+	if got.DBPath == "/legacy.db" || got.SocketPath == "/legacy.sock" || got.LogLevel != "info" {
+		t.Fatalf("legacy config used: %+v", got)
+	}
+	if value, ok := Env("DIBS_OPERATOR_TOKEN"); ok || value != "" {
+		t.Fatal("legacy token used")
+	}
+	if actor := EnvOrDefault("DIBS_ACTOR", ""); actor != "" {
+		t.Fatal("legacy actor used")
 	}
 }

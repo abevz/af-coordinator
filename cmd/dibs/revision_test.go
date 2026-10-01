@@ -139,7 +139,7 @@ func TestVersionCommandReportsBuildRevision(t *testing.T) {
 			runCmd.Dir = t.TempDir()
 			// Point at a socket that does not exist: `version` must never
 			// require a daemon, so any accidental health probe would fail.
-			runCmd.Env = append(os.Environ(), "AF_COORDINATOR_SOCKET="+filepath.Join(tmpDir, "does-not-exist.sock"))
+			runCmd.Env = append(os.Environ(), "DIBS_SOCKET="+filepath.Join(tmpDir, "does-not-exist.sock"))
 			var stdout, stderr bytes.Buffer
 			runCmd.Stdout = &stdout
 			runCmd.Stderr = &stderr

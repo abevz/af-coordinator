@@ -32,9 +32,13 @@ build-install:
 	$(GO) build -buildvcs=false $(LD_VERSION_FLAG) -o $(BINDIR)/dibsd ./cmd/dibsd/
 	$(GO) build -buildvcs=false $(LD_VERSION_FLAG) -o $(BINDIR)/dibs ./cmd/dibs/
 	$(GO) build -buildvcs=false $(LD_VERSION_FLAG) -o $(BINDIR)/dibs-mcp ./cmd/dibs-mcp/
-	ln -sfn dibsd $(BINDIR)/af-coordinatord
-	ln -sfn dibs $(BINDIR)/afctl
-	ln -sfn dibs-mcp $(BINDIR)/afc-mcp
+	@for pair in afctl:dibs af-coordinatord:dibsd afc-mcp:dibs-mcp; do \
+		legacy="$${pair%%:*}"; target="$${pair#*:}"; \
+		if [ -L "$(BINDIR)/$$legacy" ]; then \
+			link="$$(readlink "$(BINDIR)/$$legacy")"; \
+			if [ "$$link" = "$$target" ] || [ "$$link" = "$(BINDIR)/$$target" ]; then rm -f "$(BINDIR)/$$legacy"; fi; \
+		fi; \
+	done
 
 test:
 	$(GO) test -race ./...

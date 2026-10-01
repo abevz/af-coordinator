@@ -1,11 +1,7 @@
 #!/bin/sh
 set -eu
 
-if [ "${DIBS_REPO+x}" ]; then
-	repo="$DIBS_REPO"
-else
-	repo="${AF_COORDINATOR_REPO:-abevz/dibs}"
-fi
+repo="${DIBS_REPO-abevz/dibs}"
 if [ -z "$repo" ]; then
 	echo "DIBS_REPO must not be empty" >&2
 	exit 1
@@ -84,9 +80,17 @@ mv -f "$license_stage" "$license_dir/LICENSE"
 mv -f "$stage_dir/dibs" "$bindir/dibs"
 mv -f "$stage_dir/dibsd" "$bindir/dibsd"
 mv -f "$stage_dir/dibs-mcp" "$bindir/dibs-mcp"
-ln -sfn dibs "$bindir/afctl"
-ln -sfn dibsd "$bindir/af-coordinatord"
-ln -sfn dibs-mcp "$bindir/afc-mcp"
+# Retire only installer-owned aliases; leave independent executables intact.
+for pair in afctl:dibs af-coordinatord:dibsd afc-mcp:dibs-mcp; do
+ legacy="${pair%%:*}"
+ target="${pair#*:}"
+ if [ -L "$bindir/$legacy" ]; then
+  link="$(readlink "$bindir/$legacy")"
+  if [ "$link" = "$target" ] || [ "$link" = "$bindir/$target" ]; then
+   rm -f "$bindir/$legacy"
+  fi
+ fi
+done
 
 echo "Installed dibs binaries into $bindir"
 echo "Version: $version"

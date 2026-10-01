@@ -25,19 +25,19 @@ type Config struct {
 
 func Default() Config {
 	dbPath, socketPath := defaultPaths()
-	if value, ok := Env("DIBS_DB", "AF_COORDINATOR_DB"); ok && strings.TrimSpace(value) != "" {
+	if value, ok := Env("DIBS_DB"); ok && strings.TrimSpace(value) != "" {
 		dbPath = value
 		if filepath.Clean(expandHome(value)) == filepath.Clean(expandHome(legacyDBPath)) {
 			socketPath = legacySocketPath
 		}
 	}
-	if value, ok := Env("DIBS_SOCKET", "AF_COORDINATOR_SOCKET"); ok && strings.TrimSpace(value) != "" {
+	if value, ok := Env("DIBS_SOCKET"); ok && strings.TrimSpace(value) != "" {
 		socketPath = value
 	}
 	return Config{
 		SocketPath: expandHome(socketPath),
 		DBPath:     expandHome(dbPath),
-		LogLevel:   EnvOrDefault("DIBS_LOG_LEVEL", "AF_COORDINATOR_LOG_LEVEL", "info"),
+		LogLevel:   EnvOrDefault("DIBS_LOG_LEVEL", "info"),
 	}
 }
 
@@ -51,17 +51,11 @@ func defaultPaths() (dbPath, socketPath string) {
 	return defaultDBPath, defaultSocketPath
 }
 
-// Env resolves the canonical name before its legacy alias. Presence matters:
-// an explicitly empty DIBS_* value must not fall through to an AF_* secret.
-func Env(canonical, legacy string) (string, bool) {
-	if value, ok := os.LookupEnv(canonical); ok {
-		return value, true
-	}
-	return os.LookupEnv(legacy)
-}
+// Env reads only canonical DIBS configuration. Legacy AF_* names are ignored.
+func Env(canonical string) (string, bool) { return os.LookupEnv(canonical) }
 
-func EnvOrDefault(canonical, legacy, fallback string) string {
-	value, ok := Env(canonical, legacy)
+func EnvOrDefault(canonical, fallback string) string {
+	value, ok := Env(canonical)
 	if !ok || strings.TrimSpace(value) == "" {
 		return fallback
 	}
