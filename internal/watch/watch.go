@@ -4,9 +4,11 @@ package watch
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/abevz/dibs/internal/core"
+	"github.com/abevz/dibs/internal/report"
 )
 
 const (
@@ -17,6 +19,9 @@ const (
 
 // Source contains only read operations, so refresh cannot mutate coordinator state.
 type Source interface {
+	GetStats(context.Context, report.Query) (report.Report, error)
+	GetIssue(context.Context, string) (core.Issue, *core.IssueLease, error)
+	ListNotes(context.Context, string) ([]core.Note, error)
 	ListProjects(context.Context) ([]core.Project, error)
 	ListIssuesWithFilters(context.Context, core.IssueListParams) ([]core.Issue, error)
 	ListReadyIssues(context.Context, string, string, []string) ([]core.Issue, error)
@@ -29,7 +34,26 @@ type BlockedIssue struct {
 	BlockedBy []string   `json:"blocked_by"`
 }
 
+type ProjectSummary struct {
+	Key string `json:"key"`
+	report.ProjectStats
+}
+
+type StaleIssue struct {
+	Issue  core.Issue `json:"issue"`
+	Since  string     `json:"since,omitempty"`
+	Reason string     `json:"reason"`
+}
+
+type Detail struct {
+	Issue core.Issue
+	Notes []core.Note
+}
+
 type Snapshot struct {
+	Projects   []ProjectSummary  `json:"projects"`
+	Stale      []StaleIssue      `json:"stale"`
+	Issues     []core.Issue      `json:"issues"`
 	Project    string            `json:"project,omitempty"`
 	Ready      []core.Issue      `json:"ready"`
 	Active     []core.Issue      `json:"active"`
@@ -80,6 +104,24 @@ func (s *Service) Refresh(ctx context.Context, now time.Time) (Snapshot, error) 
 		}
 	}
 
+	var summaries []ProjectSummary
+	if projectID == "" {
+		stats, err := s.source.GetStats(ctx, report.Query{})
+		if err != nil {
+			return Snapshot{}, fmt.Errorf("project summary: %w", err)
+		}
+		for key, row := range stats.ByProject {
+			summaries = append(summaries, ProjectSummary{Key: key, ProjectStats: row})
+		}
+		sort.Slice(summaries, func(i, j int) bool {
+			a, b := summaries[i], summaries[j]
+			aDormant, bDormant := a.Open+a.Blocked+a.InProgress == 0, b.Open+b.Blocked+b.InProgress == 0
+			if aDormant != bDormant {
+				return !aDormant
+			}
+			return a.Key < b.Key
+		})
+	}
 	byID := make(map[string]core.Issue, len(issues))
 	names := make(map[string]string, len(issues))
 	for _, issue := range issues {
@@ -89,6 +131,9 @@ func (s *Service) Refresh(ctx context.Context, now time.Time) (Snapshot, error) 
 
 	snapshot := Snapshot{
 		Project:    s.project,
+		Projects:   summaries,
+		Stale:      []StaleIssue{},
+		Issues:     []core.Issue{},
 		Ready:      make([]core.Issue, 0, len(ready)),
 		Active:     []core.Issue{},
 		Blocked:    []BlockedIssue{},
@@ -107,6 +152,10 @@ func (s *Service) Refresh(ctx context.Context, now time.Time) (Snapshot, error) 
 		}
 		if issue.Status == "done" || issue.Status == "cancelled" || issue.Status == "deferred" {
 			continue
+		}
+		snapshot.Issues = append(snapshot.Issues, issue)
+		if stale, ok := staleIssue(issue, now); ok {
+			snapshot.Stale = append(snapshot.Stale, stale)
 		}
 		if issue.Holder != "" && leaseActive(issue.LeaseExpiresAt, now) {
 			snapshot.Active = append(snapshot.Active, issue)
@@ -170,3 +219,52 @@ func leaseActive(expiresAt string, now time.Time) bool {
 	expires, err := time.Parse(time.RFC3339, expiresAt)
 	return err == nil && expires.After(now)
 }
+
+func staleIssue(issue core.Issue, now time.Time) (StaleIssue, bool) {
+	if issue.Status == "done" || issue.Status == "cancelled" || issue.Status == "deferred" {
+		return StaleIssue{}, false
+	}
+	if issue.Holder != "" && leaseActive(issue.LeaseExpiresAt, now) {
+		return StaleIssue{}, false
+	}
+	if expires, err := time.Parse(time.RFC3339, issue.LeaseExpiresAt); err == nil && !expires.After(now) {
+		return StaleIssue{Issue: issue, Since: issue.LeaseExpiresAt, Reason: "since expiry"}, true
+	}
+	if issue.Status == "in_progress" {
+		return StaleIssue{Issue: issue, Since: issue.UpdatedAt, Reason: "since update (no active lease)"}, true
+	}
+	return StaleIssue{}, false
+}
+
+// At refreshes TTL classifications on clock ticks without coordinator calls.
+func (snapshot Snapshot) At(now time.Time) Snapshot {
+	snapshot.Active = []core.Issue{}
+	snapshot.Stale = []StaleIssue{}
+	for _, issue := range snapshot.Issues {
+		if issue.Holder != "" && leaseActive(issue.LeaseExpiresAt, now) {
+			snapshot.Active = append(snapshot.Active, issue)
+		}
+		if stale, ok := staleIssue(issue, now); ok {
+			snapshot.Stale = append(snapshot.Stale, stale)
+		}
+	}
+	return snapshot
+}
+
+func (s *Service) Detail(ctx context.Context, id string) (Detail, error) {
+	issue, _, err := s.source.GetIssue(ctx, id)
+	if err != nil {
+		return Detail{}, fmt.Errorf("get issue: %w", err)
+	}
+	notes, err := s.source.ListNotes(ctx, id)
+	if err != nil {
+		return Detail{}, fmt.Errorf("list notes: %w", err)
+	}
+	sort.SliceStable(notes, func(i, j int) bool { return notes[i].CreatedAt < notes[j].CreatedAt })
+	if len(notes) > 5 {
+		notes = notes[len(notes)-5:]
+	}
+	return Detail{Issue: issue, Notes: notes}, nil
+}
+
+func (s *Service) Scoped(project string) *Service { return New(s.source, project) }

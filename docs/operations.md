@@ -354,6 +354,19 @@ relationship list. To query children of `aion-500` from JSON output:
 
 `dibs watch --project <key>` opens a read-only terminal board with ready issues,
 active lease holders and remaining time, blocked issues, and recent activity.
+Without `--project`, the board starts with a summary for every project;
+projects with no open, blocked, or in-progress issues sort last. The counts
+use the same status definitions as `dibs stats` (ready is a subset of open).
+Last event is the timestamp of the latest retained issue event by sequence,
+not the maximum wall-clock time. Unknown history displays `unknown`.
+Use ↑/↓ (or j/k) and Enter to open a project then an issue. The project list
+labels ready, active, blocked and stale rows; details show description,
+dependencies and the last five notes with scrolling. Esc/Backspace returns.
+STALE includes in-progress issues without an active lease and expired leases.
+Age is labelled since expiry when the API exposes it, otherwise since update
+(the daemon hides expired lease metadata). Deferred/terminal issues are excluded.
+Clock updates move an expiring lease to STALE without coordinator writes.
+`--once` prints all summary and lane rows with one final newline.
 Press `r` to refresh or `q` to quit. It refreshes every two seconds and marks
 the last complete view stale if the daemon becomes unavailable. Use
 `dibs watch --project <key> --once` for a text snapshot or add `--json` for a

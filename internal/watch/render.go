@@ -46,6 +46,22 @@ func Render(snapshot Snapshot, refreshErr error, now time.Time, width, height in
 		sectionRows = 2
 	}
 	lines = append(lines, "")
+	if snapshot.Project == "" && len(snapshot.Projects) > 0 {
+		lines = append(lines, clip("PROJECT SUMMARY", width), clip(summaryHeading(), width))
+		for i, row := range snapshot.Projects {
+			if i >= 2 {
+				break
+			}
+			lines = append(lines, clip(summaryRow(row), width))
+		}
+		sectionRows = (height - len(lines) - 2) / 5
+		if sectionRows < 2 {
+			sectionRows = 2
+		}
+	}
+	if len(snapshot.Stale) > 0 {
+		lines = appendSection(lines, fmt.Sprintf("STALE (%d)", len(snapshot.Stale)), 2, width, func(i int) string { return staleRow(snapshot.Stale[i], now) }, len(snapshot.Stale))
+	}
 	lines = appendSection(lines, fmt.Sprintf("READY (%d)", len(snapshot.Ready)), sectionRows, width, func(i int) string {
 		issue := snapshot.Ready[i]
 		return fmt.Sprintf("%-12s %s", issue.ShortID, issue.Title)
