@@ -7,6 +7,7 @@ import (
 	"github.com/abevz/dibs/internal/config"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -196,6 +197,11 @@ func TestCurrentIntegrationUpdatedWithoutExtraNewline(t *testing.T) {
 }
 
 func TestInitSetupDryRunReportsMigration(t *testing.T) {
+	repoDir := t.TempDir()
+	if out, err := exec.Command("git", "init", "-q", "-b", "main", repoDir).CombinedOutput(); err != nil {
+		t.Fatalf("initialize test repository: %v: %s", err, out)
+	}
+	t.Chdir(repoDir)
 	oldJSON, oldStdout := jsonOutput, os.Stdout
 	defer func() { jsonOutput, os.Stdout = oldJSON, oldStdout }()
 	before := legacyBeginMarker + "\nold\n" + legacyEndMarker + "\n"
