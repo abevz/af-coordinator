@@ -20,10 +20,10 @@ binaries, a temporary daemon, and temporary state; re-record it with
 ## Start in four commands
 
 From a Git repository not yet registered with dibs on Linux or macOS, install
-the published preview, initialize dibs, create a task, and claim it:
+the versioned preview, initialize dibs, create a task, and claim it:
 
 ```sh
-curl -fsSL https://github.com/abevz/dibs/releases/download/v0.1.0-rc.4/install.sh | sh /dev/stdin
+curl -fsSL https://github.com/abevz/dibs/releases/download/v0.1.0-rc.5/install.sh | sh /dev/stdin
 ~/.local/bin/dibs init
 ~/.local/bin/dibs issue create --project myapp --scope-kind project --title "First task"
 ~/.local/bin/dibs issue claim myapp-1 --holder "$USER"
@@ -42,7 +42,7 @@ and macOS architectures.
 If you prefer to inspect the script before running it:
 
 ```sh
-curl -fsSL -o install.sh https://github.com/abevz/dibs/releases/download/v0.1.0-rc.4/install.sh
+curl -fsSL -o install.sh https://github.com/abevz/dibs/releases/download/v0.1.0-rc.5/install.sh
 less install.sh
 sh install.sh
 ```
