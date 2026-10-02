@@ -60,9 +60,9 @@ not assume success from an absent response.
 
 `swarm` takes `-n N -- <cmd>` and launches at most N workers. Each worker gets
 one coordinator-selected, atomically claimed issue, one sibling Git worktree,
-and the `issue run` environment (`AF_ISSUE_ID`, `AF_LEASE_TOKEN`,
-`AF_LEASE_GENERATION`, `AF_ATTEMPT_ID`, `AF_EXPECTED_VERSION`, with compatible
-`DIBS_*` aliases). These variables are process-private: never place
+and the canonical `issue run` environment (`DIBS_ISSUE_ID`, `DIBS_LEASE_TOKEN`,
+`DIBS_LEASE_GENERATION`, `DIBS_ATTEMPT_ID`, `DIBS_EXPECTED_VERSION`).
+These variables are process-private: never place
 lease tokens in logs, branches, PRs, or shared worktree metadata. The claim
 remains the authority; a directory or process existing is not ownership.
 Workers return issue/branch/result records. A Claude Code preset is an adapter

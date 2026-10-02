@@ -22,6 +22,7 @@ cat > "$tmpdir/bin/systemctl" <<'EOF'
 printf 'systemctl %s\n' "$*" >> "$HOOK_TEST_LOG"
 case "$*" in
 	'--user is-active --quiet dibsd') [ "$HOOK_TEST_ACTIVE" = "dibsd" ] ;;
+	'--user is-active --quiet af-coordinatord') [ "$HOOK_TEST_ACTIVE" = "old" ] ;;
 	'--user try-restart dibsd') [ "$HOOK_TEST_RESTART_FAIL" != "1" ] ;;
 	*) exit 1 ;;
 esac
@@ -55,11 +56,12 @@ grep -Fqx 'systemctl --user try-restart dibsd' "$HOOK_TEST_LOG"
 
 run_case active-old main old 0 0
 ! grep -Eq '^make|try-restart' "$HOOK_TEST_LOG"
-grep -q 'no active daemon' "$tmpdir/output"
-! grep -q 'af-coordinatord' "$HOOK_TEST_LOG"
+grep -q 'legacy daemon active; switch to dibsd manually' "$tmpdir/output"
+grep -Fqx 'systemctl --user is-active --quiet af-coordinatord' "$HOOK_TEST_LOG"
 
 run_case inactive main none 0 0
 ! grep -Eq '^make|try-restart' "$HOOK_TEST_LOG"
+grep -q 'no active daemon' "$tmpdir/output"
 
 run_case build-failure main dibsd 1 0
 ! grep -q 'try-restart' "$HOOK_TEST_LOG"

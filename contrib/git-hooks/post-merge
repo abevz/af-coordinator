@@ -22,6 +22,8 @@ if sh "$systemctl_user" is-active --quiet dibsd >/dev/null 2>&1; then
 	if ! sh "$systemctl_user" try-restart dibsd; then
 		echo "post-merge: dibsd try-restart failed; redeploy manually" >&2
 	fi
+elif sh "$systemctl_user" is-active --quiet af-coordinatord >/dev/null 2>&1; then
+	echo "post-merge: legacy daemon active; switch to dibsd manually (docs/operations.md)" >&2
 else
 	echo "post-merge: no active daemon; no redeploy" >&2
 fi
