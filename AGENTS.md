@@ -286,7 +286,7 @@ The daemon you are modifying is the daemon that tracks your work — so:
   Two of the same binary live in PATH history (`~/go/bin` vs
   `~/.local/bin`) — `make build-install` targets the right one.
 
-<!-- BEGIN AF-COORDINATOR INTEGRATION v:1 -->
+<!-- BEGIN DIBS INTEGRATION v:2 -->
 This repo is coordinated by [dibs](https://github.com/abevz/dibs).
 
 - **Canonical protocol**: run `dibs protocol`; source: `https://github.com/abevz/dibs/blob/main/docs/agent-protocol-v1.md`
@@ -299,4 +299,4 @@ This repo is coordinated by [dibs](https://github.com/abevz/dibs).
 - **Never** touch the coordinator database.
 - **Never** restate specs in issue descriptions — link them.
 - **Never** close an issue without a note (`--note`) — the audit trail is for whoever comes after you.
-<!-- END AF-COORDINATOR INTEGRATION -->
+<!-- END DIBS INTEGRATION -->

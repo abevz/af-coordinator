@@ -440,3 +440,14 @@ Commands with `--json` succeed or fail with typed exit codes so the caller can r
 - Do not restate spec contents in issue descriptions — link to the specification file instead.
 - Do not commit from within a worktree that is the coordinated checkout — use a sibling worktree.
 - Do not close an issue without a note — the audit trail is for whoever comes after you.
+
+## Integration block migration (afc-176)
+
+`dibs init` writes `<!-- BEGIN DIBS INTEGRATION v:2 -->` and
+`<!-- END DIBS INTEGRATION -->`. It migrates legacy AF-COORDINATOR v:1
+blocks in place and reports `migrated` (also in JSON). `--dry-run` reports
+the same action without writing. Files containing both formats fail with
+both line ranges and remain unchanged. Legacy recognition stays for all
+v0.1.x releases; remove it only after a later explicit compatibility decision.
+After installing a release with this migration, operators run `dibs init`
+in each coordinated repository; the code change does not migrate other repos.

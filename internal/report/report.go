@@ -83,16 +83,17 @@ type Inventory struct {
 // ProjectStats combines a current inventory snapshot with trailing seven-day
 // throughput. Ready is a subset of Open, not an additional status.
 type ProjectStats struct {
-	Total      int `json:"total"`
-	Open       int `json:"open"`
-	Ready      int `json:"ready"`
-	InProgress int `json:"in_progress"`
-	Blocked    int `json:"blocked"`
-	Done       int `json:"done"`
-	Cancelled  int `json:"cancelled"`
-	Deferred   int `json:"deferred"`
-	Created7d  int `json:"created_7d"`
-	Closed7d   int `json:"closed_7d"`
+	LastEventAt string `json:"last_event_at,omitempty"`
+	Total       int    `json:"total"`
+	Open        int    `json:"open"`
+	Ready       int    `json:"ready"`
+	InProgress  int    `json:"in_progress"`
+	Blocked     int    `json:"blocked"`
+	Done        int    `json:"done"`
+	Cancelled   int    `json:"cancelled"`
+	Deferred    int    `json:"deferred"`
+	Created7d   int    `json:"created_7d"`
+	Closed7d    int    `json:"closed_7d"`
 }
 
 type Flow struct {
@@ -319,7 +320,15 @@ func Build(ctx context.Context, source Source, query Query, now time.Time) (Repo
 		for _, issue := range issues {
 			issueProjects[issue.ID] = projectKeys[issue.ProjectID]
 		}
+		lastSequence := make(map[string]int64)
 		for _, event := range scopedEvents {
+			key := issueProjects[event.IssueID]
+			row := report.ByProject[key]
+			if row.LastEventAt == "" || event.Sequence >= lastSequence[key] {
+				row.LastEventAt = event.CreatedAt
+				lastSequence[key] = event.Sequence
+				report.ByProject[key] = row
+			}
 			if event.EventType != "issue_closed" && event.EventType != "issue_operator_closed" {
 				continue
 			}

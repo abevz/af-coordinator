@@ -66,11 +66,11 @@ func runInitSetup(ctx context.Context, c *client.Client, cfg config.Config, args
 	}
 	if jsonOutput {
 		return json.NewEncoder(os.Stdout).Encode(map[string]any{
-			"mapping": info, "action": []string{"created", "updated", "unchanged"}[action],
+			"mapping": info, "action": action.String(),
 			"path": target, "dry_run": dryRun,
 		})
 	}
-	verb := []string{"created", "updated", "unchanged"}[action]
+	verb := action.String()
 	if dryRun {
 		verb = "would " + verb
 	}
