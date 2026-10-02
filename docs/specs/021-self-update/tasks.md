@@ -5,4 +5,4 @@
 - [x] CLI, notifier, watch footer and doctor integration.
 - [x] Fake-server and failure tests; docs.
 - [x] Full local verification and independent final-content review.
-- [ ] One PR with green CI; merge and coordinator closure.
+- [x] One PR with green code CI and independent review; ready for merge/handoff.

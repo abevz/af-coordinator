@@ -18,7 +18,12 @@ cached offline latency. Existing doctor version-mismatch tests remain green.
 
 Independent final-content review approved the complete implementation after
 correcting watch --once stdout contamination, adoption metadata ordering, and
-Homebrew ownership detection. PR CI remains pending. The existing release
+Homebrew ownership detection. PR [#129](https://github.com/abevz/dibs/pull/129)
+code revision `009890a` passed [CI](https://github.com/abevz/dibs/actions/runs/36985675103)
+and [release verification](https://github.com/abevz/dibs/actions/runs/36985675130),
+including native updater tests and installer checks on all four platforms.
+Final metadata-only PR checks remain a publication gate; merge and coordinator
+closure are recorded in the issue handoff. The existing release
 verification matrix now runs updater tests natively on Linux/macOS amd64/arm64. No live updater or
 restart from the new command has been run. Real release --check/notifier
 verification follows publication of rc.5 under the owner release procedure.
