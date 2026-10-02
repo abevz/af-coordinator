@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Fixed
+
+- Auto-started daemon logs are bounded in the state directory instead of growing
+  beside the socket; verified stop cleans owned pid/legacy startup-log artifacts
+  (afc-160).
+
 ## v0.1.0-rc.5 — 2026-10-02
 
 ### Breaking changes — afc-142

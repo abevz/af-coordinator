@@ -50,12 +50,12 @@ func StopDaemon(ctx context.Context, cfg config.Config) error {
 	if err := proc.Signal(syscall.SIGTERM); err != nil {
 		return err
 	}
-	return waitForStopped(ctx, cfg)
+	return waitForStoppedOwned(ctx, cfg, strings.TrimSpace(string(data)))
 }
 
-// waitForStopped waits for both the listener and the database ownership lock.
+// waitForStoppedOwned waits for both the listener and the database ownership lock.
 // RunDaemon removes its socket before dibsd closes the database and lock.
-func waitForStopped(ctx context.Context, cfg config.Config) error {
+func waitForStoppedOwned(ctx context.Context, cfg config.Config, pid string) error {
 	deadline := time.NewTimer(5 * time.Second)
 	defer deadline.Stop()
 	tick := time.NewTicker(100 * time.Millisecond)
@@ -64,7 +64,14 @@ func waitForStopped(ctx context.Context, cfg config.Config) error {
 		if _, err := os.Stat(cfg.SocketPath); os.IsNotExist(err) {
 			lock, lockErr := api.AcquireDatabaseLock(cfg.DBPath)
 			if lockErr == nil {
-				return lock.Close()
+				// Hold the DB ownership lock across cleanup so a new daemon cannot
+				// acquire ownership and publish its pid between inspection and removal.
+				cleanupErr := cleanupStoppedArtifacts(cfg.SocketPath, pid)
+				closeErr := lock.Close()
+				if cleanupErr != nil {
+					return cleanupErr
+				}
+				return closeErr
 			}
 		}
 		select {
@@ -80,6 +87,26 @@ func waitForStopped(ctx context.Context, cfg config.Config) error {
 func checkStopHealth(h core.Health, cfg config.Config) error {
 	if filepath.Clean(h.DBPath) != filepath.Clean(cfg.DBPath) {
 		return fmt.Errorf("daemon at %s does not match the configured database", cfg.SocketPath)
+	}
+	return nil
+}
+
+func cleanupStoppedArtifacts(socket, pid string) error {
+	// Only a previously verified auto-start pid grants cleanup.
+	if pid == "" {
+		return nil
+	}
+	data, err := os.ReadFile(socket + ".pid")
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if err == nil && strings.TrimSpace(string(data)) != pid {
+		return fmt.Errorf("daemon pid ownership changed; refusing artifact cleanup")
+	}
+	for _, suffix := range []string{".pid", ".startup.log"} {
+		if err := os.Remove(socket + suffix); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("remove owned daemon artifact: %w", err)
+		}
 	}
 	return nil
 }

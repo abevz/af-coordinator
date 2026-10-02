@@ -132,6 +132,29 @@ Clean-install socket: `~/.local/state/dibs/dibsd.sock`
 Clean-install database: `~/.local/share/dibs/dibs.db`
 Existing legacy database and socket paths remain selected automatically.
 
+## Auto-started daemon logs
+
+`dibs init` and `dibs daemon start` detach `dibsd` when no matching daemon
+is reachable. Its structured startup and mutation diagnostics go to
+`$XDG_STATE_HOME/dibs/logs/dibsd-<socket-sha256>.log`, or
+`~/.local/state/dibs/logs/dibsd-<socket-sha256>.log` when `XDG_STATE_HOME`
+is unset. `<socket-sha256>` is the SHA-256 of the cleaned configured socket
+path, so custom sockets keep separate logs. Startup errors print the exact
+path and the last diagnostic line.
+
+Each instance retains an active file and one previous `.log.1` file, each
+at most **1 MiB** (2 MiB total); oversized records retain their final 1 MiB.
+The log directory is private (0700), files are 0600, and a zero-length
+`.log.lock` coordinates concurrent starters. Raw detached stdout/stderr are
+discarded; structured daemon diagnostics are retained. No new
+`<socket>.startup.log` is created in the socket/runtime directory.
+
+After verifying the daemon's database and pid, `dibs daemon stop` removes
+its owned `<socket>.pid` and legacy `<socket>.startup.log`. It preserves the
+bounded state logs for diagnosis and refuses cleanup for an unverified
+socket or a manager-owned daemon. Foreground `dibsd` still logs to stderr;
+systemd uses the journal and launchd uses the paths documented above.
+
 ## Execution statistics
 
 The daemon derives a local read-only report from its coordinator records; it

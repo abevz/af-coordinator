@@ -3,6 +3,7 @@ package firstuse
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/exec"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/abevz/dibs/internal/client"
 	"github.com/abevz/dibs/internal/config"
+	"github.com/abevz/dibs/internal/daemonlog"
 )
 
 // EnsureDaemon starts the installed companion binary when the configured socket
@@ -38,24 +40,19 @@ func EnsureDaemon(ctx context.Context, cfg config.Config, daemonPath string) err
 	if daemonPath == "" {
 		return fmt.Errorf("dibsd binary is missing; reinstall dibs or put dibsd next to dibs")
 	}
-	logPath := cfg.SocketPath + ".startup.log"
-	if err := os.MkdirAll(filepath.Dir(logPath), 0o700); err != nil {
-		return fmt.Errorf("create daemon log directory: %w", err)
-	}
-	log, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
-	if err != nil {
-		return fmt.Errorf("open daemon startup log: %w", err)
+	logPath := daemonlog.Path(cfg.SocketPath)
+	if err := daemonlog.Prepare(logPath); err != nil {
+		return fmt.Errorf("prepare daemon log %s: %w", logPath, err)
 	}
 	cmd := exec.Command(daemonPath)
-	cmd.Env = append(os.Environ(), "DIBS_INTERNAL_AUTOSTART=1")
-	cmd.Stdin = nil
-	cmd.Stdout, cmd.Stderr = log, log
+	cmd.Env = append(os.Environ(), "DIBS_INTERNAL_AUTOSTART=1", "DIBS_DB="+cfg.DBPath, "DIBS_SOCKET="+cfg.SocketPath)
+	// Nil streams are /dev/null: detached output must not keep a CLI-owned file alive.
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = nil, nil, nil
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Start(); err != nil {
-		log.Close()
 		return fmt.Errorf("start dibsd: %w", err)
 	}
-	log.Close()
+
 	exited := make(chan error, 1)
 	go func() { exited <- cmd.Wait() }()
 	timer := time.NewTimer(10 * time.Second)
@@ -90,7 +87,23 @@ func EnsureDaemon(ctx context.Context, cfg config.Config, daemonPath string) err
 }
 
 func startupLogTail(path string) string {
-	data, err := os.ReadFile(path)
+	f, err := os.Open(path)
+	if err != nil {
+		return "inspect the daemon log"
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return "inspect the daemon log"
+	}
+	offset := info.Size() - 4096
+	if offset < 0 {
+		offset = 0
+	}
+	if _, err = f.Seek(offset, io.SeekStart); err != nil {
+		return "inspect the daemon log"
+	}
+	data, err := io.ReadAll(io.LimitReader(f, 4096))
 	if err != nil {
 		return "inspect the daemon log"
 	}

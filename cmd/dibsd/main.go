@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -12,6 +14,7 @@ import (
 	"github.com/abevz/dibs/internal/api"
 	"github.com/abevz/dibs/internal/build"
 	"github.com/abevz/dibs/internal/config"
+	"github.com/abevz/dibs/internal/daemonlog"
 	"github.com/abevz/dibs/internal/store/sqlite"
 	"github.com/abevz/dibs/internal/update"
 	"github.com/abevz/dibs/migrations"
@@ -24,7 +27,17 @@ func main() {
 	syscall.Umask(0o077)
 	cfg := config.Default()
 
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+	var logOutput io.Writer = os.Stderr
+	if os.Getenv("DIBS_INTERNAL_AUTOSTART") == "1" {
+		output, err := daemonlog.Open(daemonlog.Path(cfg.SocketPath))
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "open daemon log: %v\n", err)
+			os.Exit(1)
+		}
+		defer output.Close()
+		logOutput = output
+	}
+	logger := slog.New(slog.NewTextHandler(logOutput, &slog.HandlerOptions{
 		Level: cfg.SlogLevel(),
 	}))
 
