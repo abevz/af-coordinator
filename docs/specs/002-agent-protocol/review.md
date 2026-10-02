@@ -95,3 +95,13 @@ Shipped.
 ## Closing — packet 002
 
 All 9 tasks (AFC-SDD-0017 through 0033) are shipped and verified.
+
+### afc-176 — integration markers
+
+DIBS v:2 markers replace legacy AF-COORDINATOR blocks in place; mixed,
+duplicate or malformed markers fail before writes. Surrounding bytes are
+preserved, dry-run reports migration, and current blocks remain idempotent.
+Legacy recognition is retained throughout v0.1.x. The repository AGENTS.md
+was migrated using the new init binary. Other repositories remain an operator
+step after release. Focused init tests, full build/tests, and diff checks pass.
+Independent final review is recorded in the task handoff.
