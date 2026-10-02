@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/abevz/dibs/internal/core"
@@ -13,7 +14,17 @@ import (
 
 func handleStats(st store.CoordinatorStore, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		top := 0
+		if raw := r.URL.Query().Get("top"); raw != "" {
+			n, err := strconv.Atoi(raw)
+			if err != nil || n <= 0 {
+				writeError(w, http.StatusBadRequest, core.ErrValidationFailed, "top must be a positive integer")
+				return
+			}
+			top = n
+		}
 		reportResult, err := report.Build(r.Context(), st, report.Query{
+			By: r.URL.Query().Get("by"), Top: top,
 			Project: r.URL.Query().Get("project"),
 			Repo:    r.URL.Query().Get("repo"),
 			Since:   r.URL.Query().Get("since"),

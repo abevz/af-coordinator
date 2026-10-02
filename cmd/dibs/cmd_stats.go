@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 
@@ -20,6 +21,8 @@ Filters:
   --project <key>                    Limit to one project
   --repo <repository-id-or-name>      Limit to one repository
   --since <RFC3339|duration>          Start of the flow window, e.g. 24h
+  --by actor                        Group outcomes by normalized claim owner
+  --top <N>                         Costliest issues by claims (N > 0)
   --until <RFC3339>                   End of the flow window (default: now)
 `
 
@@ -52,7 +55,7 @@ func parseStatsArgs(args []string) (report.Query, bool, error) {
 			return report.Query{}, true, nil
 		}
 		switch flag {
-		case "--project", "--repo", "--since", "--until":
+		case "--project", "--repo", "--since", "--until", "--by", "--top":
 		default:
 			return report.Query{}, false, fmt.Errorf("unknown flag: %s", flag)
 		}
@@ -69,6 +72,17 @@ func parseStatsArgs(args []string) (report.Query, bool, error) {
 			query.Since = value
 		case "--until":
 			query.Until = value
+		case "--by":
+			if value != "actor" {
+				return report.Query{}, false, fmt.Errorf("--by must be actor")
+			}
+			query.By = value
+		case "--top":
+			n, err := strconv.Atoi(value)
+			if err != nil || n <= 0 {
+				return report.Query{}, false, fmt.Errorf("--top must be a positive integer")
+			}
+			query.Top = n
 		}
 		i++
 	}
@@ -126,6 +140,8 @@ func writeStats(w io.Writer, stats report.Report) {
 		fmt.Fprintf(w, " %s=%d", outcome, stats.Attempts.Outcomes[outcome])
 	}
 	fmt.Fprintln(w)
+	writeActorStats(w, stats.ByActor)
+	writeIssueCosts(w, stats.TopIssues)
 	fmt.Fprintln(w, "\nQuality")
 	fmt.Fprintf(w, "  Handoff: %d/%d releases (%.1f%%)\n", stats.Handoff.Numerator, stats.Handoff.Denominator, stats.Handoff.Ratio*100)
 	fmt.Fprintf(w, "  Coverage: notes %d/%d (%.1f%%), spec links %d/%d (%.1f%%), SCM metadata %d/%d (%.1f%%)\n",
@@ -192,4 +208,49 @@ func humanDuration(seconds float64) string {
 	default:
 		return fmt.Sprintf("%.1fd", seconds/86400)
 	}
+}
+
+func writeActorStats(w io.Writer, actors map[string]report.ActorStats) {
+	if actors == nil {
+		return
+	}
+	keys := make([]string, 0, len(actors))
+	for a := range actors {
+		keys = append(keys, a)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		if actors[keys[i]].Claims != actors[keys[j]].Claims {
+			return actors[keys[i]].Claims > actors[keys[j]].Claims
+		}
+		return keys[i] < keys[j]
+	})
+	fmt.Fprintln(w, "\nAgents (claim owners)")
+	t := tabwriter.NewWriter(w, 2, 4, 2, ' ', 0)
+	fmt.Fprintln(t, "  AGENT\tCLAIMS\tDONE\tCANCEL\tRELEASE\tHANDOFF\tEXPIRED\tOP RELEASE\tDONE/CLAIMS\tMEDIAN")
+	for _, a := range keys {
+		r := actors[a]
+		median := "no samples"
+		if r.Duration.SampleSize > 0 {
+			median = humanDuration(r.Duration.P50Seconds)
+		}
+		fmt.Fprintf(t, "  %s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%.1f%%\t%s\n", a, r.Claims, r.Outcomes["done"], r.Outcomes["cancelled"], r.Outcomes["released"], r.Outcomes["handoff"], r.Outcomes["expired"], r.Outcomes["operator_released"], r.CloseRate.Ratio*100, median)
+	}
+	t.Flush()
+	fmt.Fprintln(w, "  Claims and outcomes use their own timestamps; DONE/CLAIMS is not a cohort rate.")
+}
+func writeIssueCosts(w io.Writer, rows []report.IssueCost) {
+	if rows == nil {
+		return
+	}
+	fmt.Fprintln(w, "\nCostliest issues (claims, then completed attempt time)")
+	t := tabwriter.NewWriter(w, 2, 4, 2, ' ', 0)
+	fmt.Fprintln(t, "  ISSUE\tCLAIMS\tATTEMPT TIME\tRELEASE\tHANDOFF\tEXPIRED\tOP RELEASE\tNOTES\tLEAD/AGE\tNO PROGRESS\tUNCLASSIFIED")
+	for _, r := range rows {
+		flag := ""
+		if r.ClaimWithoutProgress {
+			flag = "claim without progress"
+		}
+		fmt.Fprintf(t, "  %s\t%d\t%s\t%d\t%d\t%d\t%d\t%d\t%s\t%d %s\t%d\n", r.ShortID, r.Claims, humanDuration(r.AttemptSeconds), r.Released, r.Handoffs, r.Expired, r.OperatorReleased, r.Notes, humanDuration(r.LeadTimeSeconds), r.NoProgressReleases, flag, r.UnclassifiedReleases)
+	}
+	t.Flush()
 }
