@@ -30,6 +30,7 @@ func init() {
 }
 
 func main() {
+	defer printUpdateNotice()
 	cfg := config.Default()
 
 	// Parse global flags (--json, --actor) from os.Args before command dispatch.
@@ -112,7 +113,10 @@ func main() {
 	}
 
 	var err error
+	var exitCode int
 	switch filtered[0] {
+	case "update":
+		exitCode, err = runUpdate(ctx, cfg, filtered[1:])
 	case "health":
 		err = runHealth(ctx, c)
 	case "doctor":
@@ -162,11 +166,14 @@ func main() {
 	if err != nil {
 		fail(err)
 	}
+	if exitCode != 0 {
+		os.Exit(exitCode)
+	}
 }
 
 func commandNeedsDaemon(args []string) bool {
 	switch args[0] {
-	case "version", "protocol", "health", "doctor", "daemon", "init", "watch":
+	case "version", "protocol", "health", "doctor", "daemon", "init", "watch", "update":
 		return false
 	case "hooks":
 		return len(args) > 1 && args[1] == "session-start"
@@ -176,7 +183,7 @@ func commandNeedsDaemon(args []string) bool {
 }
 
 func shouldCheckDaemonRevision(args []string) bool {
-	if len(args) == 0 || args[0] == "init" || args[0] == "protocol" || args[0] == "version" || args[0] == "watch" {
+	if len(args) == 0 || args[0] == "init" || args[0] == "protocol" || args[0] == "version" || args[0] == "watch" || args[0] == "update" {
 		return false
 	}
 	for _, arg := range args {

@@ -10,6 +10,11 @@ type flagHelp struct {
 // flagHelpText is the shared vocabulary for the flags in commandRoutes.
 // Command-specific meanings belong in commandFlagHelpText below.
 var flagHelpText = map[string]flagHelp{
+	"--check":             {"", "Check installed vs latest release; exits 0 current, 10 available, 1 failed."},
+	"--rollback":          {"", "Restore the previous binary set without network or database changes."},
+	"--prerelease":        {"", "Include prereleases (automatic when the installed version is a prerelease)."},
+	"--yes":               {"", "Confirm a breaking-change upgrade; does not authorize daemon restart."},
+	"--restart":           {"", "Restart the existing dibsd service and verify its version after upgrade or rollback."},
 	"--agent":             {"claude|codex", "Agent whose project SessionStart hook is being configured."},
 	"--absolute-path":     {"path", "Absolute filesystem path to the worktree."},
 	"--acceptance":        {"text", "Conditions that must be met to finish the issue."},

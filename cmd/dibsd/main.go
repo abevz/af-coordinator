@@ -10,8 +10,10 @@ import (
 	"path/filepath"
 
 	"github.com/abevz/dibs/internal/api"
+	"github.com/abevz/dibs/internal/build"
 	"github.com/abevz/dibs/internal/config"
 	"github.com/abevz/dibs/internal/store/sqlite"
+	"github.com/abevz/dibs/internal/update"
 	"github.com/abevz/dibs/migrations"
 )
 
@@ -66,6 +68,7 @@ func main() {
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
+	go update.RefreshLoop(ctx, build.Version)
 
 	st := sqlite.NewStore(db)
 	if err := api.RunDaemon(ctx, logger, cfg, st); err != nil {

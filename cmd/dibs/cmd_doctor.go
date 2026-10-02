@@ -33,6 +33,7 @@ func runDoctor(ctx context.Context, c *client.Client, cfg config.Config, args []
 
 	for _, r := range results {
 		if r.Status != "ok" {
+			printUpdateNotice()
 			os.Exit(1)
 		}
 	}

@@ -8,6 +8,8 @@ on:
     paths:
       - .github/workflows/release.yml
       - contrib/install/**
+      - internal/update/**
+      - cmd/dibs/cmd_update.go
   workflow_dispatch:
     inputs:
       release_version:
@@ -113,6 +115,11 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Test atomic update and rollback on the native platform
+        run: go test ./internal/update
       - uses: actions/download-artifact@v4
         with:
           name: dibs-release-bundle

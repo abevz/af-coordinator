@@ -25,3 +25,20 @@ The owner approved removal before v0.1.0 final on 2026-10-01, superseding the
 original plan to remove aliases after v0.1.0. Known Aion Forge source already
 uses canonical DIBS interfaces; the companion daily-check change migrates its
 runner and create-form command to `dibs` and its actor to `DIBS_ACTOR`.
+
+### Added — afc-178
+
+- `dibs update --check` compares installed/latest release versions, shows the
+  intervening CHANGELOG with breaking changes first, and returns exit 0
+  (current), 10 (update available), or 1 (failed). Prerelease installations
+  follow prereleases; stable builds can opt in with `--prerelease`.
+- `dibs update` verifies existing release checksums and atomically publishes
+  all three canonical binaries in their existing installation directory,
+  retaining previous binaries for offline `--rollback`. Breaking releases
+  require confirmation or `--yes`; restarting dibsd separately requires
+  confirmation or `--restart`. Neither operation touches coordinator storage.
+- The daemon refreshes a local release cache at most daily; ordinary terminal
+  commands show a cached notice after output, or in the watch footer, at most
+  once daily per version. JSON, hooks, MCP and issue-run children suppress it;
+  `DIBS_NO_UPDATE_NOTIFIER=1` opts out. Doctor reports cached updates alongside
+  its existing CLI/daemon version mismatch check. No background auto-upgrade.
