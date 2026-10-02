@@ -1,15 +1,15 @@
 # Installing dibs
 
-The `v0.1.0-rc.4` preview is published for Linux amd64/arm64 and macOS
+The `v0.1.0-rc.5` preview targets Linux amd64/arm64 and macOS
 Intel/Apple Silicon. Use its versioned URL: GitHub's `latest` URL selects
 stable releases and does not select this prerelease.
 
 ## Linux and macOS release installation
 
-Install the published preview:
+Install the versioned preview (the URL becomes available when publication completes):
 
 ```sh
-curl -fsSL https://github.com/abevz/dibs/releases/download/v0.1.0-rc.4/install.sh | sh /dev/stdin
+curl -fsSL https://github.com/abevz/dibs/releases/download/v0.1.0-rc.5/install.sh | sh /dev/stdin
 ```
 
 The downloaded script carries the release tag that supplied it, and fetches the
@@ -22,7 +22,7 @@ hint when that directory is not available in the current shell.
 To inspect the exact script before running it:
 
 ```sh
-curl -fsSL -o install.sh https://github.com/abevz/dibs/releases/download/v0.1.0-rc.4/install.sh
+curl -fsSL -o install.sh https://github.com/abevz/dibs/releases/download/v0.1.0-rc.5/install.sh
 less install.sh
 sh install.sh
 ```
@@ -107,13 +107,12 @@ described in [operations](operations.md#explicit-service-switch).
 
 ## Install with Go
 
-For Go users, this version-pinned source install was checked on Linux amd64
-with Go 1.27.1:
+For Go users, use a version-pinned source install:
 
 ```sh
-go install github.com/abevz/dibs/cmd/dibs@v0.1.0-rc.4 \
-  github.com/abevz/dibs/cmd/dibsd@v0.1.0-rc.4 \
-  github.com/abevz/dibs/cmd/dibs-mcp@v0.1.0-rc.4
+go install github.com/abevz/dibs/cmd/dibs@v0.1.0-rc.5 \
+  github.com/abevz/dibs/cmd/dibsd@v0.1.0-rc.5 \
+  github.com/abevz/dibs/cmd/dibs-mcp@v0.1.0-rc.5
 ```
 
 The binaries go to `GOBIN`, or to `$(go env GOPATH)/bin` when `GOBIN` is unset.
