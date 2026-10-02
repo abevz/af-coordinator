@@ -18,6 +18,7 @@ import (
 	"github.com/abevz/dibs/internal/client"
 	"github.com/abevz/dibs/internal/config"
 	"github.com/abevz/dibs/internal/core"
+	"github.com/abevz/dibs/internal/update"
 	_ "modernc.org/sqlite"
 )
 
@@ -540,6 +541,7 @@ func EvaluateSocketPath(cfg config.Config) Result {
 
 func RunAll(ctx context.Context, c *client.Client, cfg config.Config) []Result {
 	results := []Result{EvaluateSocketPath(cfg)}
+	results = append(results, EvaluateUpdate(update.DefaultCache(), build.Version))
 
 	resDaemon, h := EvaluateDaemon(ctx, c)
 	results = append(results, resDaemon)

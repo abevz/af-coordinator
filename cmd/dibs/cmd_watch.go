@@ -10,6 +10,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/abevz/dibs/internal/client"
 	"github.com/abevz/dibs/internal/watch"
@@ -42,6 +43,9 @@ func runWatch(ctx context.Context, c *client.Client, args []string) error {
 			return json.NewEncoder(os.Stdout).Encode(snapshot)
 		}
 		fmt.Fprintln(os.Stdout, watch.RenderOnce(snapshot, time.Now()))
+		if line := updateNotice(true); line != "" {
+			fmt.Fprintln(os.Stderr, line)
+		}
 		return nil
 	}
 	if !terminalDevice(os.Stdin) || !terminalDevice(os.Stdout) {
@@ -55,6 +59,7 @@ func runWatch(ctx context.Context, c *client.Client, args []string) error {
 		width:       100,
 		height:      28,
 		loading:     true,
+		footer:      updateNotice(true),
 		now:         time.Now(),
 	}
 	_, err := tea.NewProgram(model, tea.WithAltScreen(), tea.WithContext(ctx)).Run()
@@ -84,6 +89,7 @@ type watchRefreshMsg struct{}
 type watchClockMsg time.Time
 
 type watchModel struct {
+	footer        string
 	ctx           context.Context
 	service       *watch.Service
 	rootProject   string
@@ -194,6 +200,9 @@ func (m watchModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.now = time.Time(msg)
 		return m, watchClock()
 	case watchRefreshMsg:
+		if m.footer == "" {
+			m.footer = updateNotice(true)
+		}
 		if !m.loading {
 			m.loading = true
 			return m, m.fetch()
@@ -242,14 +251,24 @@ func (m watchModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m watchModel) View() string {
+	height := m.height
+	if m.footer != "" && height > 1 {
+		height--
+	}
+	foot := func(s string) string {
+		if m.footer != "" {
+			return s + "\n" + ansi.Truncate(m.footer, m.width, "…")
+		}
+		return s
+	}
 	if m.detailID != "" {
-		return watch.RenderDetail(m.detail, m.detailErr, m.detailLoading, m.width, m.height, m.detailOffset)
+		return foot(watch.RenderDetail(m.detail, m.detailErr, m.detailLoading, m.width, height, m.detailOffset))
 	}
 	snapshot := m.snapshot
 	if snapshot.Issues != nil {
 		snapshot = snapshot.At(m.now)
 	}
-	return watch.RenderNavigation(snapshot, m.lastErr, m.now, m.width, m.height, m.selected)
+	return foot(watch.RenderNavigation(snapshot, m.lastErr, m.now, m.width, height, m.selected))
 }
 
 func (m watchModel) rowCount() int {

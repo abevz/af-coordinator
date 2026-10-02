@@ -122,3 +122,59 @@ Put that directory on `PATH` before running `dibs init`. This build reports
 revision that the release workflow embeds. Use the release installer or Homebrew for the tested
 binary distribution on all four supported platforms. AUR instructions remain
 pending verification.
+
+## Update release binaries
+
+Release installations keep `dibs`, `dibsd`, and `dibs-mcp` in the existing
+installation directory (default `~/.local/bin`, or installer `BINDIR`). Check
+without changing binaries or restarting the daemon:
+
+```sh
+dibs update --check
+```
+
+Exit codes are **0** for no newer release, **10** for an available update, and
+**1** for a failed check. The output compares installed/latest versions and
+shows intervening CHANGELOG sections, with breaking changes first. Stable
+versions select stable releases; an installed prerelease also considers
+prereleases. `--prerelease` explicitly includes prereleases for a stable build.
+Source builds reporting `dev` cannot check or self-update; install a published
+release first.
+
+```sh
+dibs update                     # prompts for breaking changes and daemon restart
+# For unattended use, migrate consumers first:
+dibs update --yes               # accepts breaking changes; does not authorize restart
+dibs update --yes --restart      # separately authorizes daemon restart
+dibs update --rollback           # restore retained binaries without network
+```
+
+The updater verifies the existing release archive against `checksums.txt`
+before changing binaries. Existing public binary paths become symlinks through
+a shared `.dibs-update/current` pointer inside the same installation directory.
+One atomic pointer replacement publishes all three binaries. Previous binaries
+remain in `.dibs-update` for rollback; a failed download, checksum, or later
+upgrade leaves the current installation and its rollback target intact. The
+existing license location stays in place, and each verified generation also
+retains its release license. Homebrew installations (including resolved Cellar paths) and independently
+managed symlinks are refused: use
+`brew upgrade abevz/dibs/dibs` for that installation.
+
+A running daemon keeps its old executable until explicitly restarted. Use
+`--restart` or accept the separate restart prompt for the installed systemd or
+launchd service; otherwise restart using [operations](operations.md). A failed
+restart reports an error and leaves rollback available. Updates and rollbacks
+never open or migrate the coordinator database, change its path, or rewrite
+service configuration. Database/schema changes remain a separate operation.
+
+The daemon refreshes release metadata in the background at most once per
+24 hours, with an eight-second timeout; it never upgrades binaries. Ordinary
+CLI commands read only `$XDG_STATE_HOME/dibs/update.json` (default
+`~/.local/state/dibs/update.json`) and never wait on release network requests.
+A cached newer version produces one stderr line after normal terminal output,
+at most once per 24 hours per version, or a footer in interactive `dibs watch` (`--once` uses stderr). JSON, hooks,
+MCP, and `issue run` children suppress it. Disable notices with:
+
+```sh
+export DIBS_NO_UPDATE_NOTIFIER=1
+```

@@ -3,6 +3,7 @@ package main
 // commandDescriptions is the compiled help catalog for root, group, and leaf
 // commands. Keys use canonical route paths, plus explicit CLI aliases.
 var commandDescriptions = map[string]string{
+	"update":                  "Check releases, upgrade all binaries with rollback, or restore the previous binaries.",
 	"health":                  "Check daemon health.",
 	"doctor":                  "Run environment diagnostics.",
 	"protocol":                "Print the agent protocol contract.",

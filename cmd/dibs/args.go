@@ -24,6 +24,7 @@ type argRoute struct {
 }
 
 var commandRoutes = map[string]argRoute{
+	"update": {"--check? --rollback? --prerelease? --yes? --restart?", 0},
 	"health": {"", 0}, "doctor": {"", 0}, "protocol": {"", 0}, "version": {"", 0},
 	"init":                {"--path --dry-run? --project --repo --default-branch", 0},
 	"watch":               {"--project --once?", 0},

@@ -465,3 +465,44 @@ and the `dibsd` service uses the same canonical database. Remove the obsolete
 `~/github/af-coordinator` symlink only after repository relocation and consumer
 path migration are verified. These are operator steps, not automatic service
 or path mutations by the installer. Backup unit names are retained.
+
+## Release updates and rollback
+
+Run `dibs update --check` for a read-only release comparison and intervening
+CHANGELOG (breaking changes first). Exit 0 means current, 10 means an update is
+available, and 1 means the check failed. Stable builds stay on stable releases;
+prerelease builds include prereleases, or pass `--prerelease` explicitly.
+
+Migrate consumers before accepting a breaking release. `dibs update` verifies
+`dibs_OS_ARCH.tar.gz` using `checksums.txt`, then publishes `dibs`, `dibsd`, and
+`dibs-mcp` together in the existing installation directory. It retains the
+previous binaries. `--yes` accepts breaking changes only; daemon restart needs
+its own confirmation or `--restart`. With no restart, the current daemon keeps
+running its old version and `dibs doctor` reports CLI/daemon mismatch. Doctor
+also reports a newer release from the local cache, without network.
+
+If the new binaries or an explicitly requested restart fail:
+
+```sh
+dibs update --rollback           # offline binary rollback; daemon still running
+dibs update --rollback --restart # also explicitly restart the managed daemon
+```
+
+The shared `.dibs-update/current` pointer switches all three public binary
+paths atomically. Each verified generation records its rollback predecessor;
+a failed later update cannot discard that target. Rollback restores binaries,
+not database contents or schema. Neither command opens coordinator storage or
+changes database/socket paths or service configuration. For Homebrew, use its
+upgrade/rollback procedures. A source build reporting `dev` needs a published
+release before using the updater.
+
+Release checks run only in explicit `dibs update` commands or the daemon's
+bounded background refresh, at most once per 24 hours including failed/offline
+attempts. There is no background auto-upgrade. Cache and the daily notice
+ledger live in `$XDG_STATE_HOME/dibs/update.json` (default
+`~/.local/state/dibs/update.json`), separate from the database. Terminal commands
+use cached results only; a notice follows normal output, or appears in the
+interactive watch footer (`--once` uses stderr). JSON/hooks/MCP/issue-run
+children suppress notices. To opt out,
+set `DIBS_NO_UPDATE_NOTIFIER=1` in the CLI environment (and daemon environment to
+disable its background refresh too).
