@@ -5,6 +5,7 @@ import (
 	"github.com/abevz/dibs/internal/core"
 	"github.com/abevz/dibs/internal/store/sqlite"
 	"github.com/abevz/dibs/migrations"
+	"os"
 
 	"database/sql"
 	"encoding/base64"
@@ -1896,7 +1897,7 @@ func TestCloseIssue(t *testing.T) {
 func TestOperatorCloseAndReopenIssue(t *testing.T) {
 	server, db := newTestServer(t)
 	now := time.Now().UTC().Format(time.RFC3339)
-	t.Setenv("AF_OPERATOR_TOKEN", "test-token")
+	t.Setenv("DIBS_OPERATOR_TOKEN", "test-token")
 	if _, err := db.Exec(
 		`INSERT INTO projects (id, key, name, description, next_issue_seq, created_at, updated_at)
 		 VALUES ('proj-1', 'test', 'Test', '', 1, ?, ?)`, now, now,
@@ -1972,7 +1973,7 @@ func TestOperatorCloseAndReopenIssue(t *testing.T) {
 func TestOperatorCloseIssueWithMetadata(t *testing.T) {
 	server, db := newTestServer(t)
 	now := time.Now().UTC().Format(time.RFC3339)
-	t.Setenv("AF_OPERATOR_TOKEN", "test-token")
+	t.Setenv("DIBS_OPERATOR_TOKEN", "test-token")
 	if _, err := db.Exec(
 		`INSERT INTO projects (id, key, name, description, next_issue_seq, created_at, updated_at)
 		 VALUES ('proj-1', 'test', 'Test', '', 1, ?, ?)`, now, now,
@@ -2047,10 +2048,10 @@ func TestOperatorCloseIssueWithMetadata(t *testing.T) {
 }
 
 // TestOperatorCloseReopenTokenValidation verifies that operator-close and
-// operator-reopen fail closed with 403 forbidden when AF_OPERATOR_TOKEN is
+// operator-reopen fail closed with 403 forbidden when DIBS_OPERATOR_TOKEN is
 // missing/empty or when the Authorization header does not match the expected
 // Bearer token. os.Getenv returns "" for both a missing and an empty
-// AF_OPERATOR_TOKEN, so the empty env value deterministically simulates the
+// DIBS_OPERATOR_TOKEN, so the empty env value deterministically simulates the
 // not-configured branch for both. These subtests must not call t.Parallel
 // because they rely on t.Setenv.
 func TestOperatorCloseReopenTokenValidation(t *testing.T) {
@@ -2117,7 +2118,7 @@ func TestOperatorCloseReopenTokenValidation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Setenv("AF_OPERATOR_TOKEN", tt.envToken)
+			t.Setenv("DIBS_OPERATOR_TOKEN", tt.envToken)
 			server, _ := newTestServer(t)
 
 			req, err := http.NewRequest(http.MethodPost, server.URL+"/v1/issues/issue-token-validation/"+tt.endpoint, strings.NewReader(tt.body))
@@ -2911,5 +2912,18 @@ func TestIssueReadNeverExposesOperationID(t *testing.T) {
 		if token != "" && strings.Contains(string(payload), token) {
 			t.Errorf("%s exposed the lease token", path)
 		}
+	}
+}
+
+func TestLegacyOperatorTokenAloneIsRejected(t *testing.T) {
+	t.Setenv("DIBS_OPERATOR_TOKEN", "")
+	if err := os.Unsetenv("DIBS_OPERATOR_TOKEN"); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("AF_OPERATOR_TOKEN", "legacy-token")
+	req := httptest.NewRequest(http.MethodPost, "/", nil)
+	req.Header.Set("Authorization", "Bearer legacy-token")
+	if checkOperatorToken(httptest.NewRecorder(), req) {
+		t.Fatal("legacy operator token accepted")
 	}
 }

@@ -680,7 +680,7 @@ func handleOperatorReleaseIssue(st store.CoordinatorStore, logger *slog.Logger) 
 // checkOperatorToken validates the configured operator token against the
 // Authorization header. Returns false and writes a 403 response on failure.
 func checkOperatorToken(w http.ResponseWriter, r *http.Request) bool {
-	token := config.EnvOrDefault("DIBS_OPERATOR_TOKEN", "AF_OPERATOR_TOKEN", "")
+	token := config.EnvOrDefault("DIBS_OPERATOR_TOKEN", "")
 	if token == "" {
 		writeError(w, http.StatusForbidden, core.ErrForbidden, "DIBS_OPERATOR_TOKEN not configured on server")
 		return false

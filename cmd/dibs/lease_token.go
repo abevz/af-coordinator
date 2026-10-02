@@ -9,12 +9,12 @@ import (
 // leaseTokenSourceAvailable is used by the early argument validator. The
 // actual value is read only by a lifecycle handler and never copied to argv.
 func leaseTokenSourceAvailable() bool {
-	canonical, set := os.LookupEnv("DIBS_LEASE_TOKEN")
-	return canonical != "" || os.Getenv("DIBS_LEASE_TOKEN_FILE") != "" || (!set && os.Getenv("AF_LEASE_TOKEN") != "")
+	canonical := os.Getenv("DIBS_LEASE_TOKEN")
+	return canonical != "" || os.Getenv("DIBS_LEASE_TOKEN_FILE") != ""
 }
 
 func leaseTokenFromEnvironment() (string, error) {
-	canonical, set := os.LookupEnv("DIBS_LEASE_TOKEN")
+	canonical := os.Getenv("DIBS_LEASE_TOKEN")
 	if canonical != "" {
 		return canonical, nil
 	}
@@ -29,11 +29,6 @@ func leaseTokenFromEnvironment() (string, error) {
 			return "", fmt.Errorf("DIBS_LEASE_TOKEN_FILE is empty")
 		}
 		return token, nil
-	}
-	if !set {
-		if token := os.Getenv("AF_LEASE_TOKEN"); token != "" {
-			return token, nil
-		}
 	}
 	return "", fmt.Errorf("lease token is required: use dibs issue run or DIBS_LEASE_TOKEN_FILE")
 }

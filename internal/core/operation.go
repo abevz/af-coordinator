@@ -62,7 +62,7 @@ const MaxOperationIDLength = 128
 const MinOperationIDLength = 8
 
 // ValidateOperationID checks the opaque idempotency key at the protocol
-// boundary. The value is client-generated (afctl uses a UUIDv4); the daemon
+// boundary. The value is client-generated (dibs uses a UUIDv4); the daemon
 // treats it as an opaque capability and does not parse it. An empty value is
 // valid at this layer and means "no idempotency requested" — callers that
 // predate AFC-SDD-0159 keep working unchanged.

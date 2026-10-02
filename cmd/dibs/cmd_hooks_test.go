@@ -104,7 +104,7 @@ func TestIssueRunRequiresExplicitCompletion(t *testing.T) {
 			sock := startMockCoordinator(t, mock)
 			args := append([]string{"issue", "run", "afc-2", "--actor", "tester", "--ttl", "60", "--require-complete", "--"}, tc.child...)
 			cmd := exec.Command(bin, args...)
-			cmd.Env = append(os.Environ(), "AF_COORDINATOR_SOCKET="+sock)
+			cmd.Env = append(os.Environ(), "DIBS_SOCKET="+sock)
 			out, err := cmd.CombinedOutput()
 			if tc.close && err != nil {
 				t.Fatalf("run failed: %v %s", err, out)
@@ -136,7 +136,7 @@ func TestHooksCompleteMetadataOverridesRunFlags(t *testing.T) {
 	mock := &mockCoordinator{claimVersion: 3}
 	sock := startMockCoordinator(t, mock)
 	cmd := exec.Command(bin, "issue", "run", "afc-2", "--actor", "tester", "--ttl", "60", "--require-complete", "--pr-url", "https://github.com/o/r/pull/old", "--branch", "old", "--note", "old", "--", bin, "hooks", "complete", "--pr-url", "https://github.com/o/r/pull/new", "--branch", "new", "--note", "new")
-	cmd.Env = append(os.Environ(), "AF_COORDINATOR_SOCKET="+sock)
+	cmd.Env = append(os.Environ(), "DIBS_SOCKET="+sock)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("run failed: %v %s", err, out)

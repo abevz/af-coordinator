@@ -29,9 +29,21 @@ test "$("$scratch/home/.local/bin/dibs" version)" = test-binary
 test "$("$scratch/home/.local/bin/dibsd" version)" = test-binary
 test "$("$scratch/home/.local/bin/dibs-mcp" version)" = test-binary
 cmp LICENSE "$scratch/home/.local/share/licenses/dibs/LICENSE"
+for legacy in afctl af-coordinatord afc-mcp; do
+ test ! -e "$scratch/home/.local/bin/$legacy"
+ test ! -L "$scratch/home/.local/bin/$legacy"
+done
+ln -s dibs "$scratch/home/.local/bin/afctl"
+ln -s "$scratch/home/.local/bin/dibsd" "$scratch/home/.local/bin/af-coordinatord"
+printf 'independent executable\n' > "$scratch/home/.local/bin/afc-mcp"
+
 HOME="$scratch/home" BINDIR="$scratch/home/.local/bin" \
 	DIBS_RELEASE_BASE_URL="file://$bundle" sh "$bundle/install.sh" > "$scratch/reinstall.log"
 test "$(cat "$scratch/home/.local/share/dibs/keep.txt")" = 'user data'
+test ! -L "$scratch/home/.local/bin/afctl"
+test ! -L "$scratch/home/.local/bin/af-coordinatord"
+test "$(cat "$scratch/home/.local/bin/afc-mcp")" = 'independent executable'
+
 cmp LICENSE "$scratch/home/.local/share/licenses/dibs/LICENSE"
 
 # The release asset must resolve its archive to its own tag, even if a newer

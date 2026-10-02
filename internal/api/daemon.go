@@ -69,7 +69,7 @@ func RunDaemon(ctx context.Context, logger *slog.Logger, cfg config.Config, st s
 
 	// Health endpoints.
 	healthHandler := func(w http.ResponseWriter, r *http.Request) {
-		operatorTokenConfigured := config.EnvOrDefault("DIBS_OPERATOR_TOKEN", "AF_OPERATOR_TOKEN", "") != ""
+		operatorTokenConfigured := config.EnvOrDefault("DIBS_OPERATOR_TOKEN", "") != ""
 		h := core.Health{
 			Name:                    "dibs",
 			Status:                  "ok",

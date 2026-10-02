@@ -35,8 +35,7 @@ such as `--lease-token "$TOKEN"`: expanded argv is captured in session
 transcripts. If a manual lifecycle command is unavoidable, let the CLI read
 `DIBS_LEASE_TOKEN` from an already supplied environment or set
 `DIBS_LEASE_TOKEN_FILE` to a private token file (mode `0600`); keep the token
-out of argv, logs, notes, and Git. The legacy `AF_LEASE_TOKEN` environment
-alias is accepted when the canonical variable is unset.
+out of argv, logs, notes, and Git. Legacy `AF_*` variables are no longer read. Use canonical `DIBS_*` names.
 
 ## Working from GitHub issues
 

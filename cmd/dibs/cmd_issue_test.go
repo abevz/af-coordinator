@@ -657,7 +657,7 @@ func TestIssueExpectedVersionAutoResolve(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Setenv("AF_OPERATOR_TOKEN", "test-operator-token")
+			t.Setenv("DIBS_OPERATOR_TOKEN", "test-operator-token")
 			oldActor := defaultActor
 			defaultActor = "test-actor"
 			defer func() { defaultActor = oldActor }()

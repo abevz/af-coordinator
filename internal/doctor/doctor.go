@@ -276,7 +276,7 @@ func EvaluateOperatorTokenMigration(h *core.Health, home string) Result {
 			return Result{
 				Name: "Operator token migration", Status: "WARN",
 				Message: "Daemon has no operator token configured, but legacy operator token configuration exists",
-				Hint:    "Point dibsd.service.d/operator-token.conf at the existing ~/.config/af-coordinator/operator.env and reload the user manager; see docs/operations.md",
+				Hint:    "Migrate the private environment file key to DIBS_OPERATOR_TOKEN and point dibsd.service.d/operator-token.conf at it; see docs/operations.md for the explicit service switch",
 			}
 		}
 	}

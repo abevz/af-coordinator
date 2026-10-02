@@ -489,3 +489,22 @@ are historical and do not override that coordinator closure.
   `MCP tool call requires approval, but approval policy is never`; it returned
   no issue data. Claude Code's allowed read-only call verified the tool result.
   PR #68 CI `test` passed on implementation HEAD `ca7207a`. Owner review remains pending.
+
+### afc-142 — canonical-only commands and environment
+
+Owner authorization on 2026-10-01 supersedes the original after-v0.1.0 timing.
+Installers expose only dibs/dibsd/dibs-mcp and safely retire installer-owned
+symlinks, preserving unrelated executables. Removed AF_* env fallbacks, old
+lifecycle exports, warning package and daemon unit templates. Backup unit
+names and legacy database/socket discovery are intentionally retained.
+Doctor's private-token migration hint now requires the canonical key.
+CHANGELOG.md and operations/install/MCP/protocol docs explain the break.
+
+The companion branch chore/afc-142-dibs-client in utils switches daily-check's
+runner, create-form and actor environment to canonical dibs/DIBS_ACTOR.
+Daily-check unit/race/vet/build and installed read-only protocol checks pass;
+Aion Forge tasksource and notification adapter tests pass without source
+changes. Full DIBS tests/build, release installer and post-merge fixtures pass.
+Evidence is in /tmp/afc-142-*.log. Independent final review is recorded in the
+handoff. No live daemon restart or database migration was performed. Local
+legacy symlink/unit retirement waits for source review and consumer deployment.

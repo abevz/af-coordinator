@@ -1333,7 +1333,7 @@ func runIssueOperatorClose(ctx context.Context, c *client.Client, args []string)
 	}
 	req.Actor = actor
 
-	token := config.EnvOrDefault("DIBS_OPERATOR_TOKEN", "AF_OPERATOR_TOKEN", "")
+	token := config.EnvOrDefault("DIBS_OPERATOR_TOKEN", "")
 	if token == "" {
 		return usageErr(issueOperatorCloseUsage, "DIBS_OPERATOR_TOKEN environment variable is required")
 	}
@@ -1414,7 +1414,7 @@ func runIssueOperatorReopen(ctx context.Context, c *client.Client, args []string
 	}
 	req.Actor = actor
 
-	token := config.EnvOrDefault("DIBS_OPERATOR_TOKEN", "AF_OPERATOR_TOKEN", "")
+	token := config.EnvOrDefault("DIBS_OPERATOR_TOKEN", "")
 	if token == "" {
 		return usageErr(issueOperatorReopenUsage, "DIBS_OPERATOR_TOKEN environment variable is required")
 	}
@@ -1484,7 +1484,7 @@ func runIssueOperatorRelease(ctx context.Context, c *client.Client, args []strin
 	}
 	req.Actor = actor
 
-	token := config.EnvOrDefault("DIBS_OPERATOR_TOKEN", "AF_OPERATOR_TOKEN", "")
+	token := config.EnvOrDefault("DIBS_OPERATOR_TOKEN", "")
 	if token == "" {
 		return usageErr(issueOperatorReleaseUsage, "DIBS_OPERATOR_TOKEN environment variable is required")
 	}
@@ -1547,7 +1547,7 @@ func runIssueCancel(ctx context.Context, c *client.Client, args []string) error 
 	}
 	req.Actor = act
 
-	token := config.EnvOrDefault("DIBS_OPERATOR_TOKEN", "AF_OPERATOR_TOKEN", "")
+	token := config.EnvOrDefault("DIBS_OPERATOR_TOKEN", "")
 	if token == "" {
 		return usageErr(issueCancelUsage, "DIBS_OPERATOR_TOKEN environment variable is required")
 	}
