@@ -78,6 +78,8 @@ var flagHelpText = map[string]flagHelp{
 	"--root-path":         {"path", "Artifact-root path relative to the repository."},
 	"--scope-kind":        {"project|repository|worktree", "Level of ownership for the new issue."},
 	"--session-id":        {"id", "Session identifier associated with the claim."},
+	"--by":                {"actor", "Group stats by normalized claim owner."},
+	"--top":               {"N", "Show N costliest issues (positive integer)."},
 	"--since":             {"time-or-duration", "Start of the stats window, for example 24h or RFC3339 time."},
 	"--status":            {"status", "Issue status: open, in_progress, blocked, deferred, done, or cancelled; list accepts comma-separated values."},
 	"--tag":               {"namespace/value", "Issue tag; repeat the flag to add more on creation."},

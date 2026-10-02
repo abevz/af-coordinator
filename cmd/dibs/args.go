@@ -39,7 +39,7 @@ var commandRoutes = map[string]argRoute{
 	"artifact-root add": {"--repo --root-path --kind --primary?", 0}, "artifact-root list": {"--repo", 0},
 	"artifact register": {"--repo --relative-path --kind --worktree --artifact-root --title --external-key --status", 0},
 	"artifact list":     {"--repo", 0}, "export jsonl": {"", 0},
-	"stats":             {"--project --repo --since --until", 0},
+	"stats":             {"--project --repo --since --until --by --top", 0},
 	"issue create":      {"--project --scope-kind --title --type --repo --worktree --external-key --description --acceptance --priority --tag --allow-duplicate? --operation-id --retry-last?", 0},
 	"issue import":      {"--project --repo --scope-kind --type --priority --acceptance --tag --allow-closed?", 1},
 	"issue publish":     {"", 1},

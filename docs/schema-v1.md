@@ -367,6 +367,19 @@ The additive `by_project` report section groups the already loaded issues,
 ready issues, and close events by project key when no project filter is set.
 It creates no persisted rollup or additional store query.
 
+Agent statistics are also derived, with no persistent identity migration.
+Use a stable engine/agent label as actor/holder (`agent` or `agent@host`) and
+put PID/task/instance identity in the existing claim `session_id`. Reports
+strip `@host[:pid[/instance]]`; known codex/agy/claude/opencode/aion-forge-worker
+families with hyphen suffixes fold to their family. `claude.exe` and
+`claude-code` fold to claude; `aion-worker-live-N` folds to aion-forge-worker.
+Known issue-role labels `afc|aion|utils|piac|jsb-N-role` fold to `task/role`,
+without inferring an engine. Empty/standalone version actors become `unknown`;
+other labels remain unchanged. Raw events remain unchanged and raw aliases
+are exposed sorted. These rules are report normalization v1, not identity proof.
+See api-v1.md Statistics for optional by_actor/top_issues fields and window,
+operator-outcome and no-progress definitions.
+
 ## Indexes
 
 ```sql

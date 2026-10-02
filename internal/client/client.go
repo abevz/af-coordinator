@@ -67,6 +67,12 @@ func (c *Client) Health(ctx context.Context) (core.Health, error) {
 func (c *Client) GetStats(ctx context.Context, query report.Query) (report.Report, error) {
 	path := "/v1/stats"
 	values := url.Values{}
+	if query.By != "" {
+		values.Set("by", query.By)
+	}
+	if query.Top > 0 {
+		values.Set("top", fmt.Sprint(query.Top))
+	}
 	if query.Project != "" {
 		values.Set("project", query.Project)
 	}

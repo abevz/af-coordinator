@@ -324,7 +324,7 @@ func TestGetStatsEncodesFilters(t *testing.T) {
 			t.Fatalf("path = %q, want /v1/stats", r.URL.Path)
 		}
 		query := r.URL.Query()
-		if query.Get("project") != "afc" || query.Get("repo") != "repo-id" || query.Get("since") != "24h" || query.Get("until") != "2026-07-14T00:00:00Z" {
+		if query.Get("by") != "actor" || query.Get("top") != "3" || query.Get("project") != "afc" || query.Get("repo") != "repo-id" || query.Get("since") != "24h" || query.Get("until") != "2026-07-14T00:00:00Z" {
 			t.Fatalf("query = %q", r.URL.RawQuery)
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -334,6 +334,7 @@ func TestGetStatsEncodesFilters(t *testing.T) {
 
 	c := testClient(t, server)
 	stats, err := c.GetStats(context.Background(), report.Query{
+		By: "actor", Top: 3,
 		Project: "afc",
 		Repo:    "repo-id",
 		Since:   "24h",

@@ -30,6 +30,10 @@ func TestParseStatsArgs(t *testing.T) {
 			args: []string{"--project", "afc", "--repo", "repo-id", "--since", "24h", "--until", "2026-07-14T00:00:00Z"},
 			want: report.Query{Project: "afc", Repo: "repo-id", Since: "24h", Until: "2026-07-14T00:00:00Z"},
 		},
+		{name: "breakdowns", args: []string{"--by", "actor", "--top", "5"}, want: report.Query{By: "actor", Top: 5}},
+		{name: "bad group", args: []string{"--by", "project"}, wantErr: "must be actor"},
+		{name: "bad top", args: []string{"--top", "0"}, wantErr: "positive integer"},
+		{name: "bad numeric", args: []string{"--top", "x"}, wantErr: "positive integer"},
 		{name: "help", args: []string{"--help"}, wantHelp: true},
 		{name: "unknown flag", args: []string{"--wat"}, wantErr: "unknown flag"},
 		{name: "missing value", args: []string{"--project"}, wantErr: "requires a value"},
@@ -164,5 +168,15 @@ func TestRunStatsJSON(t *testing.T) {
 	}
 	if got.Version != "v1" {
 		t.Fatalf("JSON report version = %q, want v1", got.Version)
+	}
+}
+
+func TestWriteStatsBreakdowns(t *testing.T) {
+	var out bytes.Buffer
+	writeStats(&out, report.Report{ByActor: map[string]report.ActorStats{"codex": {Claims: 2, Completed: 2, Outcomes: map[string]int{"done": 1, "operator_released": 1}, CloseRate: report.Coverage{Ratio: 0.5}, Duration: report.Percentiles{SampleSize: 2, P50Seconds: 60}}}, TopIssues: []report.IssueCost{{ShortID: "fixture-1", Claims: 4, NoProgressReleases: 3, ClaimWithoutProgress: true}}})
+	for _, want := range []string{"Agents (claim owners)", "codex", "50.0%", "Costliest issues", "fixture-1", "claim without progress", "OP RELEASE"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("missing %q in %s", want, out.String())
+		}
 	}
 }

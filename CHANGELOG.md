@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Added
+
+- `dibs stats --by actor` and `--top N`: normalized claim-owner outcomes, costly
+  issues and a documented claim-without-progress indicator (afc-175).
+
 ### Fixed
 
 - Auto-started daemon logs are bounded in the state directory instead of growing

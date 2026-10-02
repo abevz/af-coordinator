@@ -189,7 +189,7 @@ This is the compact route-to-implementation inventory for the current daemon.
 
 ### `internal/api/stats.go`
 
-- `GET /v1/stats?project=&repo=&since=&until=` -> `handleStats` ->
+- `GET /v1/stats?project=&repo=&since=&until=&by=&top=` -> `handleStats` ->
   `report.Build` over the API-facing read-only store contract
 
 ## Registry
@@ -254,6 +254,32 @@ This is the compact route-to-implementation inventory for the current daemon.
   field is the timestamp of the latest retained issue event by sequence for
   that project, independent of the flow window; it is omitted if no issue
   events exist. Wall-clock timestamps do not determine event ordering.
+- Optional `by=actor` adds `report.by_actor`, keyed by normalized claim owner.
+  Each row has `raw_actors` (sorted original aliases), `claims`, `completed`,
+  `outcomes`, `close_rate` (done/claims coverage), and `duration` percentiles.
+  Outcome/duration attribution comes from the claim, even if expiry or an
+  operator action has a different actor. Claims use claim timestamps; completions
+  use end timestamps, including matched claims before `since`. Rates can exceed
+  100% across window boundaries and are not cohort success rates. Agent totals
+  reconcile with global attempts/outcomes. Matched `issue_operator_released`
+  events now contribute `operator_released` to both; unmatched end events do not
+  invent measured attempts. Old field names/types remain unchanged.
+- Optional positive integer `top=N` adds `report.top_issues`, ordered by claim
+  event count descending, completed `attempt_seconds` descending, short ID then
+  UUID ascending. Rows expose `issue_id`, `short_id`, `claims` (all claim events),
+  `tracked_claims` (with a valid attempt ID), `completed`, `attempt_seconds`,
+  `released`, `handoffs`, `expired`, `operator_released`, `notes` (note_added
+  events), `lead_time_seconds` (creation to latest close at/before until, otherwise
+  observed age), `no_progress_releases`, `unclassified_releases`, and
+  `claim_without_progress`. Counts use the selected scope/event window; durations
+  include only matched completions ending in it, not ongoing elapsed time. Raw
+  release/expiry counts include unmatched end events, unlike measured attempts.
+  A flag requires at least three exactly ordered matched plain releases without
+  a note or commit_sha/pr_url evidence between claim and release. Handoffs are
+  excluded; pairs with legacy claims are unclassified, never proof of no progress.
+  Both new sections are null unless requested, and empty objects/arrays when a
+  requested scope has no data. Other filters combine normally. Invalid grouping
+  or nonpositive/noninteger top returns validation_failed.
 - Percentiles are seconds, use nearest-rank selection, and always include
   `sample_size`. Ratios include `numerator` and `denominator`; a zero
   denominator reports a zero ratio rather than an invented percentage.

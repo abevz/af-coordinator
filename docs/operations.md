@@ -169,6 +169,24 @@ Use RFC 3339 or a positive Go duration for `--since`; `--until` accepts RFC
 3339 and defaults to now. JSON includes the report version, window,
 denominators, percentile sample sizes, and the legacy event-ordering cutoff.
 
+### Agent and costly-issue views
+
+```sh
+dibs stats --by actor
+dibs stats --top 10
+dibs stats --project afc --since 7d --by actor --top 5 --json
+```
+
+Agent outcomes belong to the normalized claim owner, even for expiry/operator
+releases. Use stable `DIBS_ACTOR`/holder labels and a separate claim `session_id`
+for task/PID details; normalization and raw aliases are documented in
+[schema-v1](schema-v1.md#derived-statistics). These are flow-window counts:
+DONE/CLAIMS is not a cohort success rate. Cost ranks claims then completed
+attempt time; ongoing elapsed time is excluded. `claim without progress` means
+at least three exactly ordered plain releases without note/commit/PR evidence
+inside their attempts, not a judgment about an agent. Legacy pairs stay
+unclassified. JSON definitions are in [api-v1](api-v1.md#statistics).
+
 ## Interacting via curl
 
 Since the daemon listens on a Unix socket, use `curl --unix-socket`:

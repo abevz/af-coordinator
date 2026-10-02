@@ -24,6 +24,8 @@ type Query struct {
 	Repo    string
 	Since   string
 	Until   string
+	By      string
+	Top     int
 }
 
 // Source is the narrow, read-only coordinator contract required for reports.
@@ -48,6 +50,8 @@ type Report struct {
 	DataQuality DataQuality             `json:"data_quality"`
 	Inventory   Inventory               `json:"inventory"`
 	ByProject   map[string]ProjectStats `json:"by_project"`
+	ByActor     map[string]ActorStats   `json:"by_actor"`
+	TopIssues   []IssueCost             `json:"top_issues"`
 	Flow        Flow                    `json:"flow"`
 	Attempts    Attempts                `json:"attempts"`
 	Handoff     Coverage                `json:"handoff"`
@@ -162,7 +166,10 @@ type parsedQuery struct {
 }
 
 type attempt struct {
-	started time.Time
+	started                  time.Time
+	sequence                 int64
+	agent, rawActor, issueID string
+	progress, exact          bool
 }
 
 type terminalClose struct {
@@ -346,13 +353,22 @@ func Build(ctx context.Context, source Source, query Query, now time.Time) (Repo
 	report.DataQuality.LegacyEventsIncluded = legacyEventsIncluded(windowEvents, cutoff)
 	report.DataQuality.MalformedPayloadCount = malformed
 
-	applyFlowAndAttemptMetrics(&report, issues, scopedEvents, filters)
+	if query.By == "actor" {
+		report.ByActor = map[string]ActorStats{}
+	}
+	applyFlowAndAttemptMetrics(&report, issues, scopedEvents, filters, cutoff, query.Top)
 	report.Coverage.SCMCloseMetadata = scmMetadataCoverage(issues, scopedEvents, filters)
 	sort.Slice(report.Flow.Daily, func(i, j int) bool { return report.Flow.Daily[i].Date < report.Flow.Daily[j].Date })
 	return report, nil
 }
 
 func parseQuery(query Query, projects []core.Project, repositories []core.Repository, now time.Time) (parsedQuery, error) {
+	if query.By != "" && query.By != "actor" {
+		return parsedQuery{}, core.NewAPIError(core.ErrValidationFailed, "by must be actor")
+	}
+	if query.Top < 0 {
+		return parsedQuery{}, core.NewAPIError(core.ErrValidationFailed, "top must be positive")
+	}
 	filters := parsedQuery{until: now.UTC()}
 	if query.Since != "" {
 		since, err := parseSince(query.Since, now)
@@ -572,12 +588,13 @@ func legacyEventsIncluded(events []core.Event, cutoff int64) bool {
 	return false
 }
 
-func applyFlowAndAttemptMetrics(report *Report, issues []core.Issue, events []core.Event, filters parsedQuery) {
+func applyFlowAndAttemptMetrics(report *Report, issues []core.Issue, events []core.Event, filters parsedQuery, cutoff int64, top int) {
 	issueByID := make(map[string]core.Issue, len(issues))
 	for _, issue := range issues {
 		issueByID[issue.ID] = issue
 	}
 
+	costs := newBreakdown(report, issues, filters, top)
 	attempts := make(map[string]attempt)
 	attemptsByIssue := make(map[string]map[string]struct{})
 	latestTerminal := make(map[string]terminalClose)
@@ -589,6 +606,7 @@ func applyFlowAndAttemptMetrics(report *Report, issues []core.Issue, events []co
 		at, _ := parseTimestamp(event.CreatedAt)
 		withinWindow := inWindow(at, filters.since, filters.until)
 		payload, valid := parsePayload(event.PayloadJSON)
+		costs.observe(event, payload, at, withinWindow, attempts)
 		switch event.EventType {
 		case "issue_claimed":
 			attemptID := payloadString(payload, "attempt_id")
@@ -598,7 +616,11 @@ func applyFlowAndAttemptMetrics(report *Report, issues []core.Issue, events []co
 			if withinWindow {
 				report.Attempts.Claims++
 			}
-			attempts[attemptID] = attempt{started: at}
+			// Fresh databases have no legacy marker (cutoff == 0). Missing
+			// sequences still cannot establish causal order, even in that case.
+			entry := attempt{started: at, sequence: event.Sequence, agent: NormalizeActor(event.Actor), rawActor: event.Actor, issueID: event.IssueID, exact: event.Sequence > 0 && (cutoff == 0 || event.Sequence >= cutoff)}
+			attempts[attemptID] = entry
+			costs.claim(entry, withinWindow)
 			if withinWindow {
 				if attemptsByIssue[event.IssueID] == nil {
 					attemptsByIssue[event.IssueID] = make(map[string]struct{})
@@ -624,7 +646,7 @@ func applyFlowAndAttemptMetrics(report *Report, issues []core.Issue, events []co
 			if outcome == "" {
 				outcome = "done"
 			}
-			completeAttempt(report, attempts, payload, at, outcome, &attemptDurations)
+			completeAttempt(report, attempts, payload, at, outcome, &attemptDurations, costs)
 		case "issue_released":
 			if !withinWindow {
 				continue
@@ -637,12 +659,16 @@ func applyFlowAndAttemptMetrics(report *Report, issues []core.Issue, events []co
 				handoffNumerator++
 			}
 			handoffDenominator++
-			completeAttempt(report, attempts, payload, at, endReason, &attemptDurations)
+			completeAttempt(report, attempts, payload, at, endReason, &attemptDurations, costs)
 		case "lease_expired":
 			if !withinWindow {
 				continue
 			}
-			completeAttempt(report, attempts, payload, at, "expired", &attemptDurations)
+			completeAttempt(report, attempts, payload, at, "expired", &attemptDurations, costs)
+		case "issue_operator_released":
+			if withinWindow {
+				completeAttempt(report, attempts, payload, at, "operator_released", &attemptDurations, costs)
+			}
 		case "issue_reopened":
 			if withinWindow {
 				report.Flow.Reopened++
@@ -671,9 +697,10 @@ func applyFlowAndAttemptMetrics(report *Report, issues []core.Issue, events []co
 	report.Attempts.Duration = percentiles(attemptDurations)
 	report.Flow.LeadTime = percentiles(leadTimes)
 	report.Handoff = coverage(handoffNumerator, handoffDenominator)
+	costs.finish()
 }
 
-func completeAttempt(report *Report, attempts map[string]attempt, payload map[string]any, endedAt time.Time, outcome string, durations *[]float64) {
+func completeAttempt(report *Report, attempts map[string]attempt, payload map[string]any, endedAt time.Time, outcome string, durations *[]float64, costs *breakdown) {
 	attemptID := payloadString(payload, "attempt_id")
 	if attemptID == "" {
 		return
@@ -688,6 +715,7 @@ func completeAttempt(report *Report, attempts map[string]attempt, payload map[st
 	}
 	report.Attempts.Outcomes[outcome]++
 	*durations = append(*durations, endedAt.Sub(entry.started).Seconds())
+	costs.complete(entry, endedAt, outcome, payload)
 }
 
 func scmMetadataCoverage(issues []core.Issue, events []core.Event, filters parsedQuery) Coverage {
